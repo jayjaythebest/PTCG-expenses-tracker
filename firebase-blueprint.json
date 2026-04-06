@@ -1,0 +1,44 @@
+{
+  "entities": {
+    "Expense": {
+      "title": "Expense",
+      "description": "A submitted expense for Pokemon cards or related activities in Japan.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string", "description": "What was purchased (e.g., 'VSTAR Universe Box')" },
+        "category": { "type": "string", "enum": ["Card", "Box", "Tournament", "Other"] },
+        "amount": { "type": "number", "description": "Amount in JPY" },
+        "date": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["Pending", "Approved", "Rejected"] },
+        "submittedBy": { "type": "string", "description": "UID of the brother" },
+        "submittedByName": { "type": "string" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "category", "amount", "date", "status", "submittedBy"]
+    },
+    "User": {
+      "title": "User",
+      "description": "App user (Brother or Sponsor)",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["brother", "sponsor"] }
+      },
+      "required": ["uid", "email", "role"]
+    }
+  },
+  "firestore": {
+    "/expenses/{expenseId}": {
+      "schema": "Expense",
+      "description": "Collection of all submitted expenses"
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles and roles"
+    }
+  }
+}

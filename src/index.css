@@ -1,0 +1,29 @@
+@import "tailwindcss";
+
+@theme {
+  --color-poke-blue: #2A75BB;
+  --color-poke-dark-blue: #3C5AA6;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+  body {
+    @apply bg-slate-50 text-slate-900;
+  }
+}
+
+.poke-card {
+  @apply bg-white rounded-xl shadow-sm border-2 border-poke-blue/10 overflow-hidden;
+}
+
+.poke-button-primary {
+  @apply bg-poke-blue text-white px-4 py-2 rounded-lg font-medium hover:bg-poke-dark-blue transition-colors disabled:opacity-50;
+}
+
+.poke-button-secondary {
+  @apply bg-slate-100 text-slate-600 px-4 py-2 rounded-lg font-medium hover:bg-slate-200 transition-colors disabled:opacity-50;
+}
+
+.poke-input {
+  @apply w-full px-3 py-2 border-2 border-slate-200 rounded-lg focus:border-poke-blue focus:outline-none transition-colors;
+}
