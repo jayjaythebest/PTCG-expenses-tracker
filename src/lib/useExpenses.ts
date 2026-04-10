@@ -96,10 +96,32 @@ export function useExpenses() {
     if (error) throw error;
   };
 
+  const uploadExpenseImage = async (id: string, file: File) => {
+    const ext = file.name.split('.').pop();
+    const path = `${Date.now()}.${ext}`;
+
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('receipts')
+      .upload(path, file, { upsert: false });
+
+    if (uploadError) throw uploadError;
+
+    const { data: urlData } = supabase.storage
+      .from('receipts')
+      .getPublicUrl(uploadData.path);
+
+    const { error } = await supabase
+      .from('expenses')
+      .update({ image_url: urlData.publicUrl })
+      .eq('id', id);
+
+    if (error) throw error;
+  };
+
   const deleteExpense = async (id: string) => {
     const { error } = await supabase.from('expenses').delete().eq('id', id);
     if (error) throw error;
   };
 
-  return { expenses, loading, addExpense, updateExpenseStatus, deleteExpense };
+  return { expenses, loading, addExpense, updateExpenseStatus, uploadExpenseImage, deleteExpense };
 }
