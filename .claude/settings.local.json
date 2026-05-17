@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "mcp__Claude_in_Chrome__tabs_context_mcp",
+      "mcp__Claude_in_Chrome__browser_batch",
+      "Bash(ls 'C:\\\\Users\\\\User\\\\OneDrive\\\\Documents\\\\PTCG expenses tracker')",
+      "Bash(cp 'C:\\\\Users\\\\User\\\\OneDrive\\\\Documents\\\\PTCG expenses tracker\\\\.env' 'C:\\\\Users\\\\User\\\\OneDrive\\\\Documents\\\\PTCG expenses tracker\\\\.claude\\\\worktrees\\\\nostalgic-dewdney-32c6fe\\\\.env')",
+      "mcp__Claude_in_Chrome__computer",
+      "mcp__Claude_in_Chrome__tabs_create_mcp",
+      "mcp__Claude_in_Chrome__tabs_close_mcp",
+      "Bash(git add *)"
+    ]
+  }
+}
