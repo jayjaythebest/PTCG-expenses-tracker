@@ -1,56 +1,88 @@
+import { useState } from 'react';
 import { AuthProvider, useAuth } from './lib/AuthContext';
-import { ExpenseForm } from './components/ExpenseForm';
 import { ExpenseList } from './components/ExpenseList';
 import { Dashboard } from './components/Dashboard';
-import { LogOut, Shield, User as UserIcon, Zap } from 'lucide-react';
+import { ExpenseForm } from './components/ExpenseForm';
+import { BarChart2, Plus, List } from 'lucide-react';
 import { cn } from './lib/utils';
+
+type Tab = 'dashboard' | 'list';
 
 function AppContent() {
   const { loading } = useAuth();
+  const [tab, setTab] = useState<Tab>('list');
+  const [showForm, setShowForm] = useState(false);
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-poke-blue"></div>
+      <div className="fixed inset-0 flex items-center justify-center bg-notion-bg">
+        <div className="h-7 w-7 rounded-full border-2 border-poke-blue border-t-transparent animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-12">
-      {/* Header */}
-      <header className="bg-white border-b-2 border-poke-blue/10 sticky top-0 z-10">
-        <div className="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-poke-blue rounded-full flex items-center justify-center shadow-sm">
-              <Zap className="w-5 h-5 text-white fill-white" />
-            </div>
-            <span className="font-black text-xl text-poke-dark-blue tracking-tight">寶可夢支出追蹤</span>
-          </div>
+    <div className="fixed inset-0 flex flex-col bg-notion-bg">
+      {/* iOS status-bar safe area */}
+      <div className="safe-top shrink-0 bg-notion-bg" />
+
+      {/* Top header */}
+      <header className="shrink-0 flex items-center gap-2.5 px-4 h-12 border-b border-notion-border bg-notion-bg">
+        <div className="w-7 h-7 rounded-lg bg-poke-blue flex items-center justify-center shrink-0">
+          <span className="text-white text-xs font-black select-none">P</span>
         </div>
+        <span className="font-semibold text-notion-text text-[17px] leading-none">
+          寶可夢支出追蹤
+        </span>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 py-8">
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-slate-900 mb-1 tracking-tight">
-            日本留學支出追蹤
-          </h1>
-          <p className="text-slate-500">
-            記錄所有寶可夢卡片、卡盒及賽事相關支出。
-          </p>
-        </div>
-
-        <Dashboard />
-
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
-          <div className="lg:col-span-2">
-            <ExpenseForm />
-          </div>
-          <div className="lg:col-span-3">
-            <ExpenseList />
-          </div>
-        </div>
+      {/* Scrollable content */}
+      <main className="flex-1 overflow-y-auto overscroll-y-contain">
+        {tab === 'dashboard' ? <Dashboard /> : <ExpenseList />}
       </main>
+
+      {/* Bottom navigation */}
+      <nav className="shrink-0 border-t border-notion-border bg-notion-bg/95 backdrop-blur-sm">
+        <div className="flex items-center h-[49px]">
+          {/* 概覽 */}
+          <button
+            onClick={() => setTab('dashboard')}
+            className={cn(
+              'flex-1 flex flex-col items-center justify-center gap-[3px] h-full transition-colors',
+              tab === 'dashboard' ? 'text-poke-blue' : 'text-notion-muted'
+            )}
+          >
+            <BarChart2 className="w-[22px] h-[22px]" />
+            <span className="text-[10px] font-medium tracking-tight">概覽</span>
+          </button>
+
+          {/* Centre add button — floats up */}
+          <div className="flex-1 flex items-center justify-center">
+            <button
+              onClick={() => setShowForm(true)}
+              className="w-[52px] h-[52px] rounded-[16px] bg-poke-blue shadow-lg shadow-poke-blue/30 flex items-center justify-center -mt-6 active:scale-95 transition-transform"
+            >
+              <Plus className="w-6 h-6 text-white" strokeWidth={2.5} />
+            </button>
+          </div>
+
+          {/* 記錄 */}
+          <button
+            onClick={() => setTab('list')}
+            className={cn(
+              'flex-1 flex flex-col items-center justify-center gap-[3px] h-full transition-colors',
+              tab === 'list' ? 'text-poke-blue' : 'text-notion-muted'
+            )}
+          >
+            <List className="w-[22px] h-[22px]" />
+            <span className="text-[10px] font-medium tracking-tight">記錄</span>
+          </button>
+        </div>
+        <div className="safe-bottom bg-notion-bg" />
+      </nav>
+
+      {/* Add expense bottom sheet */}
+      {showForm && <ExpenseForm onClose={() => setShowForm(false)} />}
     </div>
   );
 }

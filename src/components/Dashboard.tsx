@@ -1,96 +1,120 @@
 import { useExpenses } from '../lib/useExpenses';
-import { Wallet, TrendingUp, ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
+
+const CATEGORY_EMOJI: Record<string, string> = {
+  Card: '🃏',
+  Box: '📦',
+  Tournament: '🏆',
+};
+
+const CATEGORY_LABEL: Record<string, string> = {
+  Card: '單張卡片',
+  Box: '整盒/擴充包',
+  Tournament: '賽事報名費',
+};
+
+function catEmoji(c: string) { return CATEGORY_EMOJI[c] ?? '📌'; }
+function catLabel(c: string) { return CATEGORY_LABEL[c] ?? c; }
 
 export function Dashboard() {
   const { expenses } = useExpenses();
 
   const totalExpense = expenses
-    .filter(e => e.type === 'Expense' || !e.type) // Default to expense if type missing
-    .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    .filter(e => e.type === 'Expense' || !e.type)
+    .reduce((s, e) => s + (Number(e.amount) || 0), 0);
 
   const totalIncome = expenses
     .filter(e => e.type === 'Income')
-    .reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+    .reduce((s, e) => s + (Number(e.amount) || 0), 0);
 
   const balance = totalIncome - totalExpense;
 
-  // Group by category
-  const categoryTotals = expenses.reduce((acc, e) => {
-    const cat = e.category;
-    const amount = Number(e.amount) || 0;
-    const isExpense = e.type === 'Expense' || !e.type;
-    
+  const byCategory = expenses.reduce((acc, e) => {
+    const cat = e.category as string;
+    const amt = Number(e.amount) || 0;
     if (!acc[cat]) acc[cat] = { expense: 0, income: 0 };
-    if (isExpense) acc[cat].expense += amount;
-    else acc[cat].income += amount;
-    
+    if (e.type === 'Income') acc[cat].income += amt;
+    else acc[cat].expense += amt;
     return acc;
-  }, {} as Record<string, { expense: number, income: number }>);
+  }, {} as Record<string, { expense: number; income: number }>);
 
-  const getCategoryLabel = (cat: string) => {
-    switch (cat) {
-      case 'Card': return '單張卡片';
-      case 'Box': return '整盒/擴充包';
-      case 'Tournament': return '賽事報名費';
-      default: return cat;
-    }
-  };
+  const catEntries = Object.entries(byCategory);
 
   return (
-    <div className="space-y-6 mb-8">
-      {/* Balance Card */}
-      <div className="poke-card p-6 bg-poke-blue text-white shadow-lg shadow-poke-blue/20 flex items-center justify-between overflow-hidden relative">
-        <div className="relative z-10">
-          <p className="text-blue-100 font-bold text-sm mb-1 uppercase tracking-wider">目前餘額 (日圓)</p>
-          <h2 className="text-4xl sm:text-5xl font-black tracking-tight">
-            {balance >= 0 ? '+' : ''}¥{balance.toLocaleString()}
-          </h2>
-        </div>
-        <div className="p-4 bg-white/10 rounded-2xl relative z-10">
-          <Wallet className="w-10 h-10" />
-        </div>
-        {/* Decorative background circle */}
-        <div className="absolute -right-10 -bottom-10 w-40 h-40 bg-white/5 rounded-full" />
+    <div className="pb-8">
+      {/* Page title */}
+      <div className="px-4 pt-6 pb-5">
+        <p className="text-[11px] font-semibold text-notion-muted uppercase tracking-widest mb-1">
+          日本留學
+        </p>
+        <h1 className="text-[28px] font-bold text-notion-text leading-tight">支出概覽</h1>
       </div>
 
-      {/* Income/Expense Summary */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="poke-card p-4 border-l-4 border-l-poke-blue">
-          <div className="flex items-center gap-2 text-slate-500 mb-1">
-            <ArrowUpCircle className="w-4 h-4 text-poke-blue" />
-            <span className="text-xs font-black uppercase tracking-wider">總收入</span>
-          </div>
-          <p className="text-xl font-black text-poke-blue">¥{totalIncome.toLocaleString()}</p>
+      {/* Balance hero */}
+      <div className="mx-4 mb-5 bg-poke-blue rounded-2xl px-5 py-5 text-white">
+        <p className="text-blue-200 text-xs font-medium mb-1">目前餘額（日圓）</p>
+        <p className="text-[40px] font-bold tracking-tight leading-none">
+          {balance >= 0 ? '+' : ''}¥{balance.toLocaleString()}
+        </p>
+      </div>
+
+      {/* Income / Expense grid */}
+      <div className="mx-4 grid grid-cols-2 gap-3 mb-6">
+        <div className="bg-notion-bg2 rounded-xl px-4 py-4">
+          <p className="text-[11px] text-notion-muted mb-1 font-medium">總收入</p>
+          <p className="text-[22px] font-bold text-poke-blue leading-none">
+            ¥{totalIncome.toLocaleString()}
+          </p>
         </div>
-        <div className="poke-card p-4 border-l-4 border-l-slate-400">
-          <div className="flex items-center gap-2 text-slate-500 mb-1">
-            <ArrowDownCircle className="w-4 h-4 text-slate-400" />
-            <span className="text-xs font-black uppercase tracking-wider">總支出</span>
-          </div>
-          <p className="text-xl font-black text-slate-700">¥{totalExpense.toLocaleString()}</p>
+        <div className="bg-notion-bg2 rounded-xl px-4 py-4">
+          <p className="text-[11px] text-notion-muted mb-1 font-medium">總支出</p>
+          <p className="text-[22px] font-bold text-notion-text leading-none">
+            ¥{totalExpense.toLocaleString()}
+          </p>
         </div>
       </div>
 
-      {/* Category Breakdown */}
-      <div className="space-y-3">
-        <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest px-1">分類統計</h3>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {Object.entries(categoryTotals).map(([cat, totals]) => (
-            <div key={cat} className="poke-card p-3 flex flex-col gap-1">
-              <span className="text-[10px] font-black text-slate-400 uppercase truncate">{getCategoryLabel(cat)}</span>
-              <div className="flex flex-col">
-                {totals.income > 0 && <p className="text-xs font-bold text-poke-blue">+{totals.income.toLocaleString()}</p>}
-                {totals.expense > 0 && <p className="text-xs font-bold text-slate-600">-{totals.expense.toLocaleString()}</p>}
+      {/* Category breakdown */}
+      <div className="px-4">
+        <p className="text-[11px] font-semibold text-notion-muted uppercase tracking-widest mb-3">
+          分類統計
+        </p>
+        <div className="rounded-xl border border-notion-border overflow-hidden">
+          {catEntries.length === 0 ? (
+            <div className="py-8 text-center text-sm text-notion-muted">
+              尚無數據，快去新增第一筆記錄吧！
+            </div>
+          ) : (
+            catEntries.map(([cat, totals], i) => (
+              <div
+                key={cat}
+                className={`flex items-center px-4 py-3.5 ${i < catEntries.length - 1 ? 'border-b border-notion-border' : ''}`}
+              >
+                <span className="text-lg mr-3 leading-none">{catEmoji(cat)}</span>
+                <span className="flex-1 text-sm text-notion-text">{catLabel(cat)}</span>
+                <div className="text-right">
+                  {totals.income > 0 && (
+                    <p className="text-sm font-semibold text-poke-blue">
+                      +¥{totals.income.toLocaleString()}
+                    </p>
+                  )}
+                  {totals.expense > 0 && (
+                    <p className="text-sm font-semibold text-notion-muted">
+                      −¥{totals.expense.toLocaleString()}
+                    </p>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
-          {expenses.length === 0 && (
-            <div className="col-span-full text-center py-6 text-slate-400 text-sm italic bg-white rounded-xl border-2 border-dashed border-slate-100">
-              尚無數據可顯示
-            </div>
+            ))
           )}
         </div>
       </div>
+
+      {/* Quick stats footer */}
+      {expenses.length > 0 && (
+        <p className="text-center text-[11px] text-notion-muted mt-5">
+          共 {expenses.length} 筆記錄
+        </p>
+      )}
     </div>
   );
 }
