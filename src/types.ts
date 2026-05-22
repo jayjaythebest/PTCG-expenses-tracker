@@ -17,6 +17,7 @@ export interface Expense {
   title: string;
   category: ExpenseCategory | string;
   amount: number;
+  quantity: number;
   type: ExpenseType;
   date: string;
   status: ExpenseStatus;

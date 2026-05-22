@@ -1,22 +1,45 @@
 import { useState, useRef } from 'react';
 import { useExpenses } from '../lib/useExpenses';
 import { ExpenseCategory, ExpenseType } from '../types';
-import { PlusCircle, Loader2, Camera, X, Minus, Plus } from 'lucide-react';
+import { PlusCircle, Loader2, Camera, X, Minus, Plus, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
+import { PTCG_PRODUCTS, PtcgProduct } from '../data/ptcg-products';
 
 export function ExpenseForm() {
   const { addExpense } = useExpenses();
   const [loading, setLoading] = useState(false);
   const [type, setType] = useState<ExpenseType>('Expense');
   const [title, setTitle] = useState('');
+  const [titleQuery, setTitleQuery] = useState('');
+  const [showPicker, setShowPicker] = useState(false);
   const [amount, setAmount] = useState('');
+  const [quantity, setQuantity] = useState(1);
   const [category, setCategory] = useState<ExpenseCategory | 'Other'>('Card');
   const [customCategory, setCustomCategory] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [notes, setNotes] = useState('');
   const [image, setImage] = useState<{ file: File; preview: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const filteredProducts = PTCG_PRODUCTS.filter(p =>
+    titleQuery === '' ||
+    p.name.includes(titleQuery) ||
+    p.code.toLowerCase().includes(titleQuery.toLowerCase()) ||
+    p.series.includes(titleQuery)
+  );
+
+  const grouped = filteredProducts.reduce<Record<string, PtcgProduct[]>>((acc, p) => {
+    if (!acc[p.series]) acc[p.series] = [];
+    acc[p.series].push(p);
+    return acc;
+  }, {});
+
+  const selectProduct = (p: PtcgProduct) => {
+    setTitle(p.name);
+    setTitleQuery(p.name);
+    setShowPicker(false);
+  };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -41,6 +64,7 @@ export function ExpenseForm() {
         {
           title,
           amount: Number(amount),
+          quantity: category === 'Box' ? quantity : 1,
           type,
           category: category === 'Other' ? customCategory : category,
           date: new Date(date).toISOString(),
@@ -49,7 +73,9 @@ export function ExpenseForm() {
         image?.file,
       );
       setTitle('');
+      setTitleQuery('');
       setAmount('');
+      setQuantity(1);
       setCustomCategory('');
       setNotes('');
       if (image) URL.revokeObjectURL(image.preview);
@@ -99,20 +125,61 @@ export function ExpenseForm() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-5">
+        {/* Title — product combobox */}
         <div>
-          <label className="block text-sm font-bold text-slate-700 mb-1.5">項目名稱</label>
-          <input
-            type="text"
-            className="poke-input text-base"
-            placeholder={type === 'Expense' ? "例如：VSTAR Universe 擴充包" : "例如：賣出 噴火龍 VMAX"}
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            required
-          />
+          <label className="block text-sm font-bold text-slate-700 mb-1.5">商品名稱</label>
+          <div className="relative">
+            <input
+              type="text"
+              className="poke-input text-base pr-9"
+              placeholder={type === 'Expense' ? "搜尋商品或自行輸入…" : "例如：賣出 噴火龍 VMAX"}
+              value={titleQuery}
+              onChange={e => { setTitleQuery(e.target.value); setTitle(e.target.value); }}
+              onFocus={() => setShowPicker(true)}
+              onBlur={() => setTimeout(() => setShowPicker(false), 150)}
+              required
+            />
+            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+
+            <AnimatePresence>
+              {showPicker && filteredProducts.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.12 }}
+                  className="absolute z-30 w-full mt-1 bg-white border-2 border-slate-200 rounded-xl shadow-lg overflow-hidden max-h-64 overflow-y-auto"
+                >
+                  {Object.entries(grouped).map(([series, products]) => (
+                    <div key={series}>
+                      <div className="px-3 py-1.5 text-[10px] font-black text-slate-400 uppercase tracking-wider bg-slate-50 sticky top-0">
+                        {series}
+                      </div>
+                      {products.map(p => (
+                        <button
+                          key={`${p.code}-${p.name}`}
+                          type="button"
+                          onPointerDown={e => e.preventDefault()}
+                          onClick={() => selectProduct(p)}
+                          className="w-full text-left px-3 py-2.5 hover:bg-poke-blue/5 flex items-center justify-between gap-2 border-b border-slate-50 last:border-0"
+                        >
+                          <span className="font-bold text-sm text-slate-800">{p.name}</span>
+                          <span className="text-[10px] text-slate-400 flex-shrink-0 font-mono">{p.code}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
 
+        {/* Amount */}
         <div>
-          <label className="block text-sm font-bold text-slate-700 mb-1.5">金額 (¥)</label>
+          <label className="block text-sm font-bold text-slate-700 mb-1.5">
+            金額 (¥){category === 'Box' ? ' — 每盒單價' : ''}
+          </label>
           <input
             type="number"
             inputMode="numeric"
@@ -124,6 +191,7 @@ export function ExpenseForm() {
           />
         </div>
 
+        {/* Category */}
         <div>
           <label className="block text-sm font-bold text-slate-700 mb-1.5">類別</label>
           <div className="grid grid-cols-2 gap-2">
@@ -133,14 +201,15 @@ export function ExpenseForm() {
               { value: 'Tournament', label: '賽事報名費' },
               { value: 'Other', label: '其他' },
             ].map(({ value, label }) => {
-              const selected = (category === value) || (value === 'Other' && !['Card', 'Box', 'Tournament'].includes(category));
+              const selected = category === value;
               return (
                 <button
                   key={value}
                   type="button"
                   onClick={() => {
-                    setCategory(value as any);
+                    setCategory(value as ExpenseCategory | 'Other');
                     if (value !== 'Other') setCustomCategory('');
+                    if (value !== 'Box') setQuantity(1);
                   }}
                   className={cn(
                     'py-2.5 px-3 rounded-lg border-2 text-sm font-bold transition-all text-center',
@@ -157,6 +226,41 @@ export function ExpenseForm() {
         </div>
 
         <AnimatePresence>
+          {/* Quantity stepper — Box only */}
+          {category === 'Box' && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="overflow-hidden"
+            >
+              <label className="block text-sm font-bold text-slate-700 mb-1.5">數量 (盒)</label>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setQuantity(q => Math.max(1, q - 1))}
+                  className="w-10 h-10 rounded-lg border-2 border-slate-200 flex items-center justify-center text-slate-600 hover:border-poke-blue hover:text-poke-blue transition-colors"
+                >
+                  <Minus className="w-4 h-4" />
+                </button>
+                <span className="text-xl font-black text-slate-800 w-8 text-center">{quantity}</span>
+                <button
+                  type="button"
+                  onClick={() => setQuantity(q => q + 1)}
+                  className="w-10 h-10 rounded-lg border-2 border-slate-200 flex items-center justify-center text-slate-600 hover:border-poke-blue hover:text-poke-blue transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+                {amount && quantity > 1 && (
+                  <span className="text-sm text-slate-500 font-bold ml-1">
+                    = ¥{(Number(amount) * quantity).toLocaleString()}
+                  </span>
+                )}
+              </div>
+            </motion.div>
+          )}
+
+          {/* Custom category */}
           {category === 'Other' && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
