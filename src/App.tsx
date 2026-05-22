@@ -1,12 +1,16 @@
+import { useState } from 'react';
 import { AuthProvider, useAuth } from './lib/AuthContext';
 import { ExpenseForm } from './components/ExpenseForm';
 import { ExpenseList } from './components/ExpenseList';
 import { Dashboard } from './components/Dashboard';
-import { LogOut, Shield, User as UserIcon, Zap } from 'lucide-react';
+import { Zap, ClipboardList, BarChart2 } from 'lucide-react';
 import { cn } from './lib/utils';
+
+type Tab = 'record' | 'analysis';
 
 function AppContent() {
   const { loading } = useAuth();
+  const [tab, setTab] = useState<Tab>('record');
 
   if (loading) {
     return (
@@ -28,28 +32,51 @@ function AppContent() {
             <span className="font-black text-xl text-poke-dark-blue tracking-tight">寶可夢支出追蹤</span>
           </div>
         </div>
+
+        {/* Tab bar */}
+        <div className="max-w-4xl mx-auto px-4 flex border-t border-slate-100">
+          <button
+            onClick={() => setTab('record')}
+            className={cn(
+              'flex items-center gap-2 px-4 py-3 text-sm font-black border-b-2 transition-colors',
+              tab === 'record'
+                ? 'border-poke-blue text-poke-dark-blue'
+                : 'border-transparent text-slate-400 hover:text-slate-600'
+            )}
+          >
+            <ClipboardList className="w-4 h-4" />
+            記帳
+          </button>
+          <button
+            onClick={() => setTab('analysis')}
+            className={cn(
+              'flex items-center gap-2 px-4 py-3 text-sm font-black border-b-2 transition-colors',
+              tab === 'analysis'
+                ? 'border-poke-blue text-poke-dark-blue'
+                : 'border-transparent text-slate-400 hover:text-slate-600'
+            )}
+          >
+            <BarChart2 className="w-4 h-4" />
+            支出分析
+          </button>
+        </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 py-8">
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-slate-900 mb-1 tracking-tight">
-            日本留學支出追蹤
-          </h1>
-          <p className="text-slate-500">
-            記錄所有寶可夢卡片、卡盒及賽事相關支出。
-          </p>
-        </div>
-
-        <Dashboard />
-
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
-          <div className="lg:col-span-2">
-            <ExpenseForm />
+      <main className="max-w-4xl mx-auto px-4 py-6">
+        {tab === 'record' && (
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
+            <div className="lg:col-span-2">
+              <ExpenseForm />
+            </div>
+            <div className="lg:col-span-3">
+              <ExpenseList />
+            </div>
           </div>
-          <div className="lg:col-span-3">
-            <ExpenseList />
-          </div>
-        </div>
+        )}
+
+        {tab === 'analysis' && (
+          <Dashboard />
+        )}
       </main>
     </div>
   );
