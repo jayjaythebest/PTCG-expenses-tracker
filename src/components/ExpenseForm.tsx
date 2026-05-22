@@ -111,35 +111,48 @@ export function ExpenseForm() {
           />
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1.5">金額 (¥)</label>
-            <input
-              type="number"
-              inputMode="numeric"
-              className="poke-input text-base"
-              placeholder="5500"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1.5">類別</label>
-            <select
-              className="poke-input text-base appearance-none"
-              value={category === 'Card' || category === 'Box' || category === 'Tournament' ? category : 'Other'}
-              onChange={(e) => {
-                const val = e.target.value as any;
-                setCategory(val);
-                if (val !== 'Other') setCustomCategory('');
-              }}
-            >
-              <option value="Card">單張卡片</option>
-              <option value="Box">整盒/擴充包</option>
-              <option value="Tournament">賽事報名費</option>
-              <option value="Other">其他</option>
-            </select>
+        <div>
+          <label className="block text-sm font-bold text-slate-700 mb-1.5">金額 (¥)</label>
+          <input
+            type="number"
+            inputMode="numeric"
+            className="poke-input text-base"
+            placeholder="5500"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            required
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-bold text-slate-700 mb-1.5">類別</label>
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              { value: 'Card', label: '單張卡片' },
+              { value: 'Box', label: '整盒/擴充包' },
+              { value: 'Tournament', label: '賽事報名費' },
+              { value: 'Other', label: '其他' },
+            ].map(({ value, label }) => {
+              const selected = (category === value) || (value === 'Other' && !['Card', 'Box', 'Tournament'].includes(category));
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => {
+                    setCategory(value as any);
+                    if (value !== 'Other') setCustomCategory('');
+                  }}
+                  className={cn(
+                    'py-2.5 px-3 rounded-lg border-2 text-sm font-bold transition-all text-center',
+                    selected
+                      ? 'border-poke-blue bg-poke-blue/10 text-poke-dark-blue'
+                      : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'
+                  )}
+                >
+                  {label}
+                </button>
+              );
+            })}
           </div>
         </div>
 
