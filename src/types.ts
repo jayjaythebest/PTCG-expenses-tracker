@@ -25,6 +25,7 @@ export interface Expense {
   submittedBy: string;
   submittedByName: string;
   notes?: string;
+  seriesTag?: string;
   imageUrl?: string;
   createdAt: string;
 }

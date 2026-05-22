@@ -1,10 +1,11 @@
 import { useState, useRef } from 'react';
 import { useExpenses } from '../lib/useExpenses';
 import { ExpenseCategory, ExpenseType } from '../types';
-import { PlusCircle, Loader2, Camera, X, Minus, Plus, ChevronDown } from 'lucide-react';
+import { PlusCircle, Loader2, Camera, X, Minus, Plus, ChevronDown, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { PTCG_PRODUCTS, PtcgProduct } from '../data/ptcg-products';
+import { detectPtcgSeries } from '../lib/gemini';
 
 export function ExpenseForm() {
   const { addExpense } = useExpenses();
@@ -16,6 +17,8 @@ export function ExpenseForm() {
   const [amount, setAmount] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [quantityUnit, setQuantityUnit] = useState<'盒' | '包'>('盒');
+  const [seriesTag, setSeriesTag] = useState('');
+  const [detectingSeries, setDetectingSeries] = useState(false);
   const [category, setCategory] = useState<ExpenseCategory | 'Other'>('Card');
   const [customCategory, setCustomCategory] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -67,6 +70,7 @@ export function ExpenseForm() {
           amount: Number(amount),
           quantity: category === 'Box' ? quantity : 1,
           quantityUnit: category === 'Box' ? quantityUnit : '個',
+          seriesTag: category === 'Box' ? (seriesTag || undefined) : undefined,
           type,
           category: category === 'Other' ? customCategory : category,
           date: new Date(date).toISOString(),
@@ -78,6 +82,7 @@ export function ExpenseForm() {
       setTitleQuery('');
       setAmount('');
       setQuantity(1);
+      setSeriesTag('');
       setCustomCategory('');
       setNotes('');
       if (image) URL.revokeObjectURL(image.preview);
@@ -276,6 +281,39 @@ export function ExpenseForm() {
                     = ¥{(Number(amount) * quantity).toLocaleString()}
                   </span>
                 )}
+              </div>
+              {/* Series tag */}
+              <div className="mt-3">
+                <label className="block text-sm font-bold text-slate-700 mb-1.5">系列/世代</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    className="poke-input text-base flex-1"
+                    placeholder="例如：sv6、s12a"
+                    value={seriesTag}
+                    onChange={e => setSeriesTag(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    disabled={!title || detectingSeries}
+                    onClick={async () => {
+                      setDetectingSeries(true);
+                      try {
+                        const result = await detectPtcgSeries(title);
+                        setSeriesTag(result);
+                      } catch { /* ignore */ } finally {
+                        setDetectingSeries(false);
+                      }
+                    }}
+                    className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg bg-poke-blue/10 text-poke-dark-blue text-sm font-bold hover:bg-poke-blue/20 transition-colors disabled:opacity-40"
+                  >
+                    {detectingSeries
+                      ? <Loader2 className="w-4 h-4 animate-spin" />
+                      : <Sparkles className="w-4 h-4" />
+                    }
+                    AI 判斷
+                  </button>
+                </div>
               </div>
             </motion.div>
           )}

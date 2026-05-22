@@ -18,6 +18,7 @@ function mapRow(row: Record<string, unknown>): Expense {
     submittedBy:       row.submitted_by as string,
     submittedByName:   row.submitted_by_name as string,
     notes:             row.notes as string | undefined,
+    seriesTag:         row.series_tag as string | undefined,
     imageUrl:          row.image_url as string | undefined,
     createdAt:         row.created_at as string,
   };
@@ -86,6 +87,7 @@ export function useExpenses() {
       type:               expense.type,
       date:               expense.date,
       notes:              expense.notes ?? null,
+      series_tag:         expense.seriesTag ?? null,
       image_url:          imageUrl ?? null,
       status:             'Approved',
       submitted_by:       'public-user',
@@ -122,10 +124,35 @@ export function useExpenses() {
     if (error) throw error;
   };
 
+  const updateExpense = async (id: string, updates: {
+    title?: string;
+    amount?: number;
+    quantity?: number;
+    quantityUnit?: string;
+    category?: string;
+    type?: Expense['type'];
+    date?: string;
+    notes?: string;
+    seriesTag?: string | null;
+  }) => {
+    const dbUpdates: Record<string, unknown> = {};
+    if (updates.title !== undefined)        dbUpdates.title = updates.title;
+    if (updates.amount !== undefined)       dbUpdates.amount = updates.amount;
+    if (updates.quantity !== undefined)     dbUpdates.quantity = updates.quantity;
+    if (updates.quantityUnit !== undefined) dbUpdates.quantity_unit = updates.quantityUnit;
+    if (updates.category !== undefined)     dbUpdates.category = updates.category;
+    if (updates.type !== undefined)         dbUpdates.type = updates.type;
+    if (updates.date !== undefined)         dbUpdates.date = updates.date;
+    if (updates.notes !== undefined)        dbUpdates.notes = updates.notes || null;
+    if ('seriesTag' in updates)             dbUpdates.series_tag = updates.seriesTag ?? null;
+    const { error } = await supabase.from('expenses').update(dbUpdates).eq('id', id);
+    if (error) throw error;
+  };
+
   const deleteExpense = async (id: string) => {
     const { error } = await supabase.from('expenses').delete().eq('id', id);
     if (error) throw error;
   };
 
-  return { expenses, loading, addExpense, updateExpenseStatus, uploadExpenseImage, deleteExpense };
+  return { expenses, loading, addExpense, updateExpense, updateExpenseStatus, uploadExpenseImage, deleteExpense };
 }

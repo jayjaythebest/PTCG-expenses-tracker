@@ -1,12 +1,16 @@
 import { useState, useRef } from 'react';
 import { useExpenses } from '../lib/useExpenses';
+import { Expense } from '../types';
 import { format } from 'date-fns';
-import { Trash2, Tag, Camera, ImageIcon, Loader2 } from 'lucide-react';
+import { Trash2, Tag, Camera, ImageIcon, Loader2, Pencil } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { AnimatePresence } from 'motion/react';
+import { ExpenseEditModal } from './ExpenseEditModal';
 
 export function ExpenseList() {
   const { expenses, loading, deleteExpense, uploadExpenseImage } = useExpenses();
   const [uploadingId, setUploadingId] = useState<string | null>(null);
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const pendingIdRef = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -75,6 +79,15 @@ export function ExpenseList() {
   };
 
   return (
+    <>
+    <AnimatePresence>
+      {editingExpense && (
+        <ExpenseEditModal
+          expense={editingExpense}
+          onClose={() => setEditingExpense(null)}
+        />
+      )}
+    </AnimatePresence>
     <div className="space-y-4">
       {/* Hidden file input shared across all rows */}
       <input
@@ -105,10 +118,15 @@ export function ExpenseList() {
                   </div>
                   <div className="min-w-0">
                     <h3 className="font-bold text-slate-900 truncate text-sm sm:text-base">{expense.title}</h3>
-                    <div className="flex items-center gap-2 text-[10px] sm:text-xs text-slate-400 font-bold">
+                    <div className="flex items-center gap-2 text-[10px] sm:text-xs text-slate-400 font-bold flex-wrap">
                       <span className="uppercase">{getCategoryText(expense.category as string)}</span>
                       {expense.category === 'Box' && expense.quantity > 1 && (
                         <span className="text-poke-blue">{expense.quantity}{expense.quantityUnit}</span>
+                      )}
+                      {expense.seriesTag && (
+                        <span className="px-1.5 py-0.5 rounded bg-poke-blue/10 text-poke-dark-blue font-black text-[10px]">
+                          {expense.seriesTag}
+                        </span>
                       )}
                       <span>•</span>
                       <span>{format(new Date(expense.date), 'MM/dd')}</span>
@@ -131,6 +149,15 @@ export function ExpenseList() {
                       </p>
                     )}
                   </div>
+
+                  {/* Edit button */}
+                  <button
+                    onClick={() => setEditingExpense(expense)}
+                    className="p-2 text-slate-300 hover:text-poke-blue hover:bg-blue-50 transition-colors rounded-lg"
+                    title="編輯"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
 
                   {/* Photo button */}
                   <button
@@ -195,5 +222,6 @@ export function ExpenseList() {
         })}
       </div>
     </div>
+    </>
   );
 }
