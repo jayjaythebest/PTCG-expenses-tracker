@@ -107,6 +107,9 @@ export function ExpenseList() {
                     <h3 className="font-bold text-slate-900 truncate text-sm sm:text-base">{expense.title}</h3>
                     <div className="flex items-center gap-2 text-[10px] sm:text-xs text-slate-400 font-bold">
                       <span className="uppercase">{getCategoryText(expense.category as string)}</span>
+                      {expense.category === 'Box' && expense.quantity > 1 && (
+                        <span className="text-poke-blue">{expense.quantity}{expense.quantityUnit}</span>
+                      )}
                       <span>•</span>
                       <span>{format(new Date(expense.date), 'MM/dd')}</span>
                     </div>
@@ -115,12 +118,19 @@ export function ExpenseList() {
 
                 {/* Right: amount + actions */}
                 <div className="flex items-center gap-1 flex-shrink-0">
-                  <p className={cn(
-                    "font-black text-sm sm:text-base mr-1",
-                    isIncome ? "text-poke-blue" : "text-slate-700"
-                  )}>
-                    {isIncome ? '+' : '-'}¥{Number(expense.amount).toLocaleString()}
-                  </p>
+                  <div className="flex flex-col items-end mr-1">
+                    <p className={cn(
+                      "font-black text-sm sm:text-base",
+                      isIncome ? "text-poke-blue" : "text-slate-700"
+                    )}>
+                      {isIncome ? '+' : '-'}¥{(Number(expense.amount) * expense.quantity).toLocaleString()}
+                    </p>
+                    {expense.category === 'Box' && expense.quantity > 1 && (
+                      <p className="text-[10px] text-slate-400 font-bold">
+                        ¥{Number(expense.amount).toLocaleString()} × {expense.quantity}{expense.quantityUnit}
+                      </p>
+                    )}
+                  </div>
 
                   {/* Photo button */}
                   <button
