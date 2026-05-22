@@ -15,6 +15,7 @@ export function ExpenseForm() {
   const [showPicker, setShowPicker] = useState(false);
   const [amount, setAmount] = useState('');
   const [quantity, setQuantity] = useState(1);
+  const [quantityUnit, setQuantityUnit] = useState<'盒' | '包'>('盒');
   const [category, setCategory] = useState<ExpenseCategory | 'Other'>('Card');
   const [customCategory, setCustomCategory] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
@@ -65,6 +66,7 @@ export function ExpenseForm() {
           title,
           amount: Number(amount),
           quantity: category === 'Box' ? quantity : 1,
+          quantityUnit: category === 'Box' ? quantityUnit : '個',
           type,
           category: category === 'Other' ? customCategory : category,
           date: new Date(date).toISOString(),
@@ -209,7 +211,7 @@ export function ExpenseForm() {
                   onClick={() => {
                     setCategory(value as ExpenseCategory | 'Other');
                     if (value !== 'Other') setCustomCategory('');
-                    if (value !== 'Box') setQuantity(1);
+                    if (value !== 'Box') { setQuantity(1); setQuantityUnit('盒'); }
                   }}
                   className={cn(
                     'py-2.5 px-3 rounded-lg border-2 text-sm font-bold transition-all text-center',
@@ -226,7 +228,7 @@ export function ExpenseForm() {
         </div>
 
         <AnimatePresence>
-          {/* Quantity stepper — Box only */}
+          {/* Quantity stepper + unit toggle — Box only */}
           {category === 'Box' && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
@@ -234,8 +236,26 @@ export function ExpenseForm() {
               exit={{ opacity: 0, height: 0 }}
               className="overflow-hidden"
             >
-              <label className="block text-sm font-bold text-slate-700 mb-1.5">數量 (盒)</label>
+              <label className="block text-sm font-bold text-slate-700 mb-1.5">數量</label>
               <div className="flex items-center gap-3">
+                {/* Unit toggle */}
+                <div className="flex p-0.5 bg-slate-100 rounded-lg">
+                  {(['盒', '包'] as const).map(u => (
+                    <button
+                      key={u}
+                      type="button"
+                      onClick={() => setQuantityUnit(u)}
+                      className={cn(
+                        'px-3 py-1.5 rounded-md text-sm font-bold transition-all',
+                        quantityUnit === u
+                          ? 'bg-white text-slate-700 shadow-sm'
+                          : 'text-slate-400 hover:text-slate-600'
+                      )}
+                    >
+                      {u}
+                    </button>
+                  ))}
+                </div>
                 <button
                   type="button"
                   onClick={() => setQuantity(q => Math.max(1, q - 1))}
@@ -252,7 +272,7 @@ export function ExpenseForm() {
                   <Plus className="w-4 h-4" />
                 </button>
                 {amount && quantity > 1 && (
-                  <span className="text-sm text-slate-500 font-bold ml-1">
+                  <span className="text-sm text-slate-500 font-bold">
                     = ¥{(Number(amount) * quantity).toLocaleString()}
                   </span>
                 )}

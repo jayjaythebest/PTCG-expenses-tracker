@@ -108,7 +108,7 @@ export function ExpenseList() {
                     <div className="flex items-center gap-2 text-[10px] sm:text-xs text-slate-400 font-bold">
                       <span className="uppercase">{getCategoryText(expense.category as string)}</span>
                       {expense.category === 'Box' && expense.quantity > 1 && (
-                        <span className="text-poke-blue">{expense.quantity}盒</span>
+                        <span className="text-poke-blue">{expense.quantity}{expense.quantityUnit}</span>
                       )}
                       <span>•</span>
                       <span>{format(new Date(expense.date), 'MM/dd')}</span>
@@ -127,7 +127,7 @@ export function ExpenseList() {
                     </p>
                     {expense.category === 'Box' && expense.quantity > 1 && (
                       <p className="text-[10px] text-slate-400 font-bold">
-                        ¥{Number(expense.amount).toLocaleString()} × {expense.quantity}
+                        ¥{Number(expense.amount).toLocaleString()} × {expense.quantity}{expense.quantityUnit}
                       </p>
                     )}
                   </div>

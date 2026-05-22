@@ -15,6 +15,7 @@ create table public.expenses (
   submitted_by       text   not null default 'public-user',
   submitted_by_name  text   not null default '使用者',
   quantity      integer     not null default 1,
+  quantity_unit text        not null default '盒',
   notes         text,
   image_url     text,
   created_at    timestamptz default now()
