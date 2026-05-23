@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useExpenses } from '../lib/useExpenses';
 import { ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
-import { startOfMonth, startOfQuarter, startOfYear, isAfter } from 'date-fns';
+import { startOfMonth, startOfQuarter, startOfYear, isAfter, subMonths, format } from 'date-fns';
 import { cn } from '../lib/utils';
 import { Expense } from '../types';
 import { PTCG_PRODUCTS } from '../data/ptcg-products';
@@ -79,6 +79,22 @@ export function Dashboard() {
     return acc;
   }, {} as Record<string, { expense: number; income: number }>);
 
+  // Monthly trend — always last 12 months, ignores period/cat filter
+  const monthBuckets = Array.from({ length: 12 }, (_, i) => {
+    const d = subMonths(startOfMonth(new Date()), 11 - i);
+    return { label: format(d, 'M月'), yearMonth: format(d, 'yyyy-MM'), expense: 0, income: 0 };
+  });
+  expenses.forEach(e => {
+    const ym = format(new Date(e.date), 'yyyy-MM');
+    const bucket = monthBuckets.find(b => b.yearMonth === ym);
+    if (!bucket) return;
+    const amount = Number(e.amount) * (e.quantity ?? 1);
+    if (e.type === 'Expense' || !e.type) bucket.expense += amount;
+    else bucket.income += amount;
+  });
+  const maxMonthExpense = Math.max(...monthBuckets.map(b => b.expense), 1);
+  const hasMonthData = monthBuckets.some(b => b.expense > 0 || b.income > 0);
+
   const seriesTotals = periodFiltered
     .filter(e => (e.category as string) === 'Box')
     .reduce((acc, e) => {
@@ -150,6 +166,53 @@ export function Dashboard() {
           <p className="text-xl font-black text-slate-700">¥{totalExpense.toLocaleString()}</p>
         </div>
       </div>
+
+      {/* Monthly trend chart */}
+      {hasMonthData && (
+        <div className="space-y-3">
+          <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest px-1">月度花費趨勢</h3>
+          <div className="poke-card px-4 pt-4 pb-3">
+            <div className="flex items-end gap-1 h-28">
+              {monthBuckets.map(bucket => {
+                const pct = bucket.expense / maxMonthExpense;
+                const abbreviated = bucket.expense >= 10000
+                  ? `${(bucket.expense / 10000).toFixed(1)}万`
+                  : bucket.expense >= 1000
+                    ? `${(bucket.expense / 1000).toFixed(0)}k`
+                    : bucket.expense > 0 ? `${bucket.expense}` : '';
+                return (
+                  <div key={bucket.yearMonth} className="flex-1 flex flex-col items-center gap-0.5 min-w-0">
+                    {bucket.expense > 0 && (
+                      <span className="text-[9px] font-bold text-slate-400 leading-none">{abbreviated}</span>
+                    )}
+                    <div className="w-full flex-1 flex flex-col justify-end">
+                      <div
+                        className={cn(
+                          'w-full rounded-t-sm transition-all duration-500',
+                          bucket.expense > 0 ? 'bg-poke-blue' : 'bg-slate-100'
+                        )}
+                        style={{ height: bucket.expense > 0 ? `${Math.max(pct * 100, 4)}%` : '4%' }}
+                      />
+                    </div>
+                    {bucket.income > 0 && (
+                      <div className="w-full h-1 bg-blue-300 rounded-full mt-0.5" title={`+¥${bucket.income.toLocaleString()}`} />
+                    )}
+                    <span className="text-[9px] text-slate-400 font-bold mt-1 leading-none">{bucket.label}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex items-center gap-3 mt-2 pt-2 border-t border-slate-100">
+              <span className="flex items-center gap-1 text-[10px] text-slate-400 font-bold">
+                <span className="w-2.5 h-2.5 rounded-sm bg-poke-blue inline-block" /> 支出
+              </span>
+              <span className="flex items-center gap-1 text-[10px] text-slate-400 font-bold">
+                <span className="w-2.5 h-1 rounded-full bg-blue-300 inline-block" /> 收入
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Category breakdown (always by period, not cat filter) */}
       <div className="space-y-3">
