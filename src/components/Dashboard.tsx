@@ -181,7 +181,7 @@ export function Dashboard() {
                     ? `${(bucket.expense / 1000).toFixed(0)}k`
                     : bucket.expense > 0 ? `${bucket.expense}` : '';
                 return (
-                  <div key={bucket.yearMonth} className="flex-1 flex flex-col items-center gap-0.5 min-w-0">
+                  <div key={bucket.yearMonth} className="flex-1 h-full flex flex-col items-center gap-0.5 min-w-0">
                     {bucket.expense > 0 && (
                       <span className="text-[9px] font-bold text-slate-400 leading-none">{abbreviated}</span>
                     )}
