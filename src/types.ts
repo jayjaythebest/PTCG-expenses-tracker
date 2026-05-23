@@ -1,5 +1,25 @@
 export type UserRole = 'brother' | 'sponsor';
 
+export type CollectionItemType = 'single' | 'box' | 'pack';
+export type CollectionCondition = 'mint' | 'nm' | 'lp' | 'mp';
+
+export interface CollectionItem {
+  id: string;
+  name: string;
+  setName: string;
+  series: string;
+  cardNumber?: string;
+  rarity?: string;
+  itemType: CollectionItemType;
+  condition?: CollectionCondition;
+  quantity: number;
+  purchasePrice?: number;
+  currentValue?: number;
+  notes?: string;
+  imageUrl?: string;
+  createdAt: string;
+}
+
 export interface UserProfile {
   uid: string;
   email: string;

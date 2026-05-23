@@ -1,0 +1,100 @@
+import { useState, useEffect, useRef } from 'react';
+import { supabase } from './supabase';
+import { CollectionItem } from '../types';
+
+let channelCounter = 0;
+
+function mapRow(row: Record<string, unknown>): CollectionItem {
+  return {
+    id:            row.id as string,
+    name:          row.name as string,
+    setName:       (row.set_name as string | null) ?? '',
+    series:        (row.series as string | null) ?? '',
+    cardNumber:    row.card_number as string | undefined,
+    rarity:        row.rarity as string | undefined,
+    itemType:      row.item_type as CollectionItem['itemType'],
+    condition:     row.condition as CollectionItem['condition'] | undefined,
+    quantity:      (row.quantity as number | null) ?? 1,
+    purchasePrice: row.purchase_price as number | undefined,
+    currentValue:  row.current_value as number | undefined,
+    notes:         row.notes as string | undefined,
+    imageUrl:      row.image_url as string | undefined,
+    createdAt:     row.created_at as string,
+  };
+}
+
+type CollectionInput = Omit<CollectionItem, 'id' | 'createdAt'>;
+
+export function useCollection() {
+  const [items, setItems] = useState<CollectionItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const channelName = useRef(`collection-${++channelCounter}`).current;
+
+  async function fetchItems() {
+    const { data, error } = await supabase
+      .from('collection_items')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Supabase error:', error);
+    } else {
+      setItems((data ?? []).map(mapRow));
+    }
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    fetchItems();
+
+    const channel = supabase
+      .channel(channelName)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'collection_items' }, fetchItems)
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
+  const addItem = async (item: CollectionInput) => {
+    const { error } = await supabase.from('collection_items').insert({
+      name:           item.name,
+      set_name:       item.setName,
+      series:         item.series,
+      card_number:    item.cardNumber ?? null,
+      rarity:         item.rarity ?? null,
+      item_type:      item.itemType,
+      condition:      item.condition ?? null,
+      quantity:       item.quantity,
+      purchase_price: item.purchasePrice ?? null,
+      current_value:  item.currentValue ?? null,
+      notes:          item.notes ?? null,
+      image_url:      item.imageUrl ?? null,
+    });
+    if (error) throw error;
+  };
+
+  const updateItem = async (id: string, updates: Partial<CollectionInput>) => {
+    const dbUpdates: Record<string, unknown> = {};
+    if (updates.name !== undefined)          dbUpdates.name = updates.name;
+    if (updates.setName !== undefined)       dbUpdates.set_name = updates.setName;
+    if (updates.series !== undefined)        dbUpdates.series = updates.series;
+    if ('cardNumber' in updates)             dbUpdates.card_number = updates.cardNumber ?? null;
+    if ('rarity' in updates)                 dbUpdates.rarity = updates.rarity ?? null;
+    if (updates.itemType !== undefined)      dbUpdates.item_type = updates.itemType;
+    if ('condition' in updates)              dbUpdates.condition = updates.condition ?? null;
+    if (updates.quantity !== undefined)      dbUpdates.quantity = updates.quantity;
+    if ('purchasePrice' in updates)          dbUpdates.purchase_price = updates.purchasePrice ?? null;
+    if ('currentValue' in updates)           dbUpdates.current_value = updates.currentValue ?? null;
+    if ('notes' in updates)                  dbUpdates.notes = updates.notes ?? null;
+
+    const { error } = await supabase.from('collection_items').update(dbUpdates).eq('id', id);
+    if (error) throw error;
+  };
+
+  const deleteItem = async (id: string) => {
+    const { error } = await supabase.from('collection_items').delete().eq('id', id);
+    if (error) throw error;
+  };
+
+  return { items, loading, addItem, updateItem, deleteItem };
+}
