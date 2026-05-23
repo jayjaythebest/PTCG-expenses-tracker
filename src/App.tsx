@@ -3,10 +3,11 @@ import { AuthProvider, useAuth } from './lib/AuthContext';
 import { ExpenseForm } from './components/ExpenseForm';
 import { ExpenseList } from './components/ExpenseList';
 import { Dashboard } from './components/Dashboard';
-import { Zap, ClipboardList, BarChart2 } from 'lucide-react';
+import { Collection } from './components/Collection';
+import { Zap, ClipboardList, BarChart2, Star } from 'lucide-react';
 import { cn } from './lib/utils';
 
-type Tab = 'record' | 'analysis';
+type Tab = 'record' | 'analysis' | 'collection';
 
 function AppContent() {
   const { loading } = useAuth();
@@ -59,6 +60,18 @@ function AppContent() {
             <BarChart2 className="w-4 h-4" />
             支出分析
           </button>
+          <button
+            onClick={() => setTab('collection')}
+            className={cn(
+              'flex items-center gap-2 px-4 py-3 text-sm font-black border-b-2 transition-colors',
+              tab === 'collection'
+                ? 'border-poke-blue text-poke-dark-blue'
+                : 'border-transparent text-slate-400 hover:text-slate-600'
+            )}
+          >
+            <Star className="w-4 h-4" />
+            收藏庫
+          </button>
         </div>
       </header>
 
@@ -76,6 +89,10 @@ function AppContent() {
 
         {tab === 'analysis' && (
           <Dashboard />
+        )}
+
+        {tab === 'collection' && (
+          <Collection />
         )}
       </main>
     </div>

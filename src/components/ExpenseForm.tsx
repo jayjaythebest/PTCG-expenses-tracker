@@ -208,6 +208,57 @@ export function ExpenseForm() {
           />
         </div>
 
+        {/* Date */}
+        <div>
+          <label className="block text-sm font-bold text-slate-700 mb-1.5">消費日期</label>
+          <div className="flex gap-2 mb-2">
+            {[
+              { label: '今天', offset: 0 },
+              { label: '昨天', offset: 1 },
+              { label: '前天', offset: 2 },
+            ].map(({ label, offset }) => {
+              const d = new Date();
+              d.setDate(d.getDate() - offset);
+              const val = d.toISOString().split('T')[0];
+              return (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => setDate(val)}
+                  className={cn(
+                    'px-3 py-1.5 rounded-lg text-sm font-bold border-2 transition-colors',
+                    date === val
+                      ? 'border-poke-blue bg-poke-blue/10 text-poke-dark-blue'
+                      : 'border-slate-200 text-slate-400 hover:border-slate-300 hover:text-slate-600',
+                  )}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+          <div className="relative">
+            <input
+              type="date"
+              className="poke-input text-base"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              required
+            />
+            {(() => {
+              const today = new Date().toISOString().split('T')[0];
+              if (date === today) return null;
+              const diff = Math.round((new Date(today).getTime() - new Date(date).getTime()) / 86400000);
+              if (diff <= 0) return null;
+              return (
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-amber-500 pointer-events-none">
+                  {diff} 天前
+                </span>
+              );
+            })()}
+          </div>
+        </div>
+
         {/* Category */}
         <div>
           <label className="block text-sm font-bold text-slate-700 mb-1.5">類別</label>
@@ -355,17 +406,6 @@ export function ExpenseForm() {
             </motion.div>
           )}
         </AnimatePresence>
-
-        <div>
-          <label className="block text-sm font-bold text-slate-700 mb-1.5">日期</label>
-          <input
-            type="date"
-            className="poke-input text-base"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            required
-          />
-        </div>
 
         <div>
           <label className="block text-sm font-bold text-slate-700 mb-1.5">上傳圖片 (選填)</label>
