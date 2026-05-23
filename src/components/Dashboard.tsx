@@ -4,6 +4,11 @@ import { ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
 import { startOfMonth, startOfQuarter, startOfYear, isAfter } from 'date-fns';
 import { cn } from '../lib/utils';
 import { Expense } from '../types';
+import { PTCG_PRODUCTS } from '../data/ptcg-products';
+
+const CODE_NAME_MAP: Record<string, string> = Object.fromEntries(
+  Array.from(new Map(PTCG_PRODUCTS.map(p => [p.code, p.name])).entries())
+);
 
 type Period = 'month' | 'quarter' | 'year' | 'all';
 
@@ -73,6 +78,22 @@ export function Dashboard() {
     else acc[cat].income += amount;
     return acc;
   }, {} as Record<string, { expense: number; income: number }>);
+
+  const seriesTotals = periodFiltered
+    .filter(e => (e.category as string) === 'Box')
+    .reduce((acc, e) => {
+      const key = e.seriesTag || '未標記';
+      const amount = Number(e.amount) * (e.quantity ?? 1);
+      const isExpense = e.type === 'Expense' || !e.type;
+      if (!acc[key]) acc[key] = { expense: 0, income: 0 };
+      if (isExpense) acc[key].expense += amount;
+      else acc[key].income += amount;
+      return acc;
+    }, {} as Record<string, { expense: number; income: number }>);
+
+  const seriesRows = Object.entries(seriesTotals)
+    .sort((a, b) => b[1].expense - a[1].expense);
+  const maxSeriesExpense = Math.max(...seriesRows.map(([, v]) => v.expense), 1);
 
   return (
     <div className="space-y-4 mb-8">
@@ -150,6 +171,45 @@ export function Dashboard() {
           )}
         </div>
       </div>
+
+      {/* Series breakdown — Box only */}
+      {seriesRows.length > 0 && (
+        <div className="space-y-3">
+          <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest px-1">世代卡包統計</h3>
+          <div className="poke-card divide-y divide-slate-100">
+            {seriesRows.map(([code, totals]) => {
+              const name = code !== '未標記' ? (CODE_NAME_MAP[code] ?? '') : '';
+              const barPct = Math.round((totals.expense / maxSeriesExpense) * 100);
+              return (
+                <div key={code} className="px-4 py-3 flex items-center gap-3">
+                  <div className="w-16 flex-shrink-0">
+                    <span className="text-xs font-black text-poke-dark-blue font-mono">{code}</span>
+                    {name && <p className="text-[10px] text-slate-400 truncate">{name}</p>}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-poke-blue rounded-full transition-all duration-500"
+                        style={{ width: `${barPct}%` }}
+                      />
+                    </div>
+                  </div>
+                  <div className="flex-shrink-0 text-right min-w-[5rem]">
+                    {totals.expense > 0 && (
+                      <p className="text-sm font-black text-slate-700">-¥{totals.expense.toLocaleString()}</p>
+                    )}
+                    {totals.income > 0 && (
+                      <p className={cn('text-xs font-bold text-poke-blue', totals.expense > 0 && 'mt-0.5')}>
+                        +¥{totals.income.toLocaleString()}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
