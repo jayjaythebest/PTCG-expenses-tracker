@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useCollection } from '../lib/useCollection';
 import { CollectionItem, CollectionItemType, CollectionCondition } from '../types';
 import { PTCG_PRODUCTS } from '../data/ptcg-products';
 import { cn } from '../lib/utils';
-import { Plus, Trash2, Pencil, X, Check, TrendingUp, TrendingDown, Package, CreditCard, Layers } from 'lucide-react';
+import { recognizeCardFromPhoto } from '../lib/gemini';
+import { Plus, Trash2, Pencil, X, Check, TrendingUp, TrendingDown, Package, CreditCard, Layers, Camera, Loader2, Sparkles } from 'lucide-react';
 
 const ITEM_TYPE_LABELS: Record<CollectionItemType, string> = {
   single: '單卡',
@@ -83,6 +84,9 @@ function CollectionForm({
   submitting: boolean;
 }) {
   const [form, setForm] = useState<FormState>(initial);
+  const [scanning, setScanning] = useState(false);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const set = (k: keyof FormState, v: unknown) => setForm(f => ({ ...f, [k]: v }));
 
@@ -91,6 +95,32 @@ function CollectionForm({
   const handleSeriesChange = (series: string) => {
     set('series', series);
     set('setName', '');
+  };
+
+  const handlePhotoScan = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      alert('圖片太大，請選擇小於 10MB 的圖片');
+      return;
+    }
+    setPhotoPreview(URL.createObjectURL(file));
+    setScanning(true);
+    try {
+      const result = await recognizeCardFromPhoto(file);
+      setForm(f => ({
+        ...f,
+        name:       result.name       || f.name,
+        setName:    result.setName    || f.setName,
+        cardNumber: result.cardNumber || f.cardNumber,
+        rarity:     result.rarity     || f.rarity,
+      }));
+    } catch (err) {
+      console.error(err);
+      alert('AI 讀取失敗，請手動輸入');
+    } finally {
+      setScanning(false);
+    }
   };
 
   return (
@@ -117,6 +147,43 @@ function CollectionForm({
           </button>
         ))}
       </div>
+
+      {/* Photo scan — single only */}
+      {form.itemType === 'single' && (
+        <div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={handlePhotoScan}
+          />
+          <button
+            type="button"
+            disabled={scanning}
+            onClick={() => { if (fileInputRef.current) { fileInputRef.current.value = ''; fileInputRef.current.click(); } }}
+            className={cn(
+              'w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-dashed font-bold text-sm transition-colors',
+              scanning
+                ? 'border-poke-blue/40 bg-poke-blue/5 text-poke-blue cursor-wait'
+                : 'border-slate-200 text-slate-400 hover:border-poke-blue hover:text-poke-blue hover:bg-poke-blue/5',
+            )}
+          >
+            {scanning ? (
+              <><Loader2 className="w-4 h-4 animate-spin" /><span>AI 辨識中...</span></>
+            ) : (
+              <><Camera className="w-4 h-4" /><Sparkles className="w-3.5 h-3.5" /><span>拍照 / 選圖，自動填入資料</span></>
+            )}
+          </button>
+          {photoPreview && !scanning && (
+            <div className="mt-2 flex items-center gap-3 p-2 bg-emerald-50 border border-emerald-200 rounded-lg">
+              <img src={photoPreview} alt="card" className="w-12 h-16 object-cover rounded-md border border-emerald-300 flex-shrink-0" />
+              <p className="text-xs text-emerald-700 font-bold">AI 讀取完成，請確認下方欄位並修正</p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Name */}
       <div>
