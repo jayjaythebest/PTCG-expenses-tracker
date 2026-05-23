@@ -5,6 +5,7 @@ import { X, Loader2, Minus, Plus, Sparkles } from 'lucide-react';
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
 import { detectPtcgSeries } from '../lib/gemini';
+import { PTCG_PRODUCTS } from '../data/ptcg-products';
 
 interface Props {
   expense: Expense;
@@ -33,6 +34,15 @@ export function ExpenseEditModal({ expense, onClose }: Props) {
 
   const isCustomCategory = !['Card', 'Box', 'Tournament'].includes(category);
   const effectiveCategory = isCustomCategory ? 'Other' : category;
+
+  const uniqueCodeProducts = Array.from(
+    new Map(PTCG_PRODUCTS.map(p => [p.code, p])).values()
+  );
+  const codeGroups = uniqueCodeProducts.reduce<Record<string, { code: string; name: string }[]>>((acc, p) => {
+    if (!acc[p.series]) acc[p.series] = [];
+    acc[p.series].push({ code: p.code, name: p.name });
+    return acc;
+  }, {});
 
   const handleSave = async () => {
     if (!title || !amount) return;
@@ -224,13 +234,20 @@ export function ExpenseEditModal({ expense, onClose }: Props) {
               <div>
                 <label className="block text-sm font-bold text-slate-700 mb-1.5">系列/世代</label>
                 <div className="flex gap-2">
-                  <input
-                    type="text"
+                  <select
                     className="poke-input text-base flex-1"
-                    placeholder="例如：sv6、s12a"
                     value={seriesTag}
                     onChange={e => setSeriesTag(e.target.value)}
-                  />
+                  >
+                    <option value="">— 請選擇 —</option>
+                    {Object.entries(codeGroups).map(([series, products]) => (
+                      <optgroup key={series} label={series}>
+                        {products.map(p => (
+                          <option key={p.code} value={p.code}>{p.code} {p.name}</option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
                   <button
                     type="button"
                     disabled={!title || detectingSeries}
