@@ -130,6 +130,13 @@ export function ExpenseList() {
                       )}
                       <span>•</span>
                       <span>{format(new Date(expense.date), 'MM/dd')}</span>
+                      {(() => {
+                        const created = format(new Date(expense.createdAt), 'MM/dd');
+                        const dated   = format(new Date(expense.date), 'MM/dd');
+                        return created !== dated ? (
+                          <span className="text-slate-300 font-normal">({created} 補記)</span>
+                        ) : null;
+                      })()}
                     </div>
                   </div>
                 </div>
