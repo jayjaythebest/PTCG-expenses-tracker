@@ -7,4 +7,6 @@ coverage/
 .env*
 !.env.example
 .vercel
+
+# Claude Code tool config
 .claude/
