@@ -4,6 +4,7 @@ import { CollectionItem, CollectionItemType, CollectionCondition } from '../type
 import { PTCG_PRODUCTS } from '../data/ptcg-products';
 import { cn } from '../lib/utils';
 import { recognizeCardFromPhoto } from '../lib/gemini';
+import { lookupCard } from '../lib/tcgdex';
 import { Plus, Trash2, Pencil, X, Check, TrendingUp, TrendingDown, Package, CreditCard, Layers, Camera, Loader2, Sparkles } from 'lucide-react';
 
 const ITEM_TYPE_LABELS: Record<CollectionItemType, string> = {
@@ -38,6 +39,7 @@ const EMPTY_FORM = {
   purchasePrice: '',
   currentValue: '',
   notes: '',
+  imageUrl: '',
 };
 
 type FormState = typeof EMPTY_FORM;
@@ -85,6 +87,7 @@ function CollectionForm({
 }) {
   const [form, setForm] = useState<FormState>(initial);
   const [scanning, setScanning] = useState(false);
+  const [scanResult, setScanResult] = useState<'matched' | 'fallback' | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -105,16 +108,37 @@ function CollectionForm({
       return;
     }
     setPhotoPreview(URL.createObjectURL(file));
+    setScanResult(null);
     setScanning(true);
     try {
-      const result = await recognizeCardFromPhoto(file);
-      setForm(f => ({
-        ...f,
-        name:       result.name       || f.name,
-        setName:    result.setName    || f.setName,
-        cardNumber: result.cardNumber || f.cardNumber,
-        rarity:     result.rarity     || f.rarity,
-      }));
+      // 1) Gemini reads the reliable identifiers (set code + card number).
+      const scan = await recognizeCardFromPhoto(file);
+      // 2) Resolve authoritative data (name/rarity/series/official art) from TCGdex.
+      const card = scan.setCode && scan.localId
+        ? await lookupCard(scan.setCode, scan.localId)
+        : null;
+
+      if (card) {
+        setForm(f => ({
+          ...f,
+          name:       card.name,
+          setName:    card.setName || f.setName,
+          series:     card.series  || f.series,
+          rarity:     card.rarity  || scan.rarity || f.rarity,
+          cardNumber: scan.localId || f.cardNumber,
+          imageUrl:   card.imageUrl || f.imageUrl,
+        }));
+        setScanResult('matched');
+      } else {
+        // Fallback: at least pre-fill what the model could read.
+        setForm(f => ({
+          ...f,
+          name:       scan.name    || f.name,
+          cardNumber: scan.localId || f.cardNumber,
+          rarity:     scan.rarity  || f.rarity,
+        }));
+        setScanResult('fallback');
+      }
     } catch (err) {
       console.error(err);
       alert('AI 讀取失敗，請手動輸入');
@@ -176,10 +200,26 @@ function CollectionForm({
               <><Camera className="w-4 h-4" /><Sparkles className="w-3.5 h-3.5" /><span>拍照 / 選圖，自動填入資料</span></>
             )}
           </button>
-          {photoPreview && !scanning && (
-            <div className="mt-2 flex items-center gap-3 p-2 bg-emerald-50 border border-emerald-200 rounded-lg">
-              <img src={photoPreview} alt="card" className="w-12 h-16 object-cover rounded-md border border-emerald-300 flex-shrink-0" />
-              <p className="text-xs text-emerald-700 font-bold">AI 讀取完成，請確認下方欄位並修正</p>
+          {scanResult && !scanning && (
+            <div className={cn(
+              'mt-2 flex items-center gap-3 p-2 border rounded-lg',
+              scanResult === 'matched'
+                ? 'bg-emerald-50 border-emerald-200'
+                : 'bg-amber-50 border-amber-200',
+            )}>
+              <img
+                src={scanResult === 'matched' && form.imageUrl ? form.imageUrl : (photoPreview ?? '')}
+                alt="card"
+                className="w-12 h-16 object-contain rounded-md border border-slate-200 bg-white flex-shrink-0"
+              />
+              <p className={cn(
+                'text-xs font-bold',
+                scanResult === 'matched' ? 'text-emerald-700' : 'text-amber-700',
+              )}>
+                {scanResult === 'matched'
+                  ? '已從卡片資料庫帶入正確資料，請確認後儲存'
+                  : '查無此卡，已填入可辨識的部分，請手動補完'}
+              </p>
             </div>
           )}
         </div>
@@ -348,6 +388,7 @@ function formToItem(f: FormState): Omit<CollectionItem, 'id' | 'createdAt'> {
     purchasePrice: f.purchasePrice !== '' ? Number(f.purchasePrice) : undefined,
     currentValue:  f.currentValue !== '' ? Number(f.currentValue) : undefined,
     notes:         f.notes || undefined,
+    imageUrl:      f.imageUrl || undefined,
   };
 }
 
@@ -364,6 +405,7 @@ function itemToForm(item: CollectionItem): FormState {
     purchasePrice: item.purchasePrice != null ? String(item.purchasePrice) : '',
     currentValue:  item.currentValue != null ? String(item.currentValue) : '',
     notes:         item.notes ?? '',
+    imageUrl:      item.imageUrl ?? '',
   };
 }
 
@@ -519,6 +561,14 @@ export function Collection() {
               />
             ) : (
               <div className="bg-white rounded-xl border border-slate-200 px-4 py-3 flex items-start gap-3">
+                {item.imageUrl && (
+                  <img
+                    src={item.imageUrl}
+                    alt={item.name}
+                    className="w-12 h-16 object-contain rounded-md border border-slate-100 bg-slate-50 flex-shrink-0 cursor-pointer"
+                    onClick={() => window.open(item.imageUrl, '_blank')}
+                  />
+                )}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
                     <ItemTypeBadge type={item.itemType} />

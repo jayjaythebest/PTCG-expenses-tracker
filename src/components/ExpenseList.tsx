@@ -2,15 +2,16 @@ import { useState, useRef } from 'react';
 import { useExpenses } from '../lib/useExpenses';
 import { Expense } from '../types';
 import { format } from 'date-fns';
-import { Trash2, Tag, Camera, ImageIcon, Loader2, Pencil } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { Trash2, Tag, Camera, ImageIcon, Loader2, Pencil, Clock, Check } from 'lucide-react';
+import { cn, availableMonths, inMonth, formatMonthLabel } from '../lib/utils';
 import { AnimatePresence } from 'motion/react';
 import { ExpenseEditModal } from './ExpenseEditModal';
 
 export function ExpenseList() {
-  const { expenses, loading, deleteExpense, uploadExpenseImage } = useExpenses();
+  const { expenses, loading, deleteExpense, uploadExpenseImage, updateExpense } = useExpenses();
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [month, setMonth] = useState<string>('all');
   const pendingIdRef = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -78,6 +79,20 @@ export function ExpenseList() {
     }
   };
 
+  const months = availableMonths(expenses);
+  const visible = month === 'all' ? expenses : expenses.filter(e => inMonth(e.date, month));
+
+  const lineTotal = (e: Expense) => Number(e.amount) * (e.quantity ?? 1);
+  const monthExpense = visible
+    .filter(e => e.type !== 'Income')
+    .reduce((s, e) => s + lineTotal(e), 0);
+  const monthIncome = visible
+    .filter(e => e.type === 'Income')
+    .reduce((s, e) => s + lineTotal(e), 0);
+  const monthPending = visible
+    .filter(e => e.type !== 'Income' && e.paymentStatus === 'pending')
+    .reduce((s, e) => s + lineTotal(e), 0);
+
   return (
     <>
     <AnimatePresence>
@@ -98,9 +113,43 @@ export function ExpenseList() {
         onChange={handleFileChange}
       />
 
-      <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest px-2">最近記錄</h2>
+      {/* Header: title + month filter */}
+      <div className="flex items-center justify-between gap-2 px-2">
+        <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest">
+          {month === 'all' ? '最近記錄' : `${formatMonthLabel(month)}記錄`}
+        </h2>
+        <select
+          value={month}
+          onChange={e => setMonth(e.target.value)}
+          className="text-xs font-bold text-slate-600 border-2 border-slate-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:border-poke-blue"
+        >
+          <option value="all">全部月份</option>
+          {months.map(m => (
+            <option key={m} value={m}>{formatMonthLabel(m)}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Subtotal bar */}
+      <div className="flex items-center gap-3 px-2 -mt-1 text-xs font-bold flex-wrap">
+        <span className="text-slate-500">支出 <span className="text-slate-700">¥{monthExpense.toLocaleString()}</span></span>
+        {monthIncome > 0 && (
+          <span className="text-slate-500">收入 <span className="text-poke-blue">¥{monthIncome.toLocaleString()}</span></span>
+        )}
+        {monthPending > 0 && (
+          <span className="inline-flex items-center gap-1 text-amber-600">
+            <Clock className="w-3 h-3" /> 待報銷 ¥{monthPending.toLocaleString()}
+          </span>
+        )}
+      </div>
+
+      {visible.length === 0 ? (
+        <div className="text-center p-8 bg-white rounded-xl border-2 border-dashed border-slate-200">
+          <p className="text-slate-500 text-sm">{formatMonthLabel(month)}尚無記錄</p>
+        </div>
+      ) : (
       <div className="grid gap-3">
-        {expenses.map((expense) => {
+        {visible.map((expense) => {
           const isIncome = expense.type === 'Income';
           const isUploading = uploadingId === expense.id;
           const hasImage = !!expense.imageUrl;
@@ -126,6 +175,11 @@ export function ExpenseList() {
                       {expense.seriesTag && (
                         <span className="px-1.5 py-0.5 rounded bg-poke-blue/10 text-poke-dark-blue font-black text-[10px]">
                           {expense.seriesTag}
+                        </span>
+                      )}
+                      {!isIncome && expense.paymentStatus === 'pending' && (
+                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-black text-[10px]">
+                          <Clock className="w-2.5 h-2.5" /> 待報銷
                         </span>
                       )}
                       <span>•</span>
@@ -156,6 +210,17 @@ export function ExpenseList() {
                       </p>
                     )}
                   </div>
+
+                  {/* Mark-as-paid button — pending expenses only */}
+                  {!isIncome && expense.paymentStatus === 'pending' && (
+                    <button
+                      onClick={() => updateExpense(expense.id, { paymentStatus: 'paid' })}
+                      title="標記為已付"
+                      className="p-2 text-amber-500 hover:text-emerald-600 hover:bg-emerald-50 transition-colors rounded-lg"
+                    >
+                      <Check className="w-4 h-4" />
+                    </button>
+                  )}
 
                   {/* Edit button */}
                   <button
@@ -228,6 +293,7 @@ export function ExpenseList() {
           );
         })}
       </div>
+      )}
     </div>
     </>
   );

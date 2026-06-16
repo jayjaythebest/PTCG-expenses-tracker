@@ -12,6 +12,8 @@ create table public.expenses (
   type          text        not null default 'Expense' check (type in ('Expense', 'Income')),
   date          timestamptz not null,
   status        text        not null default 'Approved' check (status in ('Pending', 'Approved', 'Rejected')),
+  -- 'paid' = Jay 已付；'pending' = 待報銷
+  payment_status text       not null default 'paid' check (payment_status in ('paid', 'pending')),
   submitted_by       text   not null default 'public-user',
   submitted_by_name  text   not null default '使用者',
   quantity      integer     not null default 1,
@@ -48,3 +50,12 @@ create policy "Public upload receipts"
 create policy "Public delete receipts"
   on storage.objects for delete
   using (bucket_id = 'receipts');
+
+-- ============================================================
+-- MIGRATIONS — run these against an existing project as needed
+-- ============================================================
+
+-- 2026-06: payment status (Jay 已付 / 待報銷)
+alter table public.expenses
+  add column if not exists payment_status text not null default 'paid'
+  check (payment_status in ('paid', 'pending'));

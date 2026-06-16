@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { useExpenses } from '../lib/useExpenses';
-import { ExpenseCategory, ExpenseType } from '../types';
-import { PlusCircle, Loader2, Camera, X, Minus, Plus, ChevronDown, Sparkles } from 'lucide-react';
+import { ExpenseCategory, ExpenseType, PaymentStatus } from '../types';
+import { PlusCircle, Loader2, Camera, X, Minus, Plus, ChevronDown, Sparkles, Wallet, Clock } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { PTCG_PRODUCTS, PtcgProduct } from '../data/ptcg-products';
@@ -22,6 +22,7 @@ export function ExpenseForm() {
   const [category, setCategory] = useState<ExpenseCategory | 'Other'>('Card');
   const [customCategory, setCustomCategory] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>('paid');
   const [notes, setNotes] = useState('');
   const [image, setImage] = useState<{ file: File; preview: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -84,6 +85,7 @@ export function ExpenseForm() {
           type,
           category: category === 'Other' ? customCategory : category,
           date: new Date(date).toISOString(),
+          paymentStatus: type === 'Expense' ? paymentStatus : 'paid',
           notes,
         },
         image?.file,
@@ -94,6 +96,7 @@ export function ExpenseForm() {
       setQuantity(1);
       setSeriesTag('');
       setCustomCategory('');
+      setPaymentStatus('paid');
       setNotes('');
       if (image) URL.revokeObjectURL(image.preview);
       setImage(null);
@@ -258,6 +261,41 @@ export function ExpenseForm() {
             })()}
           </div>
         </div>
+
+        {/* Payment status — expense only */}
+        {type === 'Expense' && (
+          <div>
+            <label className="block text-sm font-bold text-slate-700 mb-1.5">付款狀態</label>
+            <div className="flex p-1 bg-slate-100 rounded-xl">
+              <button
+                type="button"
+                onClick={() => setPaymentStatus('paid')}
+                className={cn(
+                  'flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg font-bold text-sm transition-all',
+                  paymentStatus === 'paid'
+                    ? 'bg-white text-slate-700 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700'
+                )}
+              >
+                <Wallet className="w-4 h-4" />
+                Jay 已付
+              </button>
+              <button
+                type="button"
+                onClick={() => setPaymentStatus('pending')}
+                className={cn(
+                  'flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg font-bold text-sm transition-all',
+                  paymentStatus === 'pending'
+                    ? 'bg-white text-amber-600 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700'
+                )}
+              >
+                <Clock className="w-4 h-4" />
+                待報銷
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Category */}
         <div>

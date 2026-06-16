@@ -32,6 +32,9 @@ export type ExpenseStatus = 'Pending' | 'Approved' | 'Rejected';
 
 export type ExpenseType = 'Expense' | 'Income';
 
+// 'paid' = Jay 已付；'pending' = 待報銷
+export type PaymentStatus = 'paid' | 'pending';
+
 export interface Expense {
   id: string;
   title: string;
@@ -42,6 +45,7 @@ export interface Expense {
   type: ExpenseType;
   date: string;
   status: ExpenseStatus;
+  paymentStatus: PaymentStatus;
   submittedBy: string;
   submittedByName: string;
   notes?: string;

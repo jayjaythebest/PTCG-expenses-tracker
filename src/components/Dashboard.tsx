@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useExpenses } from '../lib/useExpenses';
-import { ArrowDownCircle, ArrowUpCircle } from 'lucide-react';
+import { ArrowDownCircle, ArrowUpCircle, Clock } from 'lucide-react';
 import { startOfMonth, startOfQuarter, startOfYear, isAfter, subMonths, format } from 'date-fns';
-import { cn } from '../lib/utils';
+import { cn, availableMonths, inMonth, formatMonthLabel } from '../lib/utils';
 import { Expense } from '../types';
 import { PTCG_PRODUCTS } from '../data/ptcg-products';
 
@@ -61,13 +61,22 @@ const getCategoryLabel = (cat: string) => {
 export function Dashboard() {
   const { expenses } = useExpenses();
   const [period, setPeriod] = useState<Period>('month');
+  const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
   const [catFilter, setCatFilter] = useState('all');
 
-  const periodFiltered = filterByPeriod(expenses, period);
+  const months = availableMonths(expenses);
+
+  // selectedMonth (yyyy-MM) overrides the period buttons when set.
+  const periodFiltered = selectedMonth
+    ? expenses.filter(e => inMonth(e.date, selectedMonth))
+    : filterByPeriod(expenses, period);
   const filtered = filterByCategory(periodFiltered, catFilter);
 
   const totalExpense = totalAmount(filtered, 'Expense');
   const totalIncome = totalAmount(filtered, 'Income');
+  const totalPending = filtered
+    .filter(e => (e.type === 'Expense' || !e.type) && e.paymentStatus === 'pending')
+    .reduce((sum, e) => sum + Number(e.amount) * (e.quantity ?? 1), 0);
 
   const categoryTotals = periodFiltered.reduce((acc, e) => {
     const cat = e.category as string;
@@ -118,10 +127,10 @@ export function Dashboard() {
         {(Object.keys(PERIOD_LABELS) as Period[]).map(p => (
           <button
             key={p}
-            onClick={() => setPeriod(p)}
+            onClick={() => { setPeriod(p); setSelectedMonth(null); }}
             className={cn(
               'flex-1 py-2 rounded-lg text-sm font-bold transition-all',
-              period === p
+              !selectedMonth && period === p
                 ? 'bg-poke-blue text-white shadow-sm'
                 : 'bg-white border-2 border-slate-200 text-slate-500 hover:border-poke-blue/40'
             )}
@@ -129,6 +138,33 @@ export function Dashboard() {
             {PERIOD_LABELS[p]}
           </button>
         ))}
+      </div>
+
+      {/* Specific-month picker */}
+      <div className="flex items-center gap-2">
+        <select
+          value={selectedMonth ?? ''}
+          onChange={e => setSelectedMonth(e.target.value || null)}
+          className={cn(
+            'flex-1 py-2 px-3 rounded-lg text-sm font-bold border-2 bg-white focus:outline-none transition-all',
+            selectedMonth
+              ? 'border-poke-blue text-poke-dark-blue'
+              : 'border-slate-200 text-slate-500'
+          )}
+        >
+          <option value="">指定月份…</option>
+          {months.map(m => (
+            <option key={m} value={m}>{formatMonthLabel(m)}</option>
+          ))}
+        </select>
+        {selectedMonth && (
+          <button
+            onClick={() => setSelectedMonth(null)}
+            className="px-3 py-2 rounded-lg text-sm font-bold text-slate-400 border-2 border-slate-200 hover:text-slate-600 transition-colors"
+          >
+            清除
+          </button>
+        )}
       </div>
 
       {/* Category filter */}
@@ -167,6 +203,21 @@ export function Dashboard() {
         </div>
       </div>
 
+      {/* Pending reimbursement total */}
+      {totalPending > 0 && (
+        <div className="poke-card p-4 border-l-4 border-l-amber-400 bg-amber-50/40">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-amber-700">
+              <Clock className="w-4 h-4" />
+              <span className="text-xs font-black uppercase tracking-wider">
+                待報銷{selectedMonth ? `（${formatMonthLabel(selectedMonth)}）` : ''}
+              </span>
+            </div>
+            <p className="text-xl font-black text-amber-600">¥{totalPending.toLocaleString()}</p>
+          </div>
+        </div>
+      )}
+
       {/* Monthly trend chart */}
       {hasMonthData && (
         <div className="space-y-3">
@@ -180,16 +231,23 @@ export function Dashboard() {
                   : bucket.expense >= 1000
                     ? `${(bucket.expense / 1000).toFixed(0)}k`
                     : bucket.expense > 0 ? `${bucket.expense}` : '';
+                const isActive = selectedMonth === bucket.yearMonth;
                 return (
-                  <div key={bucket.yearMonth} className="flex-1 h-full flex flex-col items-center gap-0.5 min-w-0">
+                  <button
+                    key={bucket.yearMonth}
+                    type="button"
+                    onClick={() => setSelectedMonth(isActive ? null : bucket.yearMonth)}
+                    title={`查看 ${formatMonthLabel(bucket.yearMonth)}`}
+                    className="flex-1 h-full flex flex-col items-center gap-0.5 min-w-0 cursor-pointer group"
+                  >
                     {bucket.expense > 0 && (
                       <span className="text-[9px] font-bold text-slate-400 leading-none">{abbreviated}</span>
                     )}
                     <div className="w-full flex-1 flex flex-col justify-end">
                       <div
                         className={cn(
-                          'w-full rounded-t-sm transition-all duration-500',
-                          bucket.expense > 0 ? 'bg-poke-blue' : 'bg-slate-100'
+                          'w-full rounded-t-sm transition-all duration-500 group-hover:opacity-80',
+                          isActive ? 'bg-poke-dark-blue' : bucket.expense > 0 ? 'bg-poke-blue' : 'bg-slate-100'
                         )}
                         style={{ height: bucket.expense > 0 ? `${Math.max(pct * 100, 4)}%` : '4%' }}
                       />
@@ -197,8 +255,11 @@ export function Dashboard() {
                     {bucket.income > 0 && (
                       <div className="w-full h-1 bg-blue-300 rounded-full mt-0.5" title={`+¥${bucket.income.toLocaleString()}`} />
                     )}
-                    <span className="text-[9px] text-slate-400 font-bold mt-1 leading-none">{bucket.label}</span>
-                  </div>
+                    <span className={cn(
+                      'text-[9px] font-bold mt-1 leading-none',
+                      isActive ? 'text-poke-dark-blue' : 'text-slate-400'
+                    )}>{bucket.label}</span>
+                  </button>
                 );
               })}
             </div>

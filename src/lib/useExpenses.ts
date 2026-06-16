@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabase';
-import { Expense, ExpenseStatus } from '../types';
+import { Expense, ExpenseStatus, PaymentStatus } from '../types';
 
 let channelCounter = 0;
 
@@ -15,6 +15,7 @@ function mapRow(row: Record<string, unknown>): Expense {
     type:              row.type as Expense['type'],
     date:              row.date as string,
     status:            row.status as ExpenseStatus,
+    paymentStatus:     (row.payment_status as PaymentStatus | null) ?? 'paid',
     submittedBy:       row.submitted_by as string,
     submittedByName:   row.submitted_by_name as string,
     notes:             row.notes as string | undefined,
@@ -87,6 +88,7 @@ export function useExpenses() {
       quantity_unit:      expense.quantityUnit ?? '盒',
       type:               expense.type,
       date:               expense.date,
+      payment_status:     expense.paymentStatus ?? 'paid',
       notes:              expense.notes ?? null,
       series_tag:         expense.seriesTag ?? null,
       image_url:          imageUrl ?? null,
@@ -135,6 +137,7 @@ export function useExpenses() {
     date?: string;
     notes?: string;
     seriesTag?: string | null;
+    paymentStatus?: PaymentStatus;
   }) => {
     const dbUpdates: Record<string, unknown> = {};
     if (updates.title !== undefined)        dbUpdates.title = updates.title;
@@ -146,6 +149,7 @@ export function useExpenses() {
     if (updates.date !== undefined)         dbUpdates.date = updates.date;
     if (updates.notes !== undefined)        dbUpdates.notes = updates.notes || null;
     if ('seriesTag' in updates)             dbUpdates.series_tag = updates.seriesTag ?? null;
+    if (updates.paymentStatus !== undefined) dbUpdates.payment_status = updates.paymentStatus;
     const { error } = await supabase.from('expenses').update(dbUpdates).eq('id', id);
     if (error) throw error;
   };
