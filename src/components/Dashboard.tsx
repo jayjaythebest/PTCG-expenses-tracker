@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useExpenses } from '../lib/useExpenses';
-import { ArrowDownCircle, ArrowUpCircle, Clock } from 'lucide-react';
+import { ArrowDownCircle, ArrowUpCircle, Clock, Wallet } from 'lucide-react';
 import { startOfMonth, startOfQuarter, startOfYear, isAfter, subMonths, format } from 'date-fns';
 import { cn, availableMonths, inMonth, formatMonthLabel } from '../lib/utils';
 import { Expense } from '../types';
@@ -77,6 +77,7 @@ export function Dashboard() {
   const totalPending = filtered
     .filter(e => (e.type === 'Expense' || !e.type) && e.paymentStatus === 'pending')
     .reduce((sum, e) => sum + Number(e.amount) * (e.quantity ?? 1), 0);
+  const totalPaid = totalExpense - totalPending;
 
   const categoryTotals = periodFiltered.reduce((acc, e) => {
     const cat = e.category as string;
@@ -203,17 +204,27 @@ export function Dashboard() {
         </div>
       </div>
 
-      {/* Pending reimbursement total */}
-      {totalPending > 0 && (
-        <div className="poke-card p-4 border-l-4 border-l-amber-400 bg-amber-50/40">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-amber-700">
-              <Clock className="w-4 h-4" />
-              <span className="text-xs font-black uppercase tracking-wider">
-                待報銷{selectedMonth ? `（${formatMonthLabel(selectedMonth)}）` : ''}
-              </span>
+      {/* Expense split: Jay 已付 vs 待報銷 */}
+      {totalExpense > 0 && (
+        <div className="grid grid-cols-2 gap-4">
+          <div className="poke-card p-4 border-l-4 border-l-emerald-400 bg-emerald-50/40">
+            <div className="flex items-center gap-2 text-emerald-700 mb-1">
+              <Wallet className="w-4 h-4" />
+              <span className="text-xs font-black uppercase tracking-wider">Jay 已付</span>
             </div>
-            <p className="text-xl font-black text-amber-600">¥{totalPending.toLocaleString()}</p>
+            <p className="text-xl font-black text-emerald-600">¥{totalPaid.toLocaleString()}</p>
+          </div>
+          <div className={cn(
+            'poke-card p-4 border-l-4',
+            totalPending > 0 ? 'border-l-amber-400 bg-amber-50/40' : 'border-l-slate-200',
+          )}>
+            <div className={cn('flex items-center gap-2 mb-1', totalPending > 0 ? 'text-amber-700' : 'text-slate-400')}>
+              <Clock className="w-4 h-4" />
+              <span className="text-xs font-black uppercase tracking-wider">待報銷</span>
+            </div>
+            <p className={cn('text-xl font-black', totalPending > 0 ? 'text-amber-600' : 'text-slate-400')}>
+              ¥{totalPending.toLocaleString()}
+            </p>
           </div>
         </div>
       )}
