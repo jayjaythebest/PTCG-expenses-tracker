@@ -217,7 +217,17 @@ export function ExpenseEditModal({ expense, onClose }: Props) {
                   >
                     <Minus className="w-4 h-4" />
                   </button>
-                  <span className="text-xl font-black text-slate-800 w-8 text-center">{quantity}</span>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    value={quantity}
+                    onChange={e => {
+                      const n = parseInt(e.target.value, 10);
+                      setQuantity(Number.isNaN(n) ? 1 : Math.max(1, n));
+                    }}
+                    className="w-16 text-center text-xl font-black text-slate-800 border-2 border-slate-200 rounded-lg py-1.5 focus:outline-none focus:border-poke-blue"
+                  />
                   <button
                     type="button"
                     onClick={() => setQuantity(q => q + 1)}
