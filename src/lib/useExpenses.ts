@@ -88,7 +88,7 @@ export function useExpenses() {
       quantity_unit:      expense.quantityUnit ?? '盒',
       type:               expense.type,
       date:               expense.date,
-      payment_status:     expense.paymentStatus ?? 'paid',
+      payment_status:     expense.paymentStatus ?? 'pending',
       notes:              expense.notes ?? null,
       series_tag:         expense.seriesTag ?? null,
       image_url:          imageUrl ?? null,

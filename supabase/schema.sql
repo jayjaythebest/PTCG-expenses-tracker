@@ -12,8 +12,8 @@ create table public.expenses (
   type          text        not null default 'Expense' check (type in ('Expense', 'Income')),
   date          timestamptz not null,
   status        text        not null default 'Approved' check (status in ('Pending', 'Approved', 'Rejected')),
-  -- 'paid' = Jay 已付；'pending' = 待報銷
-  payment_status text       not null default 'paid' check (payment_status in ('paid', 'pending')),
+  -- 'paid' = Jay 已付；'pending' = 待報銷（預設待報銷，記帳時再確認是否已付）
+  payment_status text       not null default 'pending' check (payment_status in ('paid', 'pending')),
   submitted_by       text   not null default 'public-user',
   submitted_by_name  text   not null default '使用者',
   quantity      integer     not null default 1,
@@ -59,3 +59,7 @@ create policy "Public delete receipts"
 alter table public.expenses
   add column if not exists payment_status text not null default 'paid'
   check (payment_status in ('paid', 'pending'));
+
+-- 2026-06: default new expenses to 待報銷 (confirm paid at logging time)
+alter table public.expenses
+  alter column payment_status set default 'pending';

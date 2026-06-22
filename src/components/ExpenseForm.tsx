@@ -22,7 +22,7 @@ export function ExpenseForm() {
   const [category, setCategory] = useState<ExpenseCategory | 'Other'>('Card');
   const [customCategory, setCustomCategory] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>('paid');
+  const [paymentStatus, setPaymentStatus] = useState<PaymentStatus>('pending');
   const [notes, setNotes] = useState('');
   const [image, setImage] = useState<{ file: File; preview: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -96,7 +96,7 @@ export function ExpenseForm() {
       setQuantity(1);
       setSeriesTag('');
       setCustomCategory('');
-      setPaymentStatus('paid');
+      setPaymentStatus('pending');
       setNotes('');
       if (image) URL.revokeObjectURL(image.preview);
       setImage(null);
