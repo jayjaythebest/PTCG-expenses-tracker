@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import { useExpenses } from '../lib/useExpenses';
 import { Expense } from '../types';
 import { format } from 'date-fns';
-import { Trash2, Tag, Camera, ImageIcon, Loader2, Pencil, Clock, Check } from 'lucide-react';
+import { Trash2, Tag, Camera, ImageIcon, Loader2, Pencil, Clock, Wallet } from 'lucide-react';
 import { cn, availableMonths, inMonth, formatMonthLabel } from '../lib/utils';
 import { AnimatePresence } from 'motion/react';
 import { ExpenseEditModal } from './ExpenseEditModal';
@@ -177,10 +177,22 @@ export function ExpenseList() {
                           {expense.seriesTag}
                         </span>
                       )}
-                      {!isIncome && expense.paymentStatus === 'pending' && (
-                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-black text-[10px]">
-                          <Clock className="w-2.5 h-2.5" /> 待報銷
-                        </span>
+                      {!isIncome && (
+                        <button
+                          type="button"
+                          onClick={() => updateExpense(expense.id, { paymentStatus: expense.paymentStatus === 'pending' ? 'paid' : 'pending' })}
+                          title="點擊切換 Jay 已付 / 待報銷"
+                          className={cn(
+                            'inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded font-black text-[10px] transition-colors',
+                            expense.paymentStatus === 'pending'
+                              ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                              : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+                          )}
+                        >
+                          {expense.paymentStatus === 'pending'
+                            ? <><Clock className="w-2.5 h-2.5" /> 待報銷</>
+                            : <><Wallet className="w-2.5 h-2.5" /> 已付</>}
+                        </button>
                       )}
                       <span>•</span>
                       <span>{format(new Date(expense.date), 'MM/dd')}</span>
@@ -210,17 +222,6 @@ export function ExpenseList() {
                       </p>
                     )}
                   </div>
-
-                  {/* Mark-as-paid button — pending expenses only */}
-                  {!isIncome && expense.paymentStatus === 'pending' && (
-                    <button
-                      onClick={() => updateExpense(expense.id, { paymentStatus: 'paid' })}
-                      title="標記為已付"
-                      className="p-2 text-amber-500 hover:text-emerald-600 hover:bg-emerald-50 transition-colors rounded-lg"
-                    >
-                      <Check className="w-4 h-4" />
-                    </button>
-                  )}
 
                   {/* Edit button */}
                   <button
