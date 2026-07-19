@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useExpenses } from '../lib/useExpenses';
-import { ArrowDownCircle, ArrowUpCircle, Clock, Wallet } from 'lucide-react';
-import { startOfMonth, startOfQuarter, startOfYear, isAfter, subMonths, format } from 'date-fns';
+import { ArrowDownCircle, ArrowUpCircle, Clock, Wallet, Sparkles, Loader2 } from 'lucide-react';
+import { startOfMonth, startOfQuarter, startOfYear, isAfter, subMonths, subDays, format } from 'date-fns';
 import { cn, availableMonths, inMonth, formatMonthLabel } from '../lib/utils';
 import { Expense } from '../types';
 import { PTCG_PRODUCTS } from '../data/ptcg-products';
+import { generateWeeklySummary } from '../lib/gemini';
 
 const CODE_NAME_MAP: Record<string, string> = Object.fromEntries(
   Array.from(new Map(PTCG_PRODUCTS.map(p => [p.code, p.name])).entries())
@@ -63,6 +64,32 @@ export function Dashboard() {
   const [period, setPeriod] = useState<Period>('month');
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
   const [catFilter, setCatFilter] = useState('all');
+  const [weeklySummary, setWeeklySummary] = useState('');
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryError, setSummaryError] = useState(false);
+
+  const weekExpenses = expenses.filter(e => isAfter(new Date(e.date), subDays(new Date(), 7)));
+
+  const handleGenerateSummary = async () => {
+    setSummaryLoading(true);
+    setSummaryError(false);
+    try {
+      const text = await generateWeeklySummary(weekExpenses.map(e => ({
+        title: e.title,
+        category: e.category as string,
+        amount: Number(e.amount),
+        quantity: e.quantity ?? 1,
+        type: e.type === 'Income' ? 'Income' : 'Expense',
+        date: e.date,
+      })));
+      setWeeklySummary(text);
+    } catch (error) {
+      console.error(error);
+      setSummaryError(true);
+    } finally {
+      setSummaryLoading(false);
+    }
+  };
 
   const months = availableMonths(expenses);
 
@@ -184,6 +211,36 @@ export function Dashboard() {
             {label}
           </button>
         ))}
+      </div>
+
+      {/* Weekly AI summary */}
+      <div className="poke-card p-4 space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-sm font-black text-slate-700 flex items-center gap-1.5">
+            <Sparkles className="w-4 h-4 text-poke-blue" />
+            本週 AI 摘要
+          </h3>
+          <button
+            onClick={handleGenerateSummary}
+            disabled={summaryLoading}
+            className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-poke-blue/10 text-poke-dark-blue text-xs font-bold hover:bg-poke-blue/20 transition-colors disabled:opacity-40"
+          >
+            {summaryLoading
+              ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              : <Sparkles className="w-3.5 h-3.5" />
+            }
+            {weeklySummary ? '重新產生' : '產生摘要'}
+          </button>
+        </div>
+        {summaryError && (
+          <p className="text-xs text-red-500 font-bold">產生摘要失敗，請稍後再試。</p>
+        )}
+        {weeklySummary && !summaryLoading && (
+          <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">{weeklySummary}</p>
+        )}
+        {!weeklySummary && !summaryLoading && !summaryError && (
+          <p className="text-xs text-slate-400 italic">點擊「產生摘要」讓 AI 幫你總結本週的收支狀況</p>
+        )}
       </div>
 
       {/* Income / Expense summary */}

@@ -78,6 +78,40 @@ export async function recognizeCardFromPhoto(file: File): Promise<CardScanResult
   }
 }
 
+export interface WeeklySummaryExpense {
+  title: string;
+  category: string;
+  amount: number;
+  quantity: number;
+  type: 'Expense' | 'Income';
+  date: string;
+}
+
+export async function generateWeeklySummary(expenses: WeeklySummaryExpense[]): Promise<string> {
+  if (expenses.length === 0) {
+    return '本週沒有任何支出或收入記錄，繼續保持荷包扎實！';
+  }
+
+  const lines = expenses
+    .map(e => `- ${e.date.slice(0, 10)} ${e.type === 'Income' ? '收入' : '支出'} ${e.title} x${e.quantity} ¥${e.amount * e.quantity}（${e.category}）`)
+    .join('\n');
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-2.0-flash',
+    contents: `你是寶可夢集換式卡牌遊戲（PTCG）玩家的個人記帳助手。根據以下本週的消費/收入記錄，寫一段簡短、口語化的中文摘要（3-5 句話），內容包含：
+- 本週總支出與總收入（自己加總金額）
+- 花最多錢的分類或商品
+- 一句輕鬆的評論或建議
+
+記錄：
+${lines}
+
+只回傳摘要文字，不要加標題或標點符號以外的格式。`,
+  });
+
+  return (response.text ?? '').trim();
+}
+
 export async function detectPtcgSeries(title: string): Promise<string> {
   const response = await ai.models.generateContent({
     model: 'gemini-2.0-flash',
