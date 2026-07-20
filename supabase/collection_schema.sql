@@ -17,6 +17,7 @@ create table public.collection_items (
   current_value  numeric,
   notes          text,
   image_url      text,
+  edition        text        default 'ja' check (edition in ('ja', 'zh-tw', 'en')),
   created_at     timestamptz default now()
 );
 
@@ -27,3 +28,14 @@ create policy "Allow all operations on collection_items"
   for all
   using (true)
   with check (true);
+
+-- ============================================================
+-- Migration: add `edition` column to an existing table.
+-- Existing rows are Japanese cards, so default/backfill to 'ja'.
+-- Safe to run repeatedly.
+-- ============================================================
+alter table public.collection_items
+  add column if not exists edition text
+  default 'ja' check (edition in ('ja', 'zh-tw', 'en'));
+
+update public.collection_items set edition = 'ja' where edition is null;

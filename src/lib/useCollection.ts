@@ -19,6 +19,7 @@ function mapRow(row: Record<string, unknown>): CollectionItem {
     currentValue:  row.current_value as number | undefined,
     notes:         row.notes as string | undefined,
     imageUrl:      row.image_url as string | undefined,
+    edition:       (row.edition as CollectionItem['edition']) ?? undefined,
     createdAt:     row.created_at as string,
   };
 }
@@ -69,6 +70,7 @@ export function useCollection() {
       current_value:  item.currentValue ?? null,
       notes:          item.notes ?? null,
       image_url:      item.imageUrl ?? null,
+      edition:        item.edition ?? 'ja',
     });
     if (error) throw error;
   };
@@ -86,6 +88,7 @@ export function useCollection() {
     if ('purchasePrice' in updates)          dbUpdates.purchase_price = updates.purchasePrice ?? null;
     if ('currentValue' in updates)           dbUpdates.current_value = updates.currentValue ?? null;
     if ('notes' in updates)                  dbUpdates.notes = updates.notes ?? null;
+    if ('edition' in updates)                dbUpdates.edition = updates.edition ?? null;
 
     const { error } = await supabase.from('collection_items').update(dbUpdates).eq('id', id);
     if (error) throw error;

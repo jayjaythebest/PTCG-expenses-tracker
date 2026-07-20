@@ -1,5 +1,8 @@
 export type UserRole = 'brother' | 'sponsor';
 
+// Card edition / print language. 'en' reserved for future use.
+export type CardEdition = 'ja' | 'zh-tw' | 'en';
+
 export type CollectionItemType = 'single' | 'box' | 'pack';
 export type CollectionCondition = 'mint' | 'nm' | 'lp' | 'mp';
 
@@ -17,6 +20,7 @@ export interface CollectionItem {
   currentValue?: number;
   notes?: string;
   imageUrl?: string;
+  edition?: CardEdition;
   createdAt: string;
 }
 

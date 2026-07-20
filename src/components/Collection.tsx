@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { useCollection } from '../lib/useCollection';
-import { CollectionItem, CollectionItemType, CollectionCondition } from '../types';
+import { CollectionItem, CollectionItemType, CollectionCondition, CardEdition } from '../types';
 import { PTCG_PRODUCTS } from '../data/ptcg-products';
 import { cn } from '../lib/utils';
 import { recognizeCardFromPhoto } from '../lib/gemini';
@@ -22,6 +22,12 @@ const CONDITION_LABELS: Record<CollectionCondition, string> = {
 
 const RARITY_OPTIONS = ['SAR', 'AR', 'SR', 'HR', 'CSR', 'SER', 'RR', 'R', 'U', 'C', 'ACE SPEC', 'Promo', '其他'];
 
+const EDITION_LABELS: Record<CardEdition, string> = {
+  'ja': '日文版',
+  'zh-tw': '繁體中文版',
+  'en': '英文版',
+};
+
 const SERIES_OPTIONS = [...new Set(PTCG_PRODUCTS.map(p => p.series))];
 const SET_OPTIONS = PTCG_PRODUCTS.map(p => ({ value: p.name, series: p.series }));
 
@@ -40,6 +46,7 @@ const EMPTY_FORM = {
   currentValue: '',
   notes: '',
   imageUrl: '',
+  edition: '' as CardEdition | '',
 };
 
 type FormState = typeof EMPTY_FORM;
@@ -111,11 +118,12 @@ function CollectionForm({
     setScanResult(null);
     setScanning(true);
     try {
-      // 1) Gemini reads the reliable identifiers (set code + card number).
+      // 1) Gemini reads the reliable identifiers (language + set code + card number).
       const scan = await recognizeCardFromPhoto(file);
-      // 2) Resolve authoritative data (name/rarity/series/official art) from TCGdex.
+      // 2) Resolve authoritative data (name/rarity/series/official art) from TCGdex,
+      //    querying the endpoint that matches the detected language (falls back internally).
       const card = scan.setCode && scan.localId
-        ? await lookupCard(scan.setCode, scan.localId)
+        ? await lookupCard(scan.setCode, scan.localId, scan.language || 'ja')
         : null;
 
       if (card) {
@@ -127,6 +135,7 @@ function CollectionForm({
           rarity:     card.rarity  || scan.rarity || f.rarity,
           cardNumber: scan.localId || f.cardNumber,
           imageUrl:   card.imageUrl || f.imageUrl,
+          edition:    card.edition,
         }));
         setScanResult('matched');
       } else {
@@ -136,6 +145,7 @@ function CollectionForm({
           name:       scan.name    || f.name,
           cardNumber: scan.localId || f.cardNumber,
           rarity:     scan.rarity  || f.rarity,
+          edition:    scan.language || f.edition,
         }));
         setScanResult('fallback');
       }
@@ -216,6 +226,7 @@ function CollectionForm({
                 'text-xs font-bold',
                 scanResult === 'matched' ? 'text-emerald-700' : 'text-amber-700',
               )}>
+                {form.edition ? `（${EDITION_LABELS[form.edition]}）` : ''}
                 {scanResult === 'matched'
                   ? '已從卡片資料庫帶入正確資料，請確認後儲存'
                   : '查無此卡，已填入可辨識的部分，請手動補完'}
@@ -294,16 +305,31 @@ function CollectionForm({
         </div>
       )}
 
-      {/* Card number */}
+      {/* Edition + Card number (single only) */}
       {form.itemType === 'single' && (
-        <div>
-          <label className="text-xs font-bold text-slate-500 mb-1 block">卡號</label>
-          <input
-            value={form.cardNumber}
-            onChange={e => set('cardNumber', e.target.value)}
-            placeholder="e.g. 199/165"
-            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-poke-blue"
-          />
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-xs font-bold text-slate-500 mb-1 block">版本</label>
+            <select
+              value={form.edition}
+              onChange={e => set('edition', e.target.value as CardEdition | '')}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-poke-blue bg-white"
+            >
+              <option value="">—</option>
+              {(['ja', 'zh-tw'] as CardEdition[]).map(ed => (
+                <option key={ed} value={ed}>{EDITION_LABELS[ed]}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-bold text-slate-500 mb-1 block">卡號</label>
+            <input
+              value={form.cardNumber}
+              onChange={e => set('cardNumber', e.target.value)}
+              placeholder="e.g. 199/165"
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-poke-blue"
+            />
+          </div>
         </div>
       )}
 
@@ -389,6 +415,7 @@ function formToItem(f: FormState): Omit<CollectionItem, 'id' | 'createdAt'> {
     currentValue:  f.currentValue !== '' ? Number(f.currentValue) : undefined,
     notes:         f.notes || undefined,
     imageUrl:      f.imageUrl || undefined,
+    edition:       (f.edition as CardEdition) || undefined,
   };
 }
 
@@ -406,6 +433,7 @@ function itemToForm(item: CollectionItem): FormState {
     currentValue:  item.currentValue != null ? String(item.currentValue) : '',
     notes:         item.notes ?? '',
     imageUrl:      item.imageUrl ?? '',
+    edition:       item.edition ?? '',
   };
 }
 
@@ -572,6 +600,11 @@ export function Collection() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
                     <ItemTypeBadge type={item.itemType} />
+                    {item.edition && (
+                      <span className="text-xs font-bold text-sky-600 bg-sky-50 px-2 py-0.5 rounded-full">
+                        {EDITION_LABELS[item.edition]}
+                      </span>
+                    )}
                     {item.rarity && (
                       <span className="text-xs font-bold text-violet-600 bg-violet-50 px-2 py-0.5 rounded-full">
                         {item.rarity}
