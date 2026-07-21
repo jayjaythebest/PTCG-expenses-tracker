@@ -4,8 +4,8 @@ import { CollectionItem, CollectionItemType, CollectionCondition, CardEdition, G
 import { PTCG_PRODUCTS } from '../data/ptcg-products';
 import { cn } from '../lib/utils';
 import { recognizeCardFromPhoto } from '../lib/gemini';
-import { lookupCard } from '../lib/tcgdex';
-import { Plus, Trash2, Pencil, X, Check, TrendingUp, TrendingDown, Package, CreditCard, Layers, Camera, Loader2, Sparkles } from 'lucide-react';
+import { lookupCard, lookupSetImage, type ScanLanguage } from '../lib/tcgdex';
+import { Plus, Trash2, Pencil, X, Check, TrendingUp, TrendingDown, Package, CreditCard, Layers, Camera, Loader2, Sparkles, ImagePlus, ImageOff } from 'lucide-react';
 
 const ITEM_TYPE_LABELS: Record<CollectionItemType, string> = {
   single: '單卡',
@@ -38,6 +38,14 @@ const GRADE_OPTIONS = ['10', '9.5', '9', '8.5', '8', '7.5', '7', '6.5', '6', '5.
 
 const SERIES_OPTIONS = [...new Set(PTCG_PRODUCTS.map(p => p.series))];
 const SET_OPTIONS = PTCG_PRODUCTS.map(p => ({ value: p.name, series: p.series }));
+
+// Set name (as shown in the form) → TCGdex set code, so we can auto-fetch a
+// representative image for boxes / packs / manually-typed items.
+const SET_CODE_BY_NAME: Record<string, string> = Object.fromEntries(
+  PTCG_PRODUCTS.map(p => [p.name, p.code]),
+);
+
+const editionToLang = (e: CardEdition | ''): ScanLanguage => (e === 'zh-tw' ? 'zh-tw' : 'ja');
 
 type FilterType = 'all' | CollectionItemType;
 
@@ -93,6 +101,46 @@ function PriceField({ label, value }: { label: string; value?: number }) {
   );
 }
 
+// Consistent image slot for a collection item. Renders the artwork when we have
+// a working URL, otherwise a muted placeholder that shows the item type — so
+// every row keeps the same layout whether or not it has a picture. Broken URLs
+// (e.g. a logo that 404s) fall back to the placeholder automatically.
+function Thumb({
+  src,
+  type,
+  alt,
+  className,
+  onClick,
+}: {
+  src?: string;
+  type: CollectionItemType;
+  alt?: string;
+  className?: string;
+  onClick?: () => void;
+}) {
+  const [broken, setBroken] = useState(false);
+  const box = cn(
+    'w-12 h-16 rounded-md border bg-slate-50 flex-shrink-0 overflow-hidden flex items-center justify-center',
+    className,
+  );
+  if (!src || broken) {
+    return (
+      <div className={cn(box, 'border-slate-100 text-slate-300')} title="無圖片">
+        <ItemTypeIcon type={type} />
+      </div>
+    );
+  }
+  return (
+    <img
+      src={src}
+      alt={alt ?? ''}
+      onError={() => setBroken(true)}
+      onClick={onClick}
+      className={cn(box, 'border-slate-100 object-contain', onClick && 'cursor-pointer')}
+    />
+  );
+}
+
 function CollectionForm({
   initial,
   onSubmit,
@@ -108,6 +156,8 @@ function CollectionForm({
   const [scanning, setScanning] = useState(false);
   const [scanResult, setScanResult] = useState<'matched' | 'fallback' | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [fetchingImg, setFetchingImg] = useState(false);
+  const [imgMsg, setImgMsg] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const set = (k: keyof FormState, v: unknown) => setForm(f => ({ ...f, [k]: v }));
@@ -117,6 +167,39 @@ function CollectionForm({
   const handleSeriesChange = (series: string) => {
     set('series', series);
     set('setName', '');
+  };
+
+  // Pull a representative image for the chosen set from TCGdex (logo, else a
+  // card from that set). Used both by the manual button and auto for boxes/packs.
+  const fetchSetImage = async (setName: string, edition: CardEdition | '') => {
+    const code = SET_CODE_BY_NAME[setName];
+    if (!code) {
+      setImgMsg('這個系列沒有對應代號，請改用拍照或手動貼圖片網址');
+      return;
+    }
+    setImgMsg(null);
+    setFetchingImg(true);
+    try {
+      const result = await lookupSetImage(code, editionToLang(edition));
+      if (result) {
+        setForm(f => ({ ...f, imageUrl: result.imageUrl }));
+        setImgMsg(result.kind === 'logo' ? '已帶入系列 logo' : '已帶入該系列代表卡圖');
+      } else {
+        setImgMsg('查無此系列圖片，可手動貼上圖片網址');
+      }
+    } catch {
+      setImgMsg('取圖失敗，請稍後再試或手動貼網址');
+    } finally {
+      setFetchingImg(false);
+    }
+  };
+
+  const handleSetNameChange = (setName: string) => {
+    set('setName', setName);
+    // For boxes / packs, auto-grab a representative image when none is set yet.
+    if ((form.itemType === 'box' || form.itemType === 'pack') && !form.imageUrl && setName) {
+      fetchSetImage(setName, form.edition);
+    }
   };
 
   const handlePhotoScan = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -277,13 +360,56 @@ function CollectionForm({
           <label className="text-xs font-bold text-slate-500 mb-1 block">系列包名</label>
           <select
             value={form.setName}
-            onChange={e => set('setName', e.target.value)}
+            onChange={e => handleSetNameChange(e.target.value)}
             className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-poke-blue bg-white"
           >
             <option value="">選擇...</option>
             {filteredSets.map(s => <option key={s.value} value={s.value}>{s.value}</option>)}
             <option value="其他">其他</option>
           </select>
+        </div>
+      </div>
+
+      {/* Image: preview + auto-fetch from set + manual URL */}
+      <div>
+        <label className="text-xs font-bold text-slate-500 mb-1 block">圖片</label>
+        <div className="flex items-start gap-3">
+          <Thumb src={form.imageUrl || undefined} type={form.itemType} alt={form.name} />
+          <div className="flex-1 min-w-0 space-y-1.5">
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={fetchingImg}
+                onClick={() => fetchSetImage(form.setName, form.edition)}
+                className={cn(
+                  'flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold border-2 transition-colors',
+                  fetchingImg
+                    ? 'border-poke-blue/40 bg-poke-blue/5 text-poke-blue cursor-wait'
+                    : 'border-slate-200 text-slate-500 hover:border-poke-blue hover:text-poke-blue hover:bg-poke-blue/5',
+                )}
+              >
+                {fetchingImg
+                  ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />取圖中...</>
+                  : <><ImagePlus className="w-3.5 h-3.5" />自動取得系列圖</>}
+              </button>
+              {form.imageUrl && (
+                <button
+                  type="button"
+                  onClick={() => { set('imageUrl', ''); setImgMsg(null); }}
+                  className="flex items-center gap-1 px-2.5 py-2 rounded-lg text-xs font-bold text-slate-400 border-2 border-slate-200 hover:text-red-400 hover:border-red-200 transition-colors"
+                >
+                  <ImageOff className="w-3.5 h-3.5" />清除
+                </button>
+              )}
+            </div>
+            <input
+              value={form.imageUrl}
+              onChange={e => { set('imageUrl', e.target.value); setImgMsg(null); }}
+              placeholder="或貼上圖片網址 https://..."
+              className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-poke-blue"
+            />
+            {imgMsg && <p className="text-xs text-slate-400">{imgMsg}</p>}
+          </div>
         </div>
       </div>
 
@@ -662,14 +788,12 @@ export function Collection() {
               />
             ) : (
               <div className="bg-white rounded-xl border border-slate-200 px-4 py-3 flex items-start gap-3">
-                {item.imageUrl && (
-                  <img
-                    src={item.imageUrl}
-                    alt={item.name}
-                    className="w-12 h-16 object-contain rounded-md border border-slate-100 bg-slate-50 flex-shrink-0 cursor-pointer"
-                    onClick={() => window.open(item.imageUrl, '_blank')}
-                  />
-                )}
+                <Thumb
+                  src={item.imageUrl}
+                  type={item.itemType}
+                  alt={item.name}
+                  onClick={item.imageUrl ? () => window.open(item.imageUrl, '_blank') : undefined}
+                />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
                     <ItemTypeBadge type={item.itemType} />

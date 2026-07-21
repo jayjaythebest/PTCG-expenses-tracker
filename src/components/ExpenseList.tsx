@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useExpenses } from '../lib/useExpenses';
 import { Expense } from '../types';
 import { format } from 'date-fns';
@@ -6,6 +6,75 @@ import { Trash2, Tag, Camera, ImageIcon, Loader2, Pencil, Clock, Wallet } from '
 import { cn, availableMonths, inMonth, formatMonthLabel } from '../lib/utils';
 import { AnimatePresence } from 'motion/react';
 import { ExpenseEditModal } from './ExpenseEditModal';
+import { lookupSetImage } from '../lib/tcgdex';
+
+function getCategoryText(category: string) {
+  switch (category) {
+    case 'Card': return '單張卡片';
+    case 'Box': return '整盒/擴充包';
+    case 'Tournament': return '賽事報名費';
+    default: return category;
+  }
+}
+
+function getCategoryColor(category: string) {
+  switch (category) {
+    case 'Card': return 'bg-blue-50 text-blue-600';
+    case 'Box': return 'bg-slate-100 text-slate-600';
+    case 'Tournament': return 'bg-blue-100 text-blue-700';
+    default: return 'bg-slate-50 text-slate-500';
+  }
+}
+
+// Small representative image for a row, resolved on-the-fly from the set code
+// (expense.seriesTag). Falls back to the category-coloured Tag icon whenever
+// there's no code, the lookup misses, or the resolved image fails to load.
+// This is display-only and never persisted — receipt images stay separate.
+function SeriesThumb({
+  code,
+  isIncome,
+  category,
+}: {
+  code?: string;
+  isIncome: boolean;
+  category: string;
+}) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [broken, setBroken] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    setSrc(null);
+    setBroken(false);
+    if (!code) return;
+    lookupSetImage(code)
+      .then(res => { if (alive) setSrc(res?.imageUrl ?? null); })
+      .catch(() => { if (alive) setSrc(null); });
+    return () => { alive = false; };
+  }, [code]);
+
+  const fallback = (
+    <div className={cn(
+      'p-2.5 rounded-xl flex-shrink-0',
+      isIncome ? 'bg-blue-50 text-poke-blue' : getCategoryColor(category)
+    )}>
+      <Tag className="w-5 h-5" />
+    </div>
+  );
+
+  if (!code || broken || !src) return fallback;
+
+  return (
+    <div className="w-11 h-11 rounded-xl flex-shrink-0 overflow-hidden bg-white border border-slate-100 flex items-center justify-center">
+      <img
+        src={src}
+        alt=""
+        className="w-full h-full object-contain"
+        onError={() => setBroken(true)}
+      />
+    </div>
+  );
+}
 
 export function ExpenseList() {
   const { expenses, loading, deleteExpense, uploadExpenseImage, updateExpense } = useExpenses();
@@ -60,24 +129,6 @@ export function ExpenseList() {
       </div>
     );
   }
-
-  const getCategoryText = (category: string) => {
-    switch (category) {
-      case 'Card': return '單張卡片';
-      case 'Box': return '整盒/擴充包';
-      case 'Tournament': return '賽事報名費';
-      default: return category;
-    }
-  };
-
-  const getCategoryColor = (category: string) => {
-    switch (category) {
-      case 'Card': return 'bg-blue-50 text-blue-600';
-      case 'Box': return 'bg-slate-100 text-slate-600';
-      case 'Tournament': return 'bg-blue-100 text-blue-700';
-      default: return 'bg-slate-50 text-slate-500';
-    }
-  };
 
   const months = availableMonths(expenses);
   const visible = month === 'all' ? expenses : expenses.filter(e => inMonth(e.date, month));
@@ -159,12 +210,11 @@ export function ExpenseList() {
               <div className="flex items-center justify-between gap-3">
                 {/* Left: icon + title/date */}
                 <div className="flex items-center gap-3 min-w-0">
-                  <div className={cn(
-                    "p-2.5 rounded-xl flex-shrink-0",
-                    isIncome ? "bg-blue-50 text-poke-blue" : getCategoryColor(expense.category as string)
-                  )}>
-                    <Tag className="w-5 h-5" />
-                  </div>
+                  <SeriesThumb
+                    code={expense.seriesTag}
+                    isIncome={isIncome}
+                    category={expense.category as string}
+                  />
                   <div className="min-w-0">
                     <h3 className="font-bold text-slate-900 truncate text-sm sm:text-base">{expense.title}</h3>
                     <div className="flex items-center gap-2 text-[10px] sm:text-xs text-slate-400 font-bold flex-wrap">
