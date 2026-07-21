@@ -10,9 +10,13 @@ create table public.collection_items (
   series         text        not null default '',
   card_number    text,
   rarity         text,
-  item_type      text        not null default 'single' check (item_type in ('single', 'box', 'pack')),
-  condition      text        check (condition in ('mint', 'nm', 'lp', 'mp')),
-  quantity       integer     not null default 1,
+  item_type       text       not null default 'single' check (item_type in ('single', 'box', 'pack')),
+  condition       text       check (condition in ('mint', 'nm', 'lp', 'mp')),
+  is_graded       boolean    not null default false,
+  grading_company text       check (grading_company in ('psa', 'bgs', 'other')),
+  grade           text,
+  grading_cert    text,
+  quantity        integer    not null default 1,
   purchase_price numeric,
   current_value  numeric,
   notes          text,
@@ -39,3 +43,14 @@ alter table public.collection_items
   default 'ja' check (edition in ('ja', 'zh-tw', 'en'));
 
 update public.collection_items set edition = 'ja' where edition is null;
+
+-- ============================================================
+-- Migration: add grading (鑑定) columns to an existing table.
+-- Existing rows default to not graded; grading can be added later
+-- via the edit flow. Safe to run repeatedly.
+-- ============================================================
+alter table public.collection_items
+  add column if not exists is_graded       boolean not null default false,
+  add column if not exists grading_company text check (grading_company in ('psa', 'bgs', 'other')),
+  add column if not exists grade           text,
+  add column if not exists grading_cert    text;

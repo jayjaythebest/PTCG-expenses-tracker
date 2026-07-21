@@ -20,6 +20,10 @@ function mapRow(row: Record<string, unknown>): CollectionItem {
     notes:         row.notes as string | undefined,
     imageUrl:      row.image_url as string | undefined,
     edition:       (row.edition as CollectionItem['edition']) ?? undefined,
+    isGraded:      (row.is_graded as boolean | null) ?? false,
+    gradingCompany:(row.grading_company as CollectionItem['gradingCompany']) ?? undefined,
+    grade:         row.grade as string | undefined,
+    gradingCert:   row.grading_cert as string | undefined,
     createdAt:     row.created_at as string,
   };
 }
@@ -71,6 +75,10 @@ export function useCollection() {
       notes:          item.notes ?? null,
       image_url:      item.imageUrl ?? null,
       edition:        item.edition ?? 'ja',
+      is_graded:       item.isGraded ?? false,
+      grading_company: item.gradingCompany ?? null,
+      grade:           item.grade ?? null,
+      grading_cert:    item.gradingCert ?? null,
     });
     if (error) throw error;
   };
@@ -89,6 +97,10 @@ export function useCollection() {
     if ('currentValue' in updates)           dbUpdates.current_value = updates.currentValue ?? null;
     if ('notes' in updates)                  dbUpdates.notes = updates.notes ?? null;
     if ('edition' in updates)                dbUpdates.edition = updates.edition ?? null;
+    if (updates.isGraded !== undefined)      dbUpdates.is_graded = updates.isGraded;
+    if ('gradingCompany' in updates)         dbUpdates.grading_company = updates.gradingCompany ?? null;
+    if ('grade' in updates)                  dbUpdates.grade = updates.grade ?? null;
+    if ('gradingCert' in updates)            dbUpdates.grading_cert = updates.gradingCert ?? null;
 
     const { error } = await supabase.from('collection_items').update(dbUpdates).eq('id', id);
     if (error) throw error;

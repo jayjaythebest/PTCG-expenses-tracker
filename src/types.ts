@@ -3,6 +3,9 @@ export type UserRole = 'brother' | 'sponsor';
 // Card edition / print language. 'en' reserved for future use.
 export type CardEdition = 'ja' | 'zh-tw' | 'en';
 
+// Grading / certification company for graded (鑑定) cards.
+export type GradingCompany = 'psa' | 'bgs' | 'other';
+
 export type CollectionItemType = 'single' | 'box' | 'pack';
 export type CollectionCondition = 'mint' | 'nm' | 'lp' | 'mp';
 
@@ -21,6 +24,11 @@ export interface CollectionItem {
   notes?: string;
   imageUrl?: string;
   edition?: CardEdition;
+  // Grading / 鑑定. When isGraded is true, the grade replaces the raw condition.
+  isGraded?: boolean;
+  gradingCompany?: GradingCompany;
+  grade?: string;        // e.g. '10', '9.5' — text to allow BGS half-points
+  gradingCert?: string;  // cert / serial number
   createdAt: string;
 }
 

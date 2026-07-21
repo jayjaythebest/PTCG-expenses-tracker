@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { useCollection } from '../lib/useCollection';
-import { CollectionItem, CollectionItemType, CollectionCondition, CardEdition } from '../types';
+import { CollectionItem, CollectionItemType, CollectionCondition, CardEdition, GradingCompany } from '../types';
 import { PTCG_PRODUCTS } from '../data/ptcg-products';
 import { cn } from '../lib/utils';
 import { recognizeCardFromPhoto } from '../lib/gemini';
@@ -28,6 +28,14 @@ const EDITION_LABELS: Record<CardEdition, string> = {
   'en': '英文版',
 };
 
+const GRADING_LABELS: Record<GradingCompany, string> = {
+  psa: 'PSA',
+  bgs: 'BGS',
+  other: '其他',
+};
+
+const GRADE_OPTIONS = ['10', '9.5', '9', '8.5', '8', '7.5', '7', '6.5', '6', '5.5', '5', '4', '3', '2', '1'];
+
 const SERIES_OPTIONS = [...new Set(PTCG_PRODUCTS.map(p => p.series))];
 const SET_OPTIONS = PTCG_PRODUCTS.map(p => ({ value: p.name, series: p.series }));
 
@@ -47,6 +55,10 @@ const EMPTY_FORM = {
   notes: '',
   imageUrl: '',
   edition: '' as CardEdition | '',
+  isGraded: false,
+  gradingCompany: '' as GradingCompany | '',
+  grade: '',
+  gradingCert: '',
 };
 
 type FormState = typeof EMPTY_FORM;
@@ -275,34 +287,87 @@ function CollectionForm({
         </div>
       </div>
 
-      {/* Rarity + Condition (single only) */}
+      {/* Grading toggle + Rarity + Condition/Grading (single only) */}
       {form.itemType === 'single' && (
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <label className="text-xs font-bold text-slate-500 mb-1 block">稀有度</label>
-            <select
-              value={form.rarity}
-              onChange={e => set('rarity', e.target.value)}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-poke-blue bg-white"
-            >
-              <option value="">—</option>
-              {RARITY_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
-            </select>
+        <>
+          <label className="flex items-center gap-2 cursor-pointer select-none py-0.5">
+            <input
+              type="checkbox"
+              checked={form.isGraded}
+              onChange={e => set('isGraded', e.target.checked)}
+              className="w-4 h-4 rounded border-slate-300 text-poke-blue focus:ring-poke-blue"
+            />
+            <span className="text-sm font-bold text-slate-600">鑑定卡（PSA / BGS…）</span>
+          </label>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-xs font-bold text-slate-500 mb-1 block">稀有度</label>
+              <select
+                value={form.rarity}
+                onChange={e => set('rarity', e.target.value)}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-poke-blue bg-white"
+              >
+                <option value="">—</option>
+                {RARITY_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </div>
+            {form.isGraded ? (
+              <div>
+                <label className="text-xs font-bold text-slate-500 mb-1 block">鑑定公司</label>
+                <select
+                  value={form.gradingCompany}
+                  onChange={e => set('gradingCompany', e.target.value as GradingCompany | '')}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-poke-blue bg-white"
+                >
+                  <option value="">—</option>
+                  {(['psa', 'bgs', 'other'] as GradingCompany[]).map(g => (
+                    <option key={g} value={g}>{GRADING_LABELS[g]}</option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <div>
+                <label className="text-xs font-bold text-slate-500 mb-1 block">品相</label>
+                <select
+                  value={form.condition}
+                  onChange={e => set('condition', e.target.value as CollectionCondition | '')}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-poke-blue bg-white"
+                >
+                  <option value="">—</option>
+                  {(Object.keys(CONDITION_LABELS) as CollectionCondition[]).map(c => (
+                    <option key={c} value={c}>{CONDITION_LABELS[c]}</option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
-          <div>
-            <label className="text-xs font-bold text-slate-500 mb-1 block">品相</label>
-            <select
-              value={form.condition}
-              onChange={e => set('condition', e.target.value as CollectionCondition | '')}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-poke-blue bg-white"
-            >
-              <option value="">—</option>
-              {(Object.keys(CONDITION_LABELS) as CollectionCondition[]).map(c => (
-                <option key={c} value={c}>{CONDITION_LABELS[c]}</option>
-              ))}
-            </select>
-          </div>
-        </div>
+
+          {form.isGraded && (
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-xs font-bold text-slate-500 mb-1 block">評級分數</label>
+                <select
+                  value={form.grade}
+                  onChange={e => set('grade', e.target.value)}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-poke-blue bg-white"
+                >
+                  <option value="">—</option>
+                  {GRADE_OPTIONS.map(g => <option key={g} value={g}>{g}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-slate-500 mb-1 block">鑑定編號</label>
+                <input
+                  value={form.gradingCert}
+                  onChange={e => set('gradingCert', e.target.value)}
+                  placeholder="選填，例：12345678"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-poke-blue"
+                />
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {/* Edition + Card number (single only) */}
@@ -409,13 +474,17 @@ function formToItem(f: FormState): Omit<CollectionItem, 'id' | 'createdAt'> {
     cardNumber:    f.cardNumber || undefined,
     rarity:        f.rarity || undefined,
     itemType:      f.itemType,
-    condition:     (f.condition as CollectionCondition) || undefined,
+    condition:     f.isGraded ? undefined : ((f.condition as CollectionCondition) || undefined),
     quantity:      f.quantity,
     purchasePrice: f.purchasePrice !== '' ? Number(f.purchasePrice) : undefined,
     currentValue:  f.currentValue !== '' ? Number(f.currentValue) : undefined,
     notes:         f.notes || undefined,
     imageUrl:      f.imageUrl || undefined,
     edition:       (f.edition as CardEdition) || undefined,
+    isGraded:      f.isGraded,
+    gradingCompany: f.isGraded ? ((f.gradingCompany as GradingCompany) || undefined) : undefined,
+    grade:         f.isGraded ? (f.grade || undefined) : undefined,
+    gradingCert:   f.isGraded ? (f.gradingCert || undefined) : undefined,
   };
 }
 
@@ -434,6 +503,10 @@ function itemToForm(item: CollectionItem): FormState {
     notes:         item.notes ?? '',
     imageUrl:      item.imageUrl ?? '',
     edition:       item.edition ?? '',
+    isGraded:      item.isGraded ?? false,
+    gradingCompany: item.gradingCompany ?? '',
+    grade:         item.grade ?? '',
+    gradingCert:   item.gradingCert ?? '',
   };
 }
 
@@ -600,6 +673,11 @@ export function Collection() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
                     <ItemTypeBadge type={item.itemType} />
+                    {item.isGraded && (
+                      <span className="text-xs font-black text-amber-700 bg-gradient-to-r from-amber-100 to-yellow-100 border border-amber-300 px-2 py-0.5 rounded-full">
+                        {item.gradingCompany ? GRADING_LABELS[item.gradingCompany] : '鑑定'}{item.grade ? ` ${item.grade}` : ''}
+                      </span>
+                    )}
                     {item.edition && (
                       <span className="text-xs font-bold text-sky-600 bg-sky-50 px-2 py-0.5 rounded-full">
                         {EDITION_LABELS[item.edition]}
