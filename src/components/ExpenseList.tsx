@@ -69,6 +69,7 @@ function SeriesThumb({
       <img
         src={src}
         alt=""
+        referrerPolicy="no-referrer"
         className="w-full h-full object-contain"
         onError={() => setBroken(true)}
       />

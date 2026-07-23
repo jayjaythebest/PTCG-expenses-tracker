@@ -134,6 +134,7 @@ function Thumb({
     <img
       src={src}
       alt={alt ?? ''}
+      referrerPolicy="no-referrer"
       onError={() => setBroken(true)}
       onClick={onClick}
       className={cn(box, 'border-slate-100 object-contain', onClick && 'cursor-pointer')}
@@ -315,6 +316,7 @@ function CollectionForm({
               <img
                 src={scanResult === 'matched' && form.imageUrl ? form.imageUrl : (photoPreview ?? '')}
                 alt="card"
+                referrerPolicy="no-referrer"
                 className="w-12 h-16 object-contain rounded-md border border-slate-200 bg-white flex-shrink-0"
               />
               <p className={cn(
