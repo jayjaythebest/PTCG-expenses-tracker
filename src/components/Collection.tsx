@@ -1,4 +1,5 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useCollection } from '../lib/useCollection';
 import { CollectionItem, CollectionItemType, CollectionCondition, CardEdition, GradingCompany } from '../types';
 import { PTCG_PRODUCTS } from '../data/ptcg-products';
@@ -255,7 +256,7 @@ function CollectionForm({
 
   return (
     <form
-      className="bg-white rounded-xl border border-slate-200 p-4 space-y-3"
+      className="space-y-3"
       onSubmit={e => { e.preventDefault(); onSubmit(form); }}
     >
       {/* Item type */}
@@ -638,6 +639,90 @@ function itemToForm(item: CollectionItem): FormState {
   };
 }
 
+// Gallery tile image. Every card gets a picture: use the item's own image when
+// present, otherwise auto-resolve a representative set image from its set code
+// (TCGdex card art / Bulbagarden logo). Falls back to a placeholder only when
+// nothing at all can be resolved or the resolved URL fails to load.
+function GalleryImage({ item }: { item: CollectionItem }) {
+  const [src, setSrc] = useState<string | undefined>(item.imageUrl || undefined);
+  const [broken, setBroken] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    setBroken(false);
+    if (item.imageUrl) { setSrc(item.imageUrl); return; }
+    const code = SET_CODE_BY_NAME[item.setName];
+    if (!code) { setSrc(undefined); return; }
+    setSrc(undefined);
+    lookupSetImage(code, editionToLang(item.edition ?? ''))
+      .then(r => { if (alive) setSrc(r?.imageUrl); })
+      .catch(() => { if (alive) setSrc(undefined); });
+    return () => { alive = false; };
+  }, [item.imageUrl, item.setName, item.edition]);
+
+  if (!src || broken) {
+    return (
+      <div className="w-full h-full flex flex-col items-center justify-center gap-1 text-slate-300">
+        <div className="scale-[2.2]"><ItemTypeIcon type={item.itemType} /></div>
+        <span className="text-[10px] font-bold mt-2">無圖片</span>
+      </div>
+    );
+  }
+  return (
+    <img
+      src={src}
+      alt={item.name}
+      referrerPolicy="no-referrer"
+      onError={() => setBroken(true)}
+      className="w-full h-full object-contain p-2"
+    />
+  );
+}
+
+// Modal shell for the add / edit form so it floats above the gallery instead of
+// pushing the grid around.
+function CollectionModal({
+  title,
+  initial,
+  onSubmit,
+  onClose,
+  submitting,
+}: {
+  title: string;
+  initial: FormState;
+  onSubmit: (f: FormState) => void;
+  onClose: () => void;
+  submitting: boolean;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <motion.div
+        initial={{ opacity: 0, y: 40 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 40 }}
+        transition={{ duration: 0.2 }}
+        className="relative w-full sm:max-w-lg bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl max-h-[92vh] overflow-y-auto"
+      >
+        <div className="sticky top-0 bg-white border-b border-slate-100 px-5 py-4 flex items-center justify-between z-10">
+          <h2 className="font-black text-lg text-poke-dark-blue">{title}</h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 transition-colors">
+            <X className="w-5 h-5 text-slate-500" />
+          </button>
+        </div>
+        <div className="p-5">
+          <CollectionForm
+            initial={initial}
+            onSubmit={onSubmit}
+            onCancel={onClose}
+            submitting={submitting}
+          />
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 export function Collection() {
   const { items, loading, addItem, updateItem, deleteItem } = useCollection();
   const [filterType, setFilterType] = useState<FilterType>('all');
@@ -646,6 +731,7 @@ export function Collection() {
   const [submitting, setSubmitting] = useState(false);
 
   const filtered = items.filter(i => filterType === 'all' || i.itemType === filterType);
+  const editingItem = editingId ? (items.find(i => i.id === editingId) ?? null) : null;
 
   const totalPurchase = items.reduce((s, i) => s + ((i.purchasePrice ?? 0) * i.quantity), 0);
   const totalCurrent  = items.reduce((s, i) => s + ((i.currentValue  ?? 0) * i.quantity), 0);
@@ -745,31 +831,16 @@ export function Collection() {
         </div>
 
         <button
-          onClick={() => { setShowAddForm(v => !v); setEditingId(null); }}
-          className={cn(
-            'flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold transition-colors',
-            showAddForm
-              ? 'bg-slate-100 text-slate-500'
-              : 'bg-poke-blue text-white hover:bg-poke-dark-blue',
-          )}
+          onClick={() => { setEditingId(null); setShowAddForm(true); }}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold bg-poke-blue text-white hover:bg-poke-dark-blue transition-colors"
         >
-          {showAddForm ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-          {showAddForm ? '取消' : '新增'}
+          <Plus className="w-4 h-4" />
+          新增
         </button>
       </div>
 
-      {/* Add form */}
-      {showAddForm && (
-        <CollectionForm
-          initial={EMPTY_FORM}
-          onSubmit={handleAdd}
-          onCancel={() => setShowAddForm(false)}
-          submitting={submitting}
-        />
-      )}
-
       {/* Empty state */}
-      {filtered.length === 0 && !showAddForm && (
+      {filtered.length === 0 && (
         <div className="text-center p-12 bg-white rounded-xl border-2 border-dashed border-slate-200">
           <p className="text-slate-500 text-sm">
             {filterType === 'all' ? '尚無收藏紀錄，點右上角「新增」開始記錄吧！' : `尚無${ITEM_TYPE_LABELS[filterType]}紀錄`}
@@ -777,101 +848,124 @@ export function Collection() {
         </div>
       )}
 
-      {/* Item list */}
-      <div className="space-y-2">
-        {filtered.map(item => (
-          <div key={item.id}>
-            {editingId === item.id ? (
-              <CollectionForm
-                initial={itemToForm(item)}
-                onSubmit={f => handleUpdate(item.id, f)}
-                onCancel={() => setEditingId(null)}
-                submitting={submitting}
-              />
-            ) : (
-              <div className="bg-white rounded-xl border border-slate-200 px-4 py-3 flex items-start gap-3">
-                <Thumb
-                  src={item.imageUrl}
-                  type={item.itemType}
-                  alt={item.name}
-                  onClick={item.imageUrl ? () => window.open(item.imageUrl, '_blank') : undefined}
-                />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap mb-1">
+      {/* Gallery grid */}
+      {filtered.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          {filtered.map(item => {
+            const diff = (item.purchasePrice != null && item.currentValue != null)
+              ? (item.currentValue - item.purchasePrice) * item.quantity
+              : null;
+            return (
+              <div
+                key={item.id}
+                className="group relative bg-white rounded-xl border border-slate-200 overflow-hidden flex flex-col"
+              >
+                {/* Image */}
+                <div className="relative aspect-[3/4] bg-slate-50 border-b border-slate-100">
+                  <GalleryImage item={item} />
+
+                  {/* Top-left badges */}
+                  <div className="absolute top-1.5 left-1.5 flex flex-col items-start gap-1">
                     <ItemTypeBadge type={item.itemType} />
                     {item.isGraded && (
-                      <span className="text-xs font-black text-amber-700 bg-gradient-to-r from-amber-100 to-yellow-100 border border-amber-300 px-2 py-0.5 rounded-full">
+                      <span className="text-[10px] font-black text-amber-700 bg-gradient-to-r from-amber-100 to-yellow-100 border border-amber-300 px-1.5 py-0.5 rounded-full shadow-sm">
                         {item.gradingCompany ? GRADING_LABELS[item.gradingCompany] : '鑑定'}{item.grade ? ` ${item.grade}` : ''}
                       </span>
                     )}
+                  </div>
+
+                  {/* Quantity */}
+                  {item.quantity > 1 && (
+                    <span className="absolute bottom-1.5 left-1.5 text-[10px] font-black text-white bg-slate-800/70 px-1.5 py-0.5 rounded-full">
+                      ×{item.quantity}
+                    </span>
+                  )}
+
+                  {/* Actions */}
+                  <div className="absolute top-1.5 right-1.5 flex gap-1">
+                    <button
+                      onClick={() => { setEditingId(item.id); setShowAddForm(false); }}
+                      className="p-1.5 rounded-lg bg-white/80 backdrop-blur text-slate-500 hover:text-poke-blue shadow-sm transition-colors"
+                      title="編輯"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(item.id)}
+                      className="p-1.5 rounded-lg bg-white/80 backdrop-blur text-slate-500 hover:text-red-500 shadow-sm transition-colors"
+                      title="刪除"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Info */}
+                <div className="p-2.5 flex flex-col gap-1 flex-1">
+                  <div className="flex items-center gap-1 flex-wrap">
                     {item.edition && (
-                      <span className="text-xs font-bold text-sky-600 bg-sky-50 px-2 py-0.5 rounded-full">
+                      <span className="text-[10px] font-bold text-sky-600 bg-sky-50 px-1.5 py-0.5 rounded-full">
                         {EDITION_LABELS[item.edition]}
                       </span>
                     )}
                     {item.rarity && (
-                      <span className="text-xs font-bold text-violet-600 bg-violet-50 px-2 py-0.5 rounded-full">
+                      <span className="text-[10px] font-bold text-violet-600 bg-violet-50 px-1.5 py-0.5 rounded-full">
                         {item.rarity}
                       </span>
                     )}
                     {item.condition && (
-                      <span className="text-xs font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                      <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded-full">
                         {CONDITION_LABELS[item.condition]}
                       </span>
                     )}
-                    {item.quantity > 1 && (
-                      <span className="text-xs text-slate-400">×{item.quantity}</span>
-                    )}
                   </div>
 
-                  <p className="font-black text-slate-800 text-sm leading-tight">{item.name}</p>
+                  <p className="font-black text-slate-800 text-sm leading-tight line-clamp-2">{item.name}</p>
 
                   {(item.setName || item.cardNumber) && (
-                    <p className="text-xs text-slate-400 mt-0.5">
+                    <p className="text-[11px] text-slate-400 truncate">
                       {item.setName}{item.cardNumber ? ` · ${item.cardNumber}` : ''}
                     </p>
                   )}
 
-                  <div className="flex items-center gap-3 mt-2 text-sm text-slate-600">
-                    <PriceField label="入手" value={item.purchasePrice} />
-                    {item.purchasePrice != null && item.currentValue != null && (
-                      <span className="text-slate-200">|</span>
+                  <div className="mt-auto pt-1 flex items-baseline justify-between gap-1">
+                    <div className="min-w-0">
+                      <PriceField label="現估" value={item.currentValue ?? item.purchasePrice} />
+                    </div>
+                    {diff != null && (
+                      <span className={cn('text-[11px] font-bold shrink-0', diff >= 0 ? 'text-emerald-500' : 'text-red-400')}>
+                        {diff >= 0 ? '+' : ''}¥{diff.toLocaleString()}
+                      </span>
                     )}
-                    <PriceField label="現估" value={item.currentValue} />
-                    {item.purchasePrice != null && item.currentValue != null && (() => {
-                      const diff = (item.currentValue - item.purchasePrice) * item.quantity;
-                      return (
-                        <span className={cn('text-xs font-bold', diff >= 0 ? 'text-emerald-500' : 'text-red-400')}>
-                          {diff >= 0 ? '+' : ''}¥{diff.toLocaleString()}
-                        </span>
-                      );
-                    })()}
                   </div>
-
-                  {item.notes && (
-                    <p className="text-xs text-slate-400 mt-1 italic">{item.notes}</p>
-                  )}
-                </div>
-
-                <div className="flex gap-1 shrink-0">
-                  <button
-                    onClick={() => { setEditingId(item.id); setShowAddForm(false); }}
-                    className="p-1.5 text-slate-300 hover:text-poke-blue transition-colors rounded-lg hover:bg-slate-50"
-                  >
-                    <Pencil className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(item.id)}
-                    className="p-1.5 text-slate-300 hover:text-red-400 transition-colors rounded-lg hover:bg-red-50"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
                 </div>
               </div>
-            )}
-          </div>
-        ))}
-      </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Add / edit modal */}
+      <AnimatePresence>
+        {showAddForm && (
+          <CollectionModal
+            title="新增收藏"
+            initial={EMPTY_FORM}
+            onSubmit={handleAdd}
+            onClose={() => setShowAddForm(false)}
+            submitting={submitting}
+          />
+        )}
+        {editingItem && (
+          <CollectionModal
+            title="編輯收藏"
+            initial={itemToForm(editingItem)}
+            onSubmit={f => handleUpdate(editingItem.id, f)}
+            onClose={() => setEditingId(null)}
+            submitting={submitting}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
