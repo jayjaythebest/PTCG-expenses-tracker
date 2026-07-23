@@ -9,15 +9,19 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 //   GET /api/tw-card-image?set=M5            → booster/product pack image
 //   GET /api/tw-card-image?set=M5&number=16  → the exact card (016/081) image
 //
-// Card image ids are sequential with the collector number within an expansion
-// (verified: M5 001 = tw00019145, 016 = tw00019160), so once we know the first
-// card's id we can compute any card's image without scraping every page.
+// The expansion-filtered search results are returned in collector-number order
+// (verified: M5 position 1 = 001/081, 114 = 114/081 SAR), so the image for card
+// N is simply the Nth image id in that list. Detail ids are NOT 1:1 with the
+// collector number (SRs/variants create gaps), so we must read the list rather
+// than compute an offset.
 
 const BASE = 'https://asia.pokemon-card.com';
 const UA = 'Mozilla/5.0 (compatible; PTCGTracker/1.0)';
+const PAGE_SIZE = 20;
+const MAX_PAGES = 40; // safety cap (~800 cards)
 
 // Per-lambda in-memory caches (best-effort; survive warm invocations).
-const firstCardIdCache = new Map<string, number | null>();
+const cardIdsCache = new Map<string, number[]>();
 let productMap: Map<string, string> | null = null;
 
 async function fetchText(url: string): Promise<string | null> {
@@ -30,17 +34,27 @@ async function fetchText(url: string): Promise<string | null> {
   }
 }
 
-// First card's 8-digit image id for an expansion (== collector number 001).
-async function getFirstCardId(set: string): Promise<number | null> {
+// Ordered list of card image ids for an expansion (index 0 == card 001). Pages
+// are fetched only until we have at least `need` cards, then cached.
+async function getCardIds(set: string, need: number): Promise<number[]> {
   const key = set.toUpperCase();
-  if (firstCardIdCache.has(key)) return firstCardIdCache.get(key)!;
-  const html = await fetchText(
-    `${BASE}/tw/card-search/list/?pageNo=1&expansionCodes=${encodeURIComponent(set)}`,
-  );
-  const m = html?.match(/card-img\/tw0*(\d+)\.png/i);
-  const id = m ? Number(m[1]) : null;
-  firstCardIdCache.set(key, id);
-  return id;
+  const cached = cardIdsCache.get(key);
+  if (cached && cached.length >= need) return cached;
+
+  const ids: number[] = [];
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const html = await fetchText(
+      `${BASE}/tw/card-search/list/?pageNo=${page}&expansionCodes=${encodeURIComponent(set)}`,
+    );
+    if (!html) break;
+    const pageIds = [...html.matchAll(/card-img\/tw0*(\d+)\.png/gi)].map(m => Number(m[1]));
+    if (pageIds.length === 0) break;
+    ids.push(...pageIds);
+    if (ids.length >= need || pageIds.length < PAGE_SIZE) break;
+  }
+  // Only overwrite the cache when we gathered at least as many as before.
+  if (!cached || ids.length >= cached.length) cardIdsCache.set(key, ids);
+  return cardIdsCache.get(key) ?? ids;
 }
 
 // Map of expansion code → product/pack image URL, scraped once from the
@@ -78,11 +92,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    // 1) Precise single card, when a collector number is given.
+    // 1) Precise single card, when a collector number is given. The list is in
+    // collector-number order, so card N is simply the Nth image id (index N-1).
     if (Number.isFinite(number) && number > 0) {
-      const firstId = await getFirstCardId(set);
-      if (firstId) {
-        return res.status(200).json({ imageUrl: cardImageUrl(firstId + number - 1), kind: 'card' });
+      const ids = await getCardIds(set, number);
+      const id = ids[number - 1];
+      if (id) {
+        return res.status(200).json({ imageUrl: cardImageUrl(id), kind: 'card' });
       }
     }
 
@@ -94,9 +110,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // 3) Fall back to the expansion's first card as a representative image.
-    const firstId = await getFirstCardId(set);
-    if (firstId) {
-      return res.status(200).json({ imageUrl: cardImageUrl(firstId), kind: 'card' });
+    const ids = await getCardIds(set, 1);
+    if (ids[0]) {
+      return res.status(200).json({ imageUrl: cardImageUrl(ids[0]), kind: 'card' });
     }
 
     return res.status(200).json({ imageUrl: null });

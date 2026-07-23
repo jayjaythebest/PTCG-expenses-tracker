@@ -224,6 +224,10 @@ function CollectionForm({
         : null;
 
       if (card) {
+        // Prefer precise official TW artwork — TCGdex often lacks images for
+        // zh-tw / brand-new sets, and the proxy resolves the exact card by
+        // set code + collector number.
+        const twImage = await lookupTwCardImage(scan.setCode, scan.localId);
         setForm(f => ({
           ...f,
           name:       card.name,
@@ -231,7 +235,7 @@ function CollectionForm({
           series:     card.series  || f.series,
           rarity:     card.rarity  || scan.rarity || f.rarity,
           cardNumber: scan.localId || f.cardNumber,
-          imageUrl:   card.imageUrl || f.imageUrl,
+          imageUrl:   twImage || card.imageUrl || f.imageUrl,
           edition:    card.edition,
         }));
         setScanResult('matched');
