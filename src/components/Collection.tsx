@@ -5,7 +5,7 @@ import { CollectionItem, CollectionItemType, CollectionCondition, CardEdition, G
 import { PTCG_PRODUCTS } from '../data/ptcg-products';
 import { cn } from '../lib/utils';
 import { recognizeCardFromPhoto } from '../lib/gemini';
-import { lookupCard, lookupSetImage, type ScanLanguage } from '../lib/tcgdex';
+import { lookupCard, lookupSetImage, lookupTwCardImage, type ScanLanguage } from '../lib/tcgdex';
 import { Plus, Trash2, Pencil, X, Check, TrendingUp, TrendingDown, Package, CreditCard, Layers, Camera, Loader2, Sparkles, ImagePlus, ImageOff } from 'lucide-react';
 
 const ITEM_TYPE_LABELS: Record<CollectionItemType, string> = {
@@ -650,15 +650,37 @@ function GalleryImage({ item }: { item: CollectionItem }) {
   useEffect(() => {
     let alive = true;
     setBroken(false);
-    if (item.imageUrl) { setSrc(item.imageUrl); return; }
-    const code = SET_CODE_BY_NAME[item.setName];
-    if (!code) { setSrc(undefined); return; }
     setSrc(undefined);
-    lookupSetImage(code, editionToLang(item.edition ?? ''))
-      .then(r => { if (alive) setSrc(r?.imageUrl); })
-      .catch(() => { if (alive) setSrc(undefined); });
+
+    const code = SET_CODE_BY_NAME[item.setName];
+    const stored = item.imageUrl || undefined;
+    const lang = editionToLang(item.edition ?? '');
+
+    const resolve = async (): Promise<string | undefined> => {
+      if (item.itemType === 'single') {
+        // Keep genuine scanned card art; otherwise pull the precise official
+        // card image by collector number, then a set representative.
+        if (stored) return stored;
+        if (code && item.cardNumber) {
+          const tw = await lookupTwCardImage(code, item.cardNumber);
+          if (tw) return tw;
+        }
+        if (code) return (await lookupSetImage(code, lang))?.imageUrl;
+        return undefined;
+      }
+      // Boxes / packs: prefer the official pack artwork over any stored logo.
+      if (code) {
+        const rep = await lookupSetImage(code, lang);
+        if (rep?.imageUrl) return rep.imageUrl;
+      }
+      return stored;
+    };
+
+    resolve()
+      .then(url => { if (alive) setSrc(url); })
+      .catch(() => { if (alive) setSrc(stored); });
     return () => { alive = false; };
-  }, [item.imageUrl, item.setName, item.edition]);
+  }, [item.imageUrl, item.setName, item.edition, item.itemType, item.cardNumber]);
 
   if (!src || broken) {
     return (

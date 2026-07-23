@@ -199,15 +199,47 @@ async function fetchBulbaLogo(code: string): Promise<string | null> {
   return title ? await resolveBulbaImageUrl(title) : null;
 }
 
+// ---- Official Traditional-Chinese artwork (via our /api proxy) ----
+// The official TW site (asia.pokemon-card.com) has precise zh-tw card & pack
+// art but serves no CORS header, so we resolve the URL through a same-origin
+// serverless proxy (api/tw-card-image). The images hotlink freely afterwards.
+async function fetchTwOfficialImage(code: string, number?: number): Promise<string | null> {
+  try {
+    const qs = new URLSearchParams({ set: code });
+    if (number && Number.isFinite(number)) qs.set('number', String(number));
+    const res = await fetch(`/api/tw-card-image?${qs.toString()}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return typeof data?.imageUrl === 'string' && data.imageUrl ? data.imageUrl : null;
+  } catch {
+    return null;
+  }
+}
+
+// Precise single-card image from the official TW site, by set code + collector
+// number. Returns null (caller falls back) if the proxy can't resolve it.
+const twCardImageCache = new Map<string, string | null>();
+export async function lookupTwCardImage(setCode: string, cardNumber: number | string): Promise<string | null> {
+  const code = setCode.trim();
+  const n = typeof cardNumber === 'number' ? cardNumber : Number(String(cardNumber).match(/\d+/)?.[0]);
+  if (!code || !n || !Number.isFinite(n)) return null;
+  const key = `${code.toLowerCase()}#${n}`;
+  const cached = twCardImageCache.get(key);
+  if (cached !== undefined) return cached;
+  const url = await fetchTwOfficialImage(code, n);
+  twCardImageCache.set(key, url);
+  return url;
+}
+
 // Resolved images are cached per set code (case-insensitive) for the session so
 // a list of rows sharing a set only hits the network once.
 const setImageCache = new Map<string, SetImageResult | null>();
 
 // Resolve a representative image for a whole set by its code (e.g. "m5", "sv2a").
-// Priority: (1) Bulbagarden expansion logo — best "which generation" cue and the
-// only source that covers brand-new sets; (2) a TCGdex card image from the set,
-// trying the given language then the other. Returns null on total miss so the
-// UI can show a placeholder / let the user paste a URL manually.
+// Priority: (1) official TW pack/product art (precise, matches what the user
+// buys); (2) Bulbagarden expansion logo (covers brand-new sets); (3) a TCGdex
+// card image from the set. Returns null on total miss so the UI can show a
+// placeholder / let the user paste a URL manually.
 export async function lookupSetImage(
   setCode: string,
   language: ScanLanguage = 'ja',
@@ -219,13 +251,19 @@ export async function lookupSetImage(
   const cached = setImageCache.get(cacheKey);
   if (cached !== undefined) return cached;
 
-  // 1) Bulbagarden expansion logo.
-  const logo = await fetchBulbaLogo(code);
-  let result: SetImageResult | null = logo
-    ? { imageUrl: logo, kind: 'logo', edition: language }
+  // 1) Official TW pack/product art.
+  const tw = await fetchTwOfficialImage(code);
+  let result: SetImageResult | null = tw
+    ? { imageUrl: tw, kind: 'card', edition: language }
     : null;
 
-  // 2) TCGdex representative card art (older sets Bulba might miss).
+  // 2) Bulbagarden expansion logo.
+  if (!result) {
+    const logo = await fetchBulbaLogo(code);
+    result = logo ? { imageUrl: logo, kind: 'logo', edition: language } : null;
+  }
+
+  // 3) TCGdex representative card art (older sets the others might miss).
   if (!result) {
     const secondary: ScanLanguage = language === 'ja' ? 'zh-tw' : 'ja';
     result = (await trySetImage(code, language)) ?? (await trySetImage(code, secondary));
