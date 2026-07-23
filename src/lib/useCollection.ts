@@ -17,6 +17,10 @@ function mapRow(row: Record<string, unknown>): CollectionItem {
     quantity:      (row.quantity as number | null) ?? 1,
     purchasePrice: row.purchase_price as number | undefined,
     currentValue:  row.current_value as number | undefined,
+    marketPrice:          row.market_price as number | undefined,
+    marketPriceCurrency:  row.market_price_currency as string | undefined,
+    marketPriceSource:    row.market_price_source as string | undefined,
+    marketPriceUpdatedAt: row.market_price_updated_at as string | undefined,
     notes:         row.notes as string | undefined,
     imageUrl:      row.image_url as string | undefined,
     edition:       (row.edition as CollectionItem['edition']) ?? undefined,
@@ -72,6 +76,10 @@ export function useCollection() {
       quantity:       item.quantity,
       purchase_price: item.purchasePrice ?? null,
       current_value:  item.currentValue ?? null,
+      market_price:            item.marketPrice ?? null,
+      market_price_currency:   item.marketPriceCurrency ?? null,
+      market_price_source:     item.marketPriceSource ?? null,
+      market_price_updated_at: item.marketPriceUpdatedAt ?? null,
       notes:          item.notes ?? null,
       image_url:      item.imageUrl ?? null,
       edition:        item.edition ?? 'ja',
@@ -95,6 +103,10 @@ export function useCollection() {
     if (updates.quantity !== undefined)      dbUpdates.quantity = updates.quantity;
     if ('purchasePrice' in updates)          dbUpdates.purchase_price = updates.purchasePrice ?? null;
     if ('currentValue' in updates)           dbUpdates.current_value = updates.currentValue ?? null;
+    if ('marketPrice' in updates)            dbUpdates.market_price = updates.marketPrice ?? null;
+    if ('marketPriceCurrency' in updates)    dbUpdates.market_price_currency = updates.marketPriceCurrency ?? null;
+    if ('marketPriceSource' in updates)      dbUpdates.market_price_source = updates.marketPriceSource ?? null;
+    if ('marketPriceUpdatedAt' in updates)   dbUpdates.market_price_updated_at = updates.marketPriceUpdatedAt ?? null;
     if ('notes' in updates)                  dbUpdates.notes = updates.notes ?? null;
     if ('edition' in updates)                dbUpdates.edition = updates.edition ?? null;
     if (updates.isGraded !== undefined)      dbUpdates.is_graded = updates.isGraded;

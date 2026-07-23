@@ -29,6 +29,13 @@ export interface CollectionItem {
   gradingCompany?: GradingCompany;
   grade?: string;        // e.g. '10', '9.5' — text to allow BGS half-points
   gradingCert?: string;  // cert / serial number
+  // Market price, auto-fetched from a price source (Huca for ja, etc.). Stored
+  // in the source's native currency; the UI converts to TWD for display. This
+  // is distinct from `currentValue`, which is a manual override the user types.
+  marketPrice?: number;
+  marketPriceCurrency?: string;  // 'JPY' | 'TWD'
+  marketPriceSource?: string;    // 'huca' | 'kapaipai' | …
+  marketPriceUpdatedAt?: string; // ISO timestamp of the last successful fetch
   createdAt: string;
 }
 

@@ -19,6 +19,10 @@ create table public.collection_items (
   quantity        integer    not null default 1,
   purchase_price numeric,
   current_value  numeric,
+  market_price          numeric,
+  market_price_currency text,
+  market_price_source   text,
+  market_price_updated_at timestamptz,
   notes          text,
   image_url      text,
   edition        text        default 'ja' check (edition in ('ja', 'zh-tw', 'en')),
@@ -54,3 +58,15 @@ alter table public.collection_items
   add column if not exists grading_company text check (grading_company in ('psa', 'bgs', 'other')),
   add column if not exists grade           text,
   add column if not exists grading_cert    text;
+
+-- ============================================================
+-- Migration: add auto-fetched market price columns.
+-- `market_price` is stored in `market_price_currency` (e.g. JPY from Huca);
+-- the UI converts to TWD for display. Separate from `current_value` (manual).
+-- Safe to run repeatedly.
+-- ============================================================
+alter table public.collection_items
+  add column if not exists market_price            numeric,
+  add column if not exists market_price_currency   text,
+  add column if not exists market_price_source     text,
+  add column if not exists market_price_updated_at timestamptz;
