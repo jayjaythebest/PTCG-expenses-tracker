@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
-import { GoogleGenAI } from '@google/genai';
 import { Resend } from 'resend';
+import { textCompletion } from './_lib/ai';
 
 interface ExpenseRow {
   title: string;
@@ -41,10 +41,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .join('\n')
     : '（過去 7 天沒有任何記錄）';
 
-  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY ?? '' });
-  const geminiResponse = await ai.models.generateContent({
-    model: 'gemini-2.0-flash',
-    contents: `你是寶可夢集換式卡牌遊戲（PTCG）玩家的個人記帳助手。根據以下過去 7 天的消費/收入記錄，寫一段簡短、口語化的中文摘要（3-5 句話），內容包含：
+  let summary = '本週摘要產生失敗。';
+  try {
+    const result = await textCompletion({
+      prompt: `你是寶可夢集換式卡牌遊戲（PTCG）玩家的個人記帳助手。根據以下過去 7 天的消費/收入記錄，寫一段簡短、口語化的中文摘要（3-5 句話），內容包含：
 - 這週總支出與總收入（自己加總金額）
 - 花最多錢的分類或商品
 - 一句輕鬆的評論或建議
@@ -53,9 +53,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 ${lines}
 
 只回傳摘要文字，不要加標題或標點符號以外的格式。`,
-  });
-
-  const summary = (geminiResponse.text ?? '本週摘要產生失敗。').trim();
+    });
+    summary = result.data;
+  } catch (e) {
+    return res.status(500).json({ error: e instanceof Error ? e.message : 'summary failed' });
+  }
 
   const resend = new Resend(process.env.RESEND_API_KEY);
   const { error: sendError } = await resend.emails.send({

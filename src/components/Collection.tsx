@@ -157,6 +157,7 @@ function CollectionForm({
   const [form, setForm] = useState<FormState>(initial);
   const [scanning, setScanning] = useState(false);
   const [scanResult, setScanResult] = useState<'matched' | 'fallback' | null>(null);
+  const [scanProvider, setScanProvider] = useState<string | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [fetchingImg, setFetchingImg] = useState(false);
   const [imgMsg, setImgMsg] = useState<string | null>(null);
@@ -213,10 +214,12 @@ function CollectionForm({
     }
     setPhotoPreview(URL.createObjectURL(file));
     setScanResult(null);
+    setScanProvider(null);
     setScanning(true);
     try {
-      // 1) Gemini reads the reliable identifiers (language + set code + card number).
+      // 1) The AI provider chain reads the reliable identifiers (language + set code + card number).
       const scan = await recognizeCardFromPhoto(file);
+      setScanProvider(scan.provider ?? null);
       // 2) Resolve authoritative data (name/rarity/series/official art) from TCGdex,
       //    querying the endpoint that matches the detected language (falls back internally).
       const card = scan.setCode && scan.localId
@@ -332,6 +335,9 @@ function CollectionForm({
                 {scanResult === 'matched'
                   ? '已從卡片資料庫帶入正確資料，請確認後儲存'
                   : '查無此卡，已填入可辨識的部分，請手動補完'}
+                {scanProvider && (
+                  <span className="ml-1 font-medium text-slate-400">· {scanProvider}</span>
+                )}
               </p>
             </div>
           )}
