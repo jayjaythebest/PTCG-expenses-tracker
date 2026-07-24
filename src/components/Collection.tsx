@@ -93,34 +93,44 @@ function ItemTypeBadge({ type }: { type: CollectionItemType }) {
   );
 }
 
-// All collection amounts are JPY-native (purchases in ¥, Huca market prices in
-// ¥). We display them in TWD (the user's home currency) with the original ¥
-// figure in parentheses. `rate` is JPY -> TWD from /api/fx.
+// We display every amount in TWD (the user's home currency). Purchase prices
+// and manual overrides are JPY-native (the app tracks ¥); market prices carry
+// their own currency (JPY from Huca, TWD from kapaipai). `rate` is JPY -> TWD
+// from /api/fx.
 function twdOf(jpy: number, rate: number) {
   return Math.round(jpy * rate);
 }
 
+// Convert an amount in its native currency to TWD.
+function toTwd(amount: number, currency: 'JPY' | 'TWD', rate: number) {
+  return currency === 'TWD' ? Math.round(amount) : twdOf(amount, rate);
+}
+
 function Money({
-  jpy,
+  amount,
+  currency = 'JPY',
   rate,
   label,
   className,
-  showYen = true,
+  showOriginal = true,
 }: {
-  jpy?: number | null;
+  amount?: number | null;
+  currency?: 'JPY' | 'TWD';
   rate: number;
   label?: string;
   className?: string;
-  showYen?: boolean;
+  showOriginal?: boolean;
 }) {
-  if (jpy == null) return <span className="text-slate-300">—</span>;
+  if (amount == null) return <span className="text-slate-300">—</span>;
+  // Only JPY values need the original figure in parens; TWD is already home.
+  const showParen = showOriginal && currency === 'JPY';
   return (
     <span className={className}>
       {label && <span className="text-xs text-slate-400 mr-0.5">{label}</span>}
-      <span className="font-bold">NT${twdOf(jpy, rate).toLocaleString()}</span>
-      {showYen && (
+      <span className="font-bold">NT${toTwd(amount, currency, rate).toLocaleString()}</span>
+      {showParen && (
         <span className="text-[10px] text-slate-400 font-normal ml-0.5">
-          (¥{Math.round(jpy).toLocaleString()})
+          (¥{Math.round(amount).toLocaleString()})
         </span>
       )}
     </span>
@@ -797,17 +807,28 @@ export function Collection() {
   const filtered = items.filter(i => filterType === 'all' || i.itemType === filterType);
   const editingItem = editingId ? (items.find(i => i.id === editingId) ?? null) : null;
 
-  // Best-known current value for a card: a manual override wins, otherwise the
-  // auto-fetched market price, otherwise fall back to what was paid.
-  const effectiveValue = (i: CollectionItem) => i.currentValue ?? i.marketPrice ?? i.purchasePrice ?? null;
+  // Best-known current value for a card, in its native currency: a manual
+  // override wins (JPY), otherwise the auto-fetched market price (its own
+  // currency), otherwise fall back to what was paid (JPY).
+  const estValue = (i: CollectionItem): { amount: number; currency: 'JPY' | 'TWD' } | null => {
+    if (i.currentValue != null) return { amount: i.currentValue, currency: 'JPY' };
+    if (i.marketPrice != null) return { amount: i.marketPrice, currency: i.marketPriceCurrency === 'TWD' ? 'TWD' : 'JPY' };
+    if (i.purchasePrice != null) return { amount: i.purchasePrice, currency: 'JPY' };
+    return null;
+  };
 
-  const totalPurchase = items.reduce((s, i) => s + ((i.purchasePrice ?? 0) * i.quantity), 0);
-  const totalCurrent  = items.reduce((s, i) => s + ((effectiveValue(i) ?? 0) * i.quantity), 0);
-  const pnl = totalCurrent - totalPurchase;
-  const hasPrices = totalPurchase > 0 || totalCurrent > 0;
+  // Aggregates are computed in TWD (per-item, honouring each value's currency)
+  // so JPY and TWD cards can be summed together.
+  const totalPurchaseTwd = items.reduce((s, i) => s + toTwd(i.purchasePrice ?? 0, 'JPY', fxRate) * i.quantity, 0);
+  const totalCurrentTwd = items.reduce((s, i) => {
+    const e = estValue(i);
+    return s + (e ? toTwd(e.amount, e.currency, fxRate) : 0) * i.quantity;
+  }, 0);
+  const pnlTwd = totalCurrentTwd - totalPurchaseTwd;
+  const hasPrices = totalPurchaseTwd > 0 || totalCurrentTwd > 0;
 
-  // Cards we can auto-price: Japanese singles (Huca is JP-only for now).
-  const priceable = items.filter(i => i.itemType === 'single' && (i.edition ?? 'ja') !== 'zh-tw');
+  // Cards we can auto-price: singles. Japanese -> Huca, zh-tw -> kapaipai.
+  const priceable = items.filter(i => i.itemType === 'single');
 
   const handleRefreshPrices = async () => {
     if (refreshing || priceable.length === 0) return;
@@ -817,19 +838,23 @@ export function Collection() {
     fetchFxJpyToTwd().then(setFxRate).catch(() => {});
     let done = 0;
     for (const item of priceable) {
+      const edition = item.edition ?? 'ja';
+      // ja: Huca resolves by set code (from our local map). zh-tw: kapaipai
+      // resolves by set name (no local zh-tw set-code map).
       const setCode = SET_CODE_BY_NAME[item.setName] ?? '';
       try {
         const p = await fetchCardPrice({
           setCode,
+          setName: item.setName,
           number: item.cardNumber,
           name: item.name,
-          edition: item.edition ?? 'ja',
+          edition,
         });
         if (p && p.price != null) {
           await updateItem(item.id, {
             marketPrice: p.price,
-            marketPriceCurrency: p.currency ?? 'JPY',
-            marketPriceSource: p.source ?? 'huca',
+            marketPriceCurrency: p.currency ?? (edition === 'zh-tw' ? 'TWD' : 'JPY'),
+            marketPriceSource: p.source ?? (edition === 'zh-tw' ? 'kapaipai' : 'huca'),
             marketPriceUpdatedAt: p.updatedAt,
           });
         }
@@ -895,23 +920,23 @@ export function Collection() {
           <div className="bg-white rounded-xl border border-slate-200 p-4 text-center">
             <p className="text-xs text-slate-400 font-bold mb-1">入手總價</p>
             <p className="text-lg font-black text-slate-700">
-              <Money jpy={totalPurchase} rate={fxRate} showYen={false} />
+              <Money amount={totalPurchaseTwd} currency="TWD" rate={fxRate} showOriginal={false} />
             </p>
           </div>
           <div className="bg-white rounded-xl border border-slate-200 p-4 text-center">
             <p className="text-xs text-slate-400 font-bold mb-1">現估總價</p>
             <p className="text-lg font-black text-slate-700">
-              <Money jpy={totalCurrent} rate={fxRate} showYen={false} />
+              <Money amount={totalCurrentTwd} currency="TWD" rate={fxRate} showOriginal={false} />
             </p>
           </div>
           <div className={cn(
             'rounded-xl border p-4 text-center',
-            pnl >= 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200',
+            pnlTwd >= 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200',
           )}>
             <p className="text-xs font-bold mb-1 text-slate-400">損益</p>
-            <p className={cn('text-lg font-black flex items-center justify-center gap-1', pnl >= 0 ? 'text-emerald-600' : 'text-red-500')}>
-              {pnl >= 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
-              {pnl >= 0 ? '+' : ''}NT${twdOf(pnl, fxRate).toLocaleString()}
+            <p className={cn('text-lg font-black flex items-center justify-center gap-1', pnlTwd >= 0 ? 'text-emerald-600' : 'text-red-500')}>
+              {pnlTwd >= 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+              {pnlTwd >= 0 ? '+' : ''}NT${Math.round(pnlTwd).toLocaleString()}
             </p>
           </div>
         </div>
@@ -944,7 +969,7 @@ export function Collection() {
             <button
               onClick={handleRefreshPrices}
               disabled={refreshing}
-              title="從 Huca 更新日文卡市場價格"
+              title="更新市場價格（日文卡 Huca、繁中卡 卡拍拍）"
               className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold bg-white border border-slate-200 text-slate-500 hover:text-poke-blue hover:border-poke-blue transition-colors disabled:opacity-60"
             >
               <RefreshCw className={cn('w-4 h-4', refreshing && 'animate-spin')} />
@@ -977,11 +1002,12 @@ export function Collection() {
       {filtered.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
           {filtered.map(item => {
-            // A real current estimate (manual override or auto market price),
-            // as opposed to falling back to what was paid.
-            const est = item.currentValue ?? item.marketPrice ?? null;
-            const diff = (item.purchasePrice != null && est != null)
-              ? (est - item.purchasePrice) * item.quantity
+            // Current estimate (manual override or auto market price, else the
+            // purchase price), in its native currency; the diff is in TWD.
+            const est = estValue(item);
+            const estTwd = est ? toTwd(est.amount, est.currency, fxRate) : null;
+            const diff = (item.purchasePrice != null && estTwd != null)
+              ? (estTwd - toTwd(item.purchasePrice, 'JPY', fxRate)) * item.quantity
               : null;
             return (
               <div
@@ -1058,11 +1084,11 @@ export function Collection() {
 
                   <div className="mt-auto pt-1 flex items-baseline justify-between gap-1">
                     <div className="min-w-0" title={item.marketPriceSource ? `市場價來源：${item.marketPriceSource}` : undefined}>
-                      <Money label="現估" jpy={est ?? item.purchasePrice} rate={fxRate} />
+                      <Money label="現估" amount={est?.amount} currency={est?.currency ?? 'JPY'} rate={fxRate} />
                     </div>
                     {diff != null && (
                       <span className={cn('text-[11px] font-bold shrink-0', diff >= 0 ? 'text-emerald-500' : 'text-red-400')}>
-                        {diff >= 0 ? '+' : ''}NT${twdOf(diff, fxRate).toLocaleString()}
+                        {diff >= 0 ? '+' : ''}NT${Math.round(diff).toLocaleString()}
                       </span>
                     )}
                   </div>

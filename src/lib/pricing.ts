@@ -17,6 +17,7 @@ export async function fetchCardPrice(params: {
   number?: string;
   edition?: string;
   name?: string;
+  setName?: string; // zh-tw: kapaipai is resolved by set name (no local set-code map)
 }): Promise<CardPrice | null> {
   try {
     const res = await fetch('/api/card-price', {
