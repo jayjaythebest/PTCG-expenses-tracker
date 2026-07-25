@@ -5,7 +5,7 @@ import { CollectionItem, CollectionItemType, CollectionCondition, CardEdition, G
 import { PTCG_PRODUCTS } from '../data/ptcg-products';
 import { cn } from '../lib/utils';
 import { recognizeCardFromPhoto } from '../lib/gemini';
-import { lookupCard, lookupSetImage, lookupTwCardImage, resolveJaSetCode, jpCardImageUrl, type ScanLanguage } from '../lib/tcgdex';
+import { lookupCard, lookupSetImage, lookupTwCardImage, lookupJpCardImage, resolveJaSetCode, jpCardImageUrl, type ScanLanguage } from '../lib/tcgdex';
 import { fetchCardPrice, fetchFxJpyToTwd } from '../lib/pricing';
 import { Plus, Trash2, Pencil, X, Check, TrendingUp, TrendingDown, Package, CreditCard, Layers, Camera, Loader2, Sparkles, ImagePlus, ImageOff, RefreshCw, Search, ArrowUp, ArrowDown } from 'lucide-react';
 
@@ -245,12 +245,15 @@ function CollectionForm({
         // Pick artwork in the card's OWN language. For zh-tw, the official TW
         // proxy has precise per-card art (TCGdex often lacks zh-tw images). For
         // ja we must NOT use the TW proxy (it would show the Chinese version) —
-        // lookupCard already returns TCGdex's ja image, or the Limitless JP CDN
-        // fallback for brand-new sets TCGdex hasn't published art for yet.
+        // use TCGdex's ja image, or the SNKRDUNK/Limitless proxy for brand-new
+        // sets TCGdex hasn't published art for yet.
         let img = card.imageUrl;
         if (card.edition === 'zh-tw') {
           const tw = await lookupTwCardImage(scan.setCode, scan.localId);
           if (tw) img = tw;
+        } else if (!img) {
+          const jp = await lookupJpCardImage(scan.setCode, scan.localId);
+          if (jp) img = jp;
         }
         setForm(f => ({
           ...f,
@@ -737,9 +740,10 @@ function GalleryImage({ item }: { item: CollectionItem }) {
           if (lang === 'zh-tw') {
             push(await lookupTwCardImage(sc, num)); // TW proxy is zh-tw only
           } else {
-            const card = await lookupCard(sc, num, lang); // TCGdex ja (official art)
+            const card = await lookupCard(sc, num, lang); // TCGdex ja official art (older sets)
             push(card?.imageUrl);
-            push(jpCardImageUrl(sc, num)); // direct Limitless JP (covers TCGdex misses)
+            push(await lookupJpCardImage(sc, num)); // SNKRDUNK / Limitless (newest sets)
+            push(jpCardImageUrl(sc, num)); // direct Limitless URL (dev / proxy-down fallback)
           }
         }
         if (sc) push((await lookupSetImage(sc, lang))?.imageUrl); // set logo last

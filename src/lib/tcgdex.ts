@@ -128,17 +128,14 @@ async function tryLookup(code: string, id: string, lang: ScanLanguage): Promise<
 
     // Local product data is Japanese-only, so only use it to enrich JP lookups.
     const product = lang === 'ja' ? findProductByCode(code) : undefined;
-    // TCGdex often has no artwork for brand-new JP sets — fall back to the
-    // Limitless CDN so ja cards still show a Japanese image (never a Chinese one).
-    const imageUrl = data.image
-      ? `${data.image}/high.webp`
-      : (lang === 'ja' ? jpCardImageUrl(code, id) : '');
+    // TCGdex often has no artwork for brand-new JP sets — callers resolve the ja
+    // image separately (SNKRDUNK / Limitless via lookupJpCardImage) in that case.
     return {
       name:    String(data.name),
       rarity:  mapRarity(data.rarity),
       setName: product?.name ?? String(data.set?.name ?? ''),
       series:  product?.series ?? '',
-      imageUrl,
+      imageUrl: data.image ? `${data.image}/high.webp` : '',
       edition: lang,
     };
   } catch {
@@ -282,6 +279,32 @@ export async function lookupTwCardImage(setCode: string, cardNumber: number | st
   if (cached !== undefined) return cached;
   const url = await fetchTwOfficialImage(code, n);
   twCardImageCache.set(key, url);
+  return url;
+}
+
+// ---- Official-style Japanese artwork (via our /api proxy) ----
+// TCGdex has no card art for brand-new JP sets. Our serverless proxy resolves a
+// ja image from SNKRDUNK (chase cards / newest secret rares) with a Limitless
+// CDN fallback (base cards). Returns null so callers can fall back further.
+const jpCardImageCache = new Map<string, string | null>();
+export async function lookupJpCardImage(setCode: string, cardNumber: number | string): Promise<string | null> {
+  const code = setCode.trim();
+  const n = typeof cardNumber === 'number' ? cardNumber : Number(String(cardNumber).match(/(\d+)\s*\/\s*\d+/)?.[1] ?? String(cardNumber).match(/\d+/)?.[0]);
+  if (!code || !n || !Number.isFinite(n)) return null;
+  const key = `${code.toLowerCase()}#${n}`;
+  const cached = jpCardImageCache.get(key);
+  if (cached !== undefined) return cached;
+  let url: string | null = null;
+  try {
+    const res = await fetch(`/api/jp-card-image?set=${encodeURIComponent(code)}&number=${n}`);
+    if (res.ok) {
+      const data = await res.json();
+      url = typeof data?.imageUrl === 'string' && data.imageUrl ? data.imageUrl : null;
+    }
+  } catch {
+    url = null;
+  }
+  jpCardImageCache.set(key, url);
   return url;
 }
 
