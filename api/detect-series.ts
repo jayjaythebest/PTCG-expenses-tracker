@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { textCompletion } from './_lib/ai';
+import { textCompletion } from './_lib/ai.js';
 
 // Classify an expense title into a PTCG series/generation code. Server-side so
 // the AI key never ships to the browser. Runs the provider fallback chain.

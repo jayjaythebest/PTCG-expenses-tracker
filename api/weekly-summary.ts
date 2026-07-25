@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 import { Resend } from 'resend';
-import { textCompletion } from './_lib/ai';
+import { textCompletion } from './_lib/ai.js';
 
 interface ExpenseRow {
   title: string;

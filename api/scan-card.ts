@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { Type } from '@google/genai';
-import { visionJson, enabledProviders } from './_lib/ai';
-import { getKnownSetCodes } from './_lib/setcodes';
+import { visionJson, enabledProviders } from './_lib/ai.js';
+import { getKnownSetCodes } from './_lib/setcodes.js';
 
 // Vision OCR of a Pokémon card. The client posts a (downscaled) base64 image;
 // we read only the reliably-printed identifiers and return them. Authoritative
