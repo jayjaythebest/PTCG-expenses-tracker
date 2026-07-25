@@ -313,10 +313,15 @@ export async function lookupJpCardImage(setCode: string, cardNumber: number | st
 const setImageCache = new Map<string, SetImageResult | null>();
 
 // Resolve a representative image for a whole set by its code (e.g. "m5", "sv2a").
-// Priority: (1) official TW pack/product art (precise, matches what the user
-// buys); (2) Bulbagarden expansion logo (covers brand-new sets); (3) a TCGdex
-// card image from the set. Returns null on total miss so the UI can show a
-// placeholder / let the user paste a URL manually.
+// Priority: (1) official TW pack/product art (a real booster/product photo —
+// visually language-agnostic and much nicer than a bare logo, so we use it for
+// every language); (2) Bulbagarden expansion logo (covers brand-new sets the TW
+// site hasn't listed); (3) a TCGdex card image from the set. Returns null on
+// total miss so the UI can show a placeholder / let the user paste a URL.
+//
+// Note: this is only ever a *set-level* thumbnail. Individual ja card art (where
+// showing the Traditional-Chinese scan would be wrong) is resolved separately by
+// callers via lookupCard / lookupJpCardImage before they ever fall back here.
 export async function lookupSetImage(
   setCode: string,
   language: ScanLanguage = 'ja',
@@ -328,13 +333,12 @@ export async function lookupSetImage(
   const cached = setImageCache.get(cacheKey);
   if (cached !== undefined) return cached;
 
-  // 1) Official TW pack/product art — zh-tw only. For ja this would show the
-  //    Traditional-Chinese pack, so we skip it and let the JP logo win.
+  // 1) Official TW pack/product art — the real product photo. Used for every
+  //    language: a booster pack looks essentially the same across editions, and
+  //    a genuine pack photo beats a plain expansion logo for a row thumbnail.
   let result: SetImageResult | null = null;
-  if (language === 'zh-tw') {
-    const tw = await fetchTwOfficialImage(code);
-    result = tw ? { imageUrl: tw, kind: 'card', edition: language } : null;
-  }
+  const tw = await fetchTwOfficialImage(code);
+  result = tw ? { imageUrl: tw, kind: 'card', edition: language } : null;
 
   // 2) Bulbagarden expansion logo (searches "<code> Logo JP", so ja-appropriate).
   if (!result) {
