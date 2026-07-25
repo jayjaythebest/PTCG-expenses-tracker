@@ -20,6 +20,10 @@ export interface CardScanResult {
   // (quota exhausted, all providers down, or an unreadable photo) — lets the UI
   // distinguish "AI couldn't run" from "card genuinely not in the database".
   error?: string;
+  // Diagnostics for the failure banner: which providers are configured on the
+  // server, and why the chain failed ('quota' | 'no_provider' | 'unreadable').
+  providers?: string[];
+  reason?: string;
 }
 
 const EMPTY_SCAN: CardScanResult = { setCode: '', localId: '', name: '', rarity: '', language: '' };
@@ -86,6 +90,8 @@ export async function recognizeCardFromPhoto(file: File): Promise<CardScanResult
       provider: typeof data.provider === 'string' ? data.provider : undefined,
       model: typeof data.model === 'string' ? data.model : undefined,
       error: typeof data.error === 'string' ? data.error : undefined,
+      providers: Array.isArray(data.providers) ? data.providers.map(String) : undefined,
+      reason: typeof data.reason === 'string' ? data.reason : undefined,
     };
   } catch {
     return { ...EMPTY_SCAN, error: 'ai_failed' };

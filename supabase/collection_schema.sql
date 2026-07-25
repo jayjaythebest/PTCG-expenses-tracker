@@ -17,6 +17,7 @@ create table public.collection_items (
   grade           text,
   grading_cert    text,
   quantity        integer    not null default 1,
+  acquired_date   date,
   purchase_price numeric,
   current_value  numeric,
   market_price          numeric,
@@ -70,3 +71,11 @@ alter table public.collection_items
   add column if not exists market_price_currency   text,
   add column if not exists market_price_source     text,
   add column if not exists market_price_updated_at timestamptz;
+
+-- ============================================================
+-- Migration: add `acquired_date` (the user-editable date a card was acquired,
+-- distinct from created_at). Nullable; existing rows leave it blank and can be
+-- edited later. Safe to run repeatedly.
+-- ============================================================
+alter table public.collection_items
+  add column if not exists acquired_date date;

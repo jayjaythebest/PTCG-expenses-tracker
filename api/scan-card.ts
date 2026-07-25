@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { Type } from '@google/genai';
-import { visionJson } from './_lib/ai';
+import { visionJson, enabledProviders } from './_lib/ai';
 import { getKnownSetCodes } from './_lib/setcodes';
 
 // Vision OCR of a Pokémon card. The client posts a (downscaled) base64 image;
@@ -91,11 +91,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       language: lang,
       provider,
       model,
+      providers: enabledProviders(),
     });
-  } catch {
+  } catch (e) {
     // Every provider errored or returned an unreadable/blank result (quota
     // exhausted, all providers down, or the photo couldn't be OCR'd). Flag it so
-    // the client can say "AI unavailable" rather than "card not found".
-    return res.status(200).json({ ...EMPTY, error: 'ai_failed' });
+    // the client can say "AI unavailable" rather than "card not found". We also
+    // report which providers are configured + the last error, so the UI can hint
+    // (e.g. only one provider set up → a single quota wall breaks the whole chain).
+    const providers = enabledProviders();
+    const msg = e instanceof Error ? e.message : String(e ?? '');
+    const quotaHit = /\b429\b|quota|rate.?limit|exhausted|insufficient/i.test(msg);
+    return res.status(200).json({
+      ...EMPTY,
+      error: 'ai_failed',
+      providers,
+      reason: quotaHit ? 'quota' : (providers.length === 0 ? 'no_provider' : 'unreadable'),
+    });
   }
 }

@@ -50,16 +50,22 @@ const SET_CODE_BY_NAME: Record<string, string> = Object.fromEntries(
 const editionToLang = (e: CardEdition | ''): ScanLanguage => (e === 'zh-tw' ? 'zh-tw' : 'ja');
 
 type FilterType = 'all' | CollectionItemType;
-type SortKey = 'value' | 'purchase' | 'pnl' | 'name' | 'date';
+type SortKey = 'value' | 'pnl' | 'name' | 'date';
 type SortDir = 'desc' | 'asc';
 type GradedFilter = 'all' | 'graded' | 'raw';
 
 const SORT_LABELS: Record<SortKey, string> = {
   value: '現估市值',
-  purchase: '入手價',
   pnl: '損益',
   name: '名稱',
-  date: '加入日期',
+  date: '入手日期',
+};
+
+// Local YYYY-MM-DD for date <input> defaults (avoids the UTC shift toISOString
+// would introduce near midnight).
+const todayISO = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
 const EMPTY_FORM = {
@@ -71,7 +77,7 @@ const EMPTY_FORM = {
   itemType: 'single' as CollectionItemType,
   condition: '' as CollectionCondition | '',
   quantity: 1,
-  purchasePrice: '',
+  acquiredDate: '',
   currentValue: '',
   notes: '',
   imageUrl: '',
@@ -173,10 +179,12 @@ function CollectionForm({
   const [scanning, setScanning] = useState(false);
   const [scanResult, setScanResult] = useState<'matched' | 'fallback' | 'error' | null>(null);
   const [scanProvider, setScanProvider] = useState<string | null>(null);
+  const [scanHint, setScanHint] = useState<string | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [fetchingImg, setFetchingImg] = useState(false);
   const [imgMsg, setImgMsg] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const lastFileRef = useRef<File | null>(null);
 
   const set = (k: keyof FormState, v: unknown) => setForm(f => ({ ...f, [k]: v }));
 
@@ -220,16 +228,22 @@ function CollectionForm({
     }
   };
 
-  const handlePhotoScan = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoScan = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > 10 * 1024 * 1024) {
       alert('圖片太大，請選擇小於 10MB 的圖片');
       return;
     }
+    lastFileRef.current = file;
     setPhotoPreview(URL.createObjectURL(file));
+    runScan(file);
+  };
+
+  const runScan = async (file: File) => {
     setScanResult(null);
     setScanProvider(null);
+    setScanHint(null);
     setScanning(true);
     try {
       // 1) The AI provider chain reads the reliable identifiers (language + set code + card number).
@@ -270,6 +284,14 @@ function CollectionForm({
         // The AI chain couldn't run (quota exhausted / providers down / photo
         // unreadable) — nothing was read. Tell the user it's a service issue,
         // not that the card is unknown, so they don't assume the card is invalid.
+        const provs = scan.providers ?? [];
+        if (scan.reason === 'no_provider' || provs.length === 0) {
+          setScanHint('伺服器尚未設定任何 AI 金鑰，請在 Vercel 設定 GEMINI / GROQ / OPENROUTER_API_KEY');
+        } else if (scan.reason === 'quota' || provs.length === 1) {
+          setScanHint(`目前只有 ${provs.join('、') || 'gemini'} 可用，額度可能已用盡；建議在 Vercel 再補上 Groq / OpenRouter 免費金鑰`);
+        } else {
+          setScanHint('可換張更清晰、少反光的照片再試一次');
+        }
         setScanResult('error');
       } else {
         // Fallback: at least pre-fill what the model could read.
@@ -360,24 +382,38 @@ function CollectionForm({
                 referrerPolicy="no-referrer"
                 className="w-12 h-16 object-contain rounded-md border border-slate-200 bg-white flex-shrink-0"
               />
-              <p className={cn(
-                'text-xs font-bold',
-                scanResult === 'matched'
-                  ? 'text-emerald-700'
-                  : scanResult === 'error'
-                    ? 'text-red-600'
-                    : 'text-amber-700',
-              )}>
-                {scanResult === 'matched' && form.edition ? `（${EDITION_LABELS[form.edition]}）` : ''}
-                {scanResult === 'matched'
-                  ? '已從卡片資料庫帶入正確資料，請確認後儲存'
-                  : scanResult === 'error'
-                    ? 'AI 暫時無法辨識（服務忙碌／額度用盡，或卡面反光太強），請稍後再試或手動輸入'
-                    : '查無此卡，已填入可辨識的部分，請手動補完'}
-                {scanProvider && (
-                  <span className="ml-1 font-medium text-slate-400">· {scanProvider}</span>
+              <div className="min-w-0">
+                <p className={cn(
+                  'text-xs font-bold',
+                  scanResult === 'matched'
+                    ? 'text-emerald-700'
+                    : scanResult === 'error'
+                      ? 'text-red-600'
+                      : 'text-amber-700',
+                )}>
+                  {scanResult === 'matched' && form.edition ? `（${EDITION_LABELS[form.edition]}）` : ''}
+                  {scanResult === 'matched'
+                    ? '已從卡片資料庫帶入正確資料，請確認後儲存'
+                    : scanResult === 'error'
+                      ? 'AI 暫時無法辨識（服務忙碌／額度用盡，或卡面反光太強）'
+                      : '查無此卡，已填入可辨識的部分，請手動補完'}
+                  {scanProvider && (
+                    <span className="ml-1 font-medium text-slate-400">· {scanProvider}</span>
+                  )}
+                </p>
+                {scanResult === 'error' && (
+                  <>
+                    {scanHint && <p className="mt-0.5 text-[11px] font-medium text-red-500/80">{scanHint}</p>}
+                    <button
+                      type="button"
+                      onClick={() => { if (lastFileRef.current) runScan(lastFileRef.current); }}
+                      className="mt-1.5 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-red-600 bg-white border border-red-200 hover:bg-red-50 transition-colors"
+                    >
+                      <RefreshCw className="w-3 h-3" /> 重試
+                    </button>
+                  </>
                 )}
-              </p>
+              </div>
             </div>
           )}
         </div>
@@ -576,8 +612,8 @@ function CollectionForm({
         </div>
       )}
 
-      {/* Quantity + prices */}
-      <div className="grid grid-cols-3 gap-2">
+      {/* Quantity + current-value estimate */}
+      <div className="grid grid-cols-2 gap-2">
         <div>
           <label className="text-xs font-bold text-slate-500 mb-1 block">數量</label>
           <input
@@ -585,17 +621,6 @@ function CollectionForm({
             min={1}
             value={form.quantity}
             onChange={e => set('quantity', Number(e.target.value))}
-            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-poke-blue"
-          />
-        </div>
-        <div>
-          <label className="text-xs font-bold text-slate-500 mb-1 block">入手價 (¥)</label>
-          <input
-            type="number"
-            min={0}
-            value={form.purchasePrice}
-            onChange={e => set('purchasePrice', e.target.value)}
-            placeholder="0"
             className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-poke-blue"
           />
         </div>
@@ -609,7 +634,19 @@ function CollectionForm({
             placeholder="0"
             className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-poke-blue"
           />
+          <p className="mt-0.5 text-[10px] text-slate-400">作為損益基準；更新價格後與市場價比較</p>
         </div>
+      </div>
+
+      {/* Acquired date */}
+      <div>
+        <label className="text-xs font-bold text-slate-500 mb-1 block">入手日期</label>
+        <input
+          type="date"
+          value={form.acquiredDate}
+          onChange={e => set('acquiredDate', e.target.value)}
+          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-poke-blue"
+        />
       </div>
 
       {/* Notes */}
@@ -654,7 +691,7 @@ function formToItem(f: FormState): Omit<CollectionItem, 'id' | 'createdAt'> {
     itemType:      f.itemType,
     condition:     f.isGraded ? undefined : ((f.condition as CollectionCondition) || undefined),
     quantity:      f.quantity,
-    purchasePrice: f.purchasePrice !== '' ? Number(f.purchasePrice) : undefined,
+    acquiredDate:  f.acquiredDate || undefined,
     currentValue:  f.currentValue !== '' ? Number(f.currentValue) : undefined,
     notes:         f.notes || undefined,
     imageUrl:      f.imageUrl || undefined,
@@ -676,7 +713,7 @@ function itemToForm(item: CollectionItem): FormState {
     itemType:      item.itemType,
     condition:     item.condition ?? '',
     quantity:      item.quantity,
-    purchasePrice: item.purchasePrice != null ? String(item.purchasePrice) : '',
+    acquiredDate:  item.acquiredDate ?? '',
     currentValue:  item.currentValue != null ? String(item.currentValue) : '',
     notes:         item.notes ?? '',
     imageUrl:      item.imageUrl ?? '',
@@ -849,14 +886,24 @@ export function Collection() {
 
   const editingItem = editingId ? (items.find(i => i.id === editingId) ?? null) : null;
 
-  // Best-known current value for a card, in its native currency: a manual
-  // override wins (JPY), otherwise the auto-fetched market price (its own
-  // currency), otherwise fall back to what was paid (JPY).
+  // Live current value for a card, in its native currency: the auto-fetched
+  // market price wins (its own currency), otherwise the estimate the user
+  // recorded when adding (現估價, JPY). No purchase price is tracked any more.
   const estValue = (i: CollectionItem): { amount: number; currency: 'JPY' | 'TWD' } | null => {
-    if (i.currentValue != null) return { amount: i.currentValue, currency: 'JPY' };
     if (i.marketPrice != null) return { amount: i.marketPrice, currency: i.marketPriceCurrency === 'TWD' ? 'TWD' : 'JPY' };
-    if (i.purchasePrice != null) return { amount: i.purchasePrice, currency: 'JPY' };
+    if (i.currentValue != null) return { amount: i.currentValue, currency: 'JPY' };
     return null;
+  };
+
+  // Per-item value change (損益) in TWD: live market price vs. the user's
+  // recorded estimate (現估價) — only defined when we have BOTH, otherwise null
+  // (no baseline to compare against). Quantity-aware.
+  const pnlOf = (i: CollectionItem): { diff: number; pct: number } | null => {
+    if (i.marketPrice == null || i.currentValue == null) return null;
+    const market = toTwd(i.marketPrice, i.marketPriceCurrency === 'TWD' ? 'TWD' : 'JPY', fxRate);
+    const base = toTwd(i.currentValue, 'JPY', fxRate);
+    if (base <= 0) return null;
+    return { diff: (market - base) * i.quantity, pct: (market - base) / base * 100 };
   };
 
   // Editions actually present in the collection, so the version chips only list
@@ -890,14 +937,14 @@ export function Collection() {
       const e = estValue(i);
       return e ? toTwd(e.amount, e.currency, fxRate) : 0;
     };
-    const purchaseOf = (i: CollectionItem) => toTwd(i.purchasePrice ?? 0, 'JPY', fxRate);
+    const pnlDiffOf = (i: CollectionItem) => pnlOf(i)?.diff ?? 0;
+    const dateOf = (i: CollectionItem) => new Date(i.acquiredDate ?? i.createdAt).getTime();
 
     const cmp = (a: CollectionItem, b: CollectionItem): number => {
       switch (sortKey) {
         case 'name': return a.name.localeCompare(b.name, 'zh-Hant');
-        case 'purchase': return purchaseOf(a) - purchaseOf(b);
-        case 'pnl': return (valueOf(a) - purchaseOf(a)) - (valueOf(b) - purchaseOf(b));
-        case 'date': return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        case 'pnl': return pnlDiffOf(a) - pnlDiffOf(b);
+        case 'date': return dateOf(a) - dateOf(b);
         case 'value':
         default: return valueOf(a) - valueOf(b);
       }
@@ -912,13 +959,23 @@ export function Collection() {
 
   // Aggregates are computed in TWD (per-item, honouring each value's currency)
   // so JPY and TWD cards can be summed together.
-  const totalPurchaseTwd = items.reduce((s, i) => s + toTwd(i.purchasePrice ?? 0, 'JPY', fxRate) * i.quantity, 0);
   const totalCurrentTwd = items.reduce((s, i) => {
     const e = estValue(i);
     return s + (e ? toTwd(e.amount, e.currency, fxRate) : 0) * i.quantity;
   }, 0);
-  const pnlTwd = totalCurrentTwd - totalPurchaseTwd;
-  const hasPrices = totalPurchaseTwd > 0 || totalCurrentTwd > 0;
+  // Value change (損益) = live market price vs. recorded estimate, summed only
+  // over items that have both (so there's a baseline). totalBaseTwd is that
+  // baseline sum, used for the overall percentage.
+  let totalBaseTwd = 0;
+  let pnlTwd = 0;
+  for (const i of items) {
+    const p = pnlOf(i);
+    if (p && i.currentValue != null) {
+      totalBaseTwd += toTwd(i.currentValue, 'JPY', fxRate) * i.quantity;
+      pnlTwd += p.diff;
+    }
+  }
+  const hasPrices = totalCurrentTwd > 0;
 
   // Cards we can auto-price: singles. Japanese -> Huca, zh-tw -> kapaipai.
   const priceable = items.filter(i => i.itemType === 'single');
@@ -1026,7 +1083,7 @@ export function Collection() {
               <span className="text-3xl sm:text-4xl font-black tracking-tight">
                 NT${Math.round(totalCurrentTwd).toLocaleString()}
               </span>
-              {totalPurchaseTwd > 0 && (
+              {totalBaseTwd > 0 && (
                 <span className={cn(
                   'inline-flex items-center gap-1 px-2 py-1 rounded-full text-sm font-black bg-white/15',
                   pnlTwd >= 0 ? 'text-emerald-200' : 'text-red-200',
@@ -1034,14 +1091,13 @@ export function Collection() {
                   {pnlTwd >= 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
                   {pnlTwd >= 0 ? '+' : ''}NT${Math.round(pnlTwd).toLocaleString()}
                   <span className="opacity-80">
-                    ({pnlTwd >= 0 ? '+' : ''}{(pnlTwd / totalPurchaseTwd * 100).toFixed(1)}%)
+                    ({pnlTwd >= 0 ? '+' : ''}{(pnlTwd / totalBaseTwd * 100).toFixed(1)}%)
                   </span>
                 </span>
               )}
             </div>
 
             <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs font-bold text-white/70">
-              <span>入手總價 <span className="text-white/90">NT${Math.round(totalPurchaseTwd).toLocaleString()}</span></span>
               <span>收藏件數 <span className="text-white/90">{items.reduce((s, i) => s + i.quantity, 0)}</span></span>
             </div>
           </div>
@@ -1213,17 +1269,15 @@ export function Collection() {
       {filtered.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
           {filtered.map(item => {
-            // Current estimate (manual override or auto market price, else the
-            // purchase price), in its native currency; the diff is in TWD.
+            // Live current value (market price, else recorded estimate) in its
+            // native currency; the value change (損益) is live market vs. the
+            // recorded 現估價 estimate, in TWD.
             const est = estValue(item);
             const estTwd = est ? toTwd(est.amount, est.currency, fxRate) : null;
-            const purchaseTwd = item.purchasePrice != null ? toTwd(item.purchasePrice, 'JPY', fxRate) : null;
-            const diff = (purchaseTwd != null && estTwd != null)
-              ? (estTwd - purchaseTwd) * item.quantity
-              : null;
-            const diffPct = (purchaseTwd != null && purchaseTwd > 0 && estTwd != null)
-              ? (estTwd - purchaseTwd) / purchaseTwd * 100
-              : null;
+            const pnl = pnlOf(item);
+            const diff = pnl?.diff ?? null;
+            const diffPct = pnl?.pct ?? null;
+            const acquired = item.acquiredDate || null;
             return (
               <motion.div
                 key={item.id}
@@ -1325,9 +1379,9 @@ export function Collection() {
                         </span>
                       )}
                     </div>
-                    {(purchaseTwd != null || (est?.currency === 'JPY' && est.amount != null)) && (
+                    {(acquired || diff != null) && (
                       <div className="mt-0.5 flex items-center justify-between text-[10px] text-slate-400 font-medium">
-                        {purchaseTwd != null && <span>入手 NT${purchaseTwd.toLocaleString()}</span>}
+                        {acquired ? <span>入手 {acquired.replace(/-/g, '/')}</span> : <span />}
                         {diff != null && (
                           <span className={cn(diff >= 0 ? 'text-emerald-500/80' : 'text-red-400/80')}>
                             {diff >= 0 ? '+' : ''}NT${Math.round(diff).toLocaleString()}
@@ -1348,7 +1402,7 @@ export function Collection() {
         {showAddForm && (
           <CollectionModal
             title="新增收藏"
-            initial={EMPTY_FORM}
+            initial={{ ...EMPTY_FORM, acquiredDate: todayISO() }}
             onSubmit={handleAdd}
             onClose={() => setShowAddForm(false)}
             submitting={submitting}

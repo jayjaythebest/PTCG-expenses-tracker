@@ -19,7 +19,13 @@ export interface CollectionItem {
   itemType: CollectionItemType;
   condition?: CollectionCondition;
   quantity: number;
+  // Date the item was acquired (ISO 'YYYY-MM-DD'), editable by the user. Distinct
+  // from createdAt (the auto row-insertion timestamp).
+  acquiredDate?: string;
+  // Kept for backwards-compat with existing rows; no longer surfaced in the UI.
   purchasePrice?: number;
+  // The user's own estimate of the card's worth, set when adding (JPY). Serves as
+  // the baseline that the auto-fetched marketPrice is compared against for P&L.
   currentValue?: number;
   notes?: string;
   imageUrl?: string;

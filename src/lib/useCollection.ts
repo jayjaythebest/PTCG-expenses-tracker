@@ -15,6 +15,7 @@ function mapRow(row: Record<string, unknown>): CollectionItem {
     itemType:      row.item_type as CollectionItem['itemType'],
     condition:     row.condition as CollectionItem['condition'] | undefined,
     quantity:      (row.quantity as number | null) ?? 1,
+    acquiredDate:  (row.acquired_date as string | null) ?? undefined,
     purchasePrice: row.purchase_price as number | undefined,
     currentValue:  row.current_value as number | undefined,
     marketPrice:          row.market_price as number | undefined,
@@ -74,6 +75,7 @@ export function useCollection() {
       item_type:      item.itemType,
       condition:      item.condition ?? null,
       quantity:       item.quantity,
+      acquired_date:  item.acquiredDate ?? null,
       purchase_price: item.purchasePrice ?? null,
       current_value:  item.currentValue ?? null,
       market_price:            item.marketPrice ?? null,
@@ -101,6 +103,7 @@ export function useCollection() {
     if (updates.itemType !== undefined)      dbUpdates.item_type = updates.itemType;
     if ('condition' in updates)              dbUpdates.condition = updates.condition ?? null;
     if (updates.quantity !== undefined)      dbUpdates.quantity = updates.quantity;
+    if ('acquiredDate' in updates)           dbUpdates.acquired_date = updates.acquiredDate ?? null;
     if ('purchasePrice' in updates)          dbUpdates.purchase_price = updates.purchasePrice ?? null;
     if ('currentValue' in updates)           dbUpdates.current_value = updates.currentValue ?? null;
     if ('marketPrice' in updates)            dbUpdates.market_price = updates.marketPrice ?? null;

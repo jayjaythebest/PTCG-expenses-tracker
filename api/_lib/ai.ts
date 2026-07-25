@@ -172,6 +172,14 @@ function providerOrder(): Provider[] {
   return [...new Set(order)].filter(p => ADAPTERS[p].enabled());
 }
 
+// The providers that are actually usable right now (key present + in the
+// configured order). Exposed so endpoints can report configuration back to the
+// client — e.g. to hint that only one provider is set up, so a single quota
+// wall takes the whole chain down.
+export function enabledProviders(): Provider[] {
+  return providerOrder();
+}
+
 // Extract the first JSON object from a model response (tolerates code fences /
 // leading prose that non-strict providers sometimes emit).
 function parseJsonLoose<T>(text: string): T | null {
