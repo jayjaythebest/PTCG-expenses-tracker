@@ -28,6 +28,13 @@ const RARITY_MAP: Record<string, string> = {
   'special illustration rare': 'SAR',
   'hyper rare': 'HR',
   'ace spec rare': 'ACE SPEC',
+  // MEGA-series gold / secret rarities (TCGdex started returning these in 2026).
+  'mega hyper rare': 'MUR',
+  'mega ultra rare': 'MUR',
+  'ultra gold rare': 'UR',
+  'gold rare': 'UR',
+  'shiny rare': 'SR',
+  'shiny ultra rare': 'SAR',
 };
 
 function mapRarity(raw?: string): string {

@@ -22,7 +22,7 @@ const CONDITION_LABELS: Record<CollectionCondition, string> = {
   mp: 'MP',
 };
 
-const RARITY_OPTIONS = ['SAR', 'AR', 'SR', 'HR', 'CSR', 'SER', 'RR', 'R', 'U', 'C', 'ACE SPEC', 'Promo', '其他'];
+const RARITY_OPTIONS = ['UR', 'MUR', 'SAR', 'AR', 'SR', 'HR', 'CSR', 'SER', 'RR', 'R', 'U', 'C', 'ACE SPEC', 'Promo', '其他'];
 
 const EDITION_LABELS: Record<CardEdition, string> = {
   'ja': '日文版',
@@ -171,7 +171,7 @@ function CollectionForm({
 }) {
   const [form, setForm] = useState<FormState>(initial);
   const [scanning, setScanning] = useState(false);
-  const [scanResult, setScanResult] = useState<'matched' | 'fallback' | null>(null);
+  const [scanResult, setScanResult] = useState<'matched' | 'fallback' | 'error' | null>(null);
   const [scanProvider, setScanProvider] = useState<string | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [fetchingImg, setFetchingImg] = useState(false);
@@ -257,6 +257,11 @@ function CollectionForm({
           edition:    card.edition,
         }));
         setScanResult('matched');
+      } else if (scan.error) {
+        // The AI chain couldn't run (quota exhausted / providers down / photo
+        // unreadable) — nothing was read. Tell the user it's a service issue,
+        // not that the card is unknown, so they don't assume the card is invalid.
+        setScanResult('error');
       } else {
         // Fallback: at least pre-fill what the model could read.
         setForm(f => ({
@@ -334,7 +339,9 @@ function CollectionForm({
               'mt-2 flex items-center gap-3 p-2 border rounded-lg',
               scanResult === 'matched'
                 ? 'bg-emerald-50 border-emerald-200'
-                : 'bg-amber-50 border-amber-200',
+                : scanResult === 'error'
+                  ? 'bg-red-50 border-red-200'
+                  : 'bg-amber-50 border-amber-200',
             )}>
               <img
                 src={scanResult === 'matched' && form.imageUrl ? form.imageUrl : (photoPreview ?? '')}
@@ -344,12 +351,18 @@ function CollectionForm({
               />
               <p className={cn(
                 'text-xs font-bold',
-                scanResult === 'matched' ? 'text-emerald-700' : 'text-amber-700',
+                scanResult === 'matched'
+                  ? 'text-emerald-700'
+                  : scanResult === 'error'
+                    ? 'text-red-600'
+                    : 'text-amber-700',
               )}>
-                {form.edition ? `（${EDITION_LABELS[form.edition]}）` : ''}
+                {scanResult === 'matched' && form.edition ? `（${EDITION_LABELS[form.edition]}）` : ''}
                 {scanResult === 'matched'
                   ? '已從卡片資料庫帶入正確資料，請確認後儲存'
-                  : '查無此卡，已填入可辨識的部分，請手動補完'}
+                  : scanResult === 'error'
+                    ? 'AI 暫時無法辨識（服務忙碌／額度用盡，或卡面反光太強），請稍後再試或手動輸入'
+                    : '查無此卡，已填入可辨識的部分，請手動補完'}
                 {scanProvider && (
                   <span className="ml-1 font-medium text-slate-400">· {scanProvider}</span>
                 )}

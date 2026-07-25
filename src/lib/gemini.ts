@@ -16,17 +16,23 @@ export interface CardScanResult {
   language: ScanLanguage | '';
   provider?: string; // which AI provider actually answered (debug/compare)
   model?: string;
+  // 'ai_failed' when the provider chain errored / returned nothing readable
+  // (quota exhausted, all providers down, or an unreadable photo) — lets the UI
+  // distinguish "AI couldn't run" from "card genuinely not in the database".
+  error?: string;
 }
 
 const EMPTY_SCAN: CardScanResult = { setCode: '', localId: '', name: '', rarity: '', language: '' };
 
 // Downscale + re-encode the photo before upload: keeps the POST body small
 // (well under Vercel's ~5MB limit), cuts vision-token cost, and speeds things
-// up. 1280px longest edge stays sharp enough to read set codes / card numbers.
+// up. 1600px longest edge at q0.92 keeps the tiny bottom-corner set code /
+// collector number legible — critical for reflective gold (UR/MUR) cards where
+// the embossed text is low-contrast; over-compressing them loses the digits.
 async function fileToScaledBase64(
   file: File,
-  maxEdge = 1280,
-  quality = 0.85,
+  maxEdge = 1600,
+  quality = 0.92,
 ): Promise<{ base64: string; mimeType: string }> {
   const dataUrl = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -68,7 +74,7 @@ export async function recognizeCardFromPhoto(file: File): Promise<CardScanResult
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ imageBase64: base64, mimeType }),
     });
-    if (!res.ok) return { ...EMPTY_SCAN };
+    if (!res.ok) return { ...EMPTY_SCAN, error: 'ai_failed' };
     const data = await res.json();
     const lang = data.language === 'ja' || data.language === 'zh-tw' ? data.language : '';
     return {
@@ -79,9 +85,10 @@ export async function recognizeCardFromPhoto(file: File): Promise<CardScanResult
       language: lang as ScanLanguage | '',
       provider: typeof data.provider === 'string' ? data.provider : undefined,
       model: typeof data.model === 'string' ? data.model : undefined,
+      error: typeof data.error === 'string' ? data.error : undefined,
     };
   } catch {
-    return { ...EMPTY_SCAN };
+    return { ...EMPTY_SCAN, error: 'ai_failed' };
   }
 }
 
