@@ -59,8 +59,11 @@ const LIMITLESS_JP_CDN = 'https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/t
 
 export function jpCardImageUrl(setCode: string, localId: string | number): string {
   const code = String(setCode).trim();
-  const n = String(localId).trim().replace(/^0+(?=\d)/, ''); // Limitless uses unpadded numbers
-  return `${code && n ? `${LIMITLESS_JP_CDN}/${code}/${code}_${n}_R_JP.png` : ''}`;
+  // Accept messy input ("114/083", "J m5 117/081") → collector number ("114",
+  // "117"); Limitless uses the unpadded number before the slash.
+  const s = String(localId);
+  const n = (s.match(/(\d+)\s*\/\s*\d+/)?.[1] ?? s.match(/\d+/)?.[0] ?? '').replace(/^0+(?=\d)/, '');
+  return code && n ? `${LIMITLESS_JP_CDN}/${code}/${code}_${n}_R_JP.png` : '';
 }
 
 // TCGdex `setName` (as stored on a collection item) → its ja set code. Needed

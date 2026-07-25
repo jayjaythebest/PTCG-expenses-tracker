@@ -5,7 +5,7 @@ import { CollectionItem, CollectionItemType, CollectionCondition, CardEdition, G
 import { PTCG_PRODUCTS } from '../data/ptcg-products';
 import { cn } from '../lib/utils';
 import { recognizeCardFromPhoto } from '../lib/gemini';
-import { lookupCard, lookupSetImage, lookupTwCardImage, resolveJaSetCode, type ScanLanguage } from '../lib/tcgdex';
+import { lookupCard, lookupSetImage, lookupTwCardImage, resolveJaSetCode, jpCardImageUrl, type ScanLanguage } from '../lib/tcgdex';
 import { fetchCardPrice, fetchFxJpyToTwd } from '../lib/pricing';
 import { Plus, Trash2, Pencil, X, Check, TrendingUp, TrendingDown, Package, CreditCard, Layers, Camera, Loader2, Sparkles, ImagePlus, ImageOff, RefreshCw, Search, ArrowUp, ArrowDown } from 'lucide-react';
 
@@ -689,14 +689,26 @@ function itemToForm(item: CollectionItem): FormState {
 // present, otherwise auto-resolve a representative set image from its set code
 // (TCGdex card art / Bulbagarden logo). Falls back to a placeholder only when
 // nothing at all can be resolved or the resolved URL fails to load.
+// Pull the printed collector number out of possibly-messy stored text.
+// "114/083" → "114"; "J m5 117/081" → "117"; "016" → "16"; "" → "".
+function collectorNo(raw?: string): string {
+  if (!raw) return '';
+  const s = String(raw);
+  const n = s.match(/(\d+)\s*\/\s*\d+/)?.[1] ?? s.match(/\d+/)?.[0] ?? '';
+  return n.replace(/^0+(?=\d)/, '');
+}
+
 function GalleryImage({ item }: { item: CollectionItem }) {
-  const [src, setSrc] = useState<string | undefined>(item.imageUrl || undefined);
-  const [broken, setBroken] = useState(false);
+  // An ordered list of candidate image URLs; the <img> advances to the next one
+  // on load error, so a missing per-card scan degrades to the set logo (and
+  // finally a placeholder) rather than a blank tile.
+  const [candidates, setCandidates] = useState<string[]>([]);
+  const [idx, setIdx] = useState(0);
 
   useEffect(() => {
     let alive = true;
-    setBroken(false);
-    setSrc(undefined);
+    setCandidates([]);
+    setIdx(0);
 
     const code = SET_CODE_BY_NAME[item.setName];
     const stored = item.imageUrl || undefined;
@@ -708,44 +720,46 @@ function GalleryImage({ item }: { item: CollectionItem }) {
       stored && !(lang === 'ja' && stored.includes('asia.pokemon-card.com'))
         ? stored
         : undefined;
+    const num = collectorNo(item.cardNumber);
 
-    const resolve = async (): Promise<string | undefined> => {
+    const build = async (): Promise<string[]> => {
+      const out: string[] = [];
+      const push = (u?: string | null) => { if (u && !out.includes(u)) out.push(u); };
+
+      // The setName of a brand-new set (e.g. M4) isn't in local products, so fall
+      // back to TCGdex's ja set-name → code map to recover its code.
+      let sc = code;
+      if (!sc && lang === 'ja') sc = (await resolveJaSetCode(item.setName)) ?? undefined;
+
       if (item.itemType === 'single') {
-        // Keep genuine scanned art; otherwise resolve per-card art in the card's
-        // OWN language — the TW proxy is zh-tw only, so ja must use TCGdex's ja
-        // image (never the Chinese one), then a set representative.
-        if (storedUsable) return storedUsable;
-        // The setName of a brand-new set (e.g. M4) isn't in local products, so
-        // fall back to TCGdex's ja set-name → code map to recover its code.
-        let sc = code;
-        if (!sc && lang === 'ja') sc = (await resolveJaSetCode(item.setName)) ?? undefined;
-        if (sc && item.cardNumber) {
+        push(storedUsable); // genuine scanned/uploaded art first
+        if (sc && num) {
           if (lang === 'zh-tw') {
-            const tw = await lookupTwCardImage(sc, item.cardNumber);
-            if (tw) return tw;
+            push(await lookupTwCardImage(sc, num)); // TW proxy is zh-tw only
           } else {
-            const card = await lookupCard(sc, String(item.cardNumber), lang);
-            if (card?.imageUrl) return card.imageUrl;
+            const card = await lookupCard(sc, num, lang); // TCGdex ja (official art)
+            push(card?.imageUrl);
+            push(jpCardImageUrl(sc, num)); // direct Limitless JP (covers TCGdex misses)
           }
         }
-        if (sc) return (await lookupSetImage(sc, lang))?.imageUrl;
-        return undefined;
+        if (sc) push((await lookupSetImage(sc, lang))?.imageUrl); // set logo last
+        return out;
       }
-      // Boxes / packs: prefer the official pack artwork over any stored logo.
-      if (code) {
-        const rep = await lookupSetImage(code, lang);
-        if (rep?.imageUrl) return rep.imageUrl;
-      }
-      return storedUsable;
+
+      // Boxes / packs: prefer official pack art, then any stored logo.
+      if (sc) push((await lookupSetImage(sc, lang))?.imageUrl);
+      push(storedUsable);
+      return out;
     };
 
-    resolve()
-      .then(url => { if (alive) setSrc(url); })
-      .catch(() => { if (alive) setSrc(storedUsable); });
+    build()
+      .then(list => { if (alive) setCandidates(list); })
+      .catch(() => { if (alive) setCandidates(storedUsable ? [storedUsable] : []); });
     return () => { alive = false; };
   }, [item.imageUrl, item.setName, item.edition, item.itemType, item.cardNumber]);
 
-  if (!src || broken) {
+  const src = candidates[idx];
+  if (!src) {
     return (
       <div className="w-full h-full flex flex-col items-center justify-center gap-1 text-slate-300">
         <div className="scale-[2.2]"><ItemTypeIcon type={item.itemType} /></div>
@@ -758,7 +772,7 @@ function GalleryImage({ item }: { item: CollectionItem }) {
       src={src}
       alt={item.name}
       referrerPolicy="no-referrer"
-      onError={() => setBroken(true)}
+      onError={() => setIdx(i => i + 1)}
       className="w-full h-full object-contain p-2"
     />
   );
