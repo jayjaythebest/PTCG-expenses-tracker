@@ -47,6 +47,45 @@ function findProductByCode(code: string) {
   return PTCG_PRODUCTS.find(p => p.code.toLowerCase() === lc);
 }
 
+// ---- Japanese card artwork (via Limitless TCG CDN) ----
+// TCGdex has no card art for brand-new Japanese sets (e.g. `M4` returns 120
+// cards but every `image` is empty), and the official JP site blocks scraping.
+// Limitless TCG's CDN hosts full JP scans for essentially every set, including
+// the newest ones, keyed by the SAME set code TCGdex uses (M4, SV8a…) and the
+// unpadded collector number. Images are `image/png` and hotlink freely from an
+// <img> tag (no CORS needed). Pattern verified for M4-120 (メガゲッコウガex),
+// M4-1, M5-16, SV8a-1 — the `_R_` segment is a constant in Limitless's naming.
+const LIMITLESS_JP_CDN = 'https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/tpc';
+
+export function jpCardImageUrl(setCode: string, localId: string | number): string {
+  const code = String(setCode).trim();
+  const n = String(localId).trim().replace(/^0+(?=\d)/, ''); // Limitless uses unpadded numbers
+  return `${code && n ? `${LIMITLESS_JP_CDN}/${code}/${code}_${n}_R_JP.png` : ''}`;
+}
+
+// TCGdex `setName` (as stored on a collection item) → its ja set code. Needed
+// because a card's setName may be a brand-new set not present in local
+// PTCG_PRODUCTS, so SET_CODE_BY_NAME can't resolve it. Fetched once, cached.
+let jaSetNameToCode: Map<string, string> | null = null;
+export async function resolveJaSetCode(setName: string): Promise<string | null> {
+  const name = setName.trim();
+  if (!name) return null;
+  if (!jaSetNameToCode) {
+    try {
+      const res = await fetch('https://api.tcgdex.net/v2/ja/sets');
+      const data = res.ok ? await res.json() : [];
+      jaSetNameToCode = new Map(
+        (Array.isArray(data) ? data : [])
+          .map((s: { id?: unknown; name?: unknown }) => [String(s?.name ?? '').trim(), String(s?.id ?? '')] as const)
+          .filter(([n, i]) => n && i),
+      );
+    } catch {
+      jaSetNameToCode = new Map();
+    }
+  }
+  return jaSetNameToCode.get(name) ?? null;
+}
+
 // ---- Known set codes (per language), fetched once from TCGdex and cached ----
 // Set codes differ between languages (JP "sv2a" vs zh-tw "SC2a"/"CS1a"),
 // so we feed both lists to Gemini and let it pick the one matching the card language.
@@ -86,12 +125,17 @@ async function tryLookup(code: string, id: string, lang: ScanLanguage): Promise<
 
     // Local product data is Japanese-only, so only use it to enrich JP lookups.
     const product = lang === 'ja' ? findProductByCode(code) : undefined;
+    // TCGdex often has no artwork for brand-new JP sets — fall back to the
+    // Limitless CDN so ja cards still show a Japanese image (never a Chinese one).
+    const imageUrl = data.image
+      ? `${data.image}/high.webp`
+      : (lang === 'ja' ? jpCardImageUrl(code, id) : '');
     return {
       name:    String(data.name),
       rarity:  mapRarity(data.rarity),
       setName: product?.name ?? String(data.set?.name ?? ''),
       series:  product?.series ?? '',
-      imageUrl: data.image ? `${data.image}/high.webp` : '',
+      imageUrl,
       edition: lang,
     };
   } catch {
@@ -258,13 +302,15 @@ export async function lookupSetImage(
   const cached = setImageCache.get(cacheKey);
   if (cached !== undefined) return cached;
 
-  // 1) Official TW pack/product art.
-  const tw = await fetchTwOfficialImage(code);
-  let result: SetImageResult | null = tw
-    ? { imageUrl: tw, kind: 'card', edition: language }
-    : null;
+  // 1) Official TW pack/product art — zh-tw only. For ja this would show the
+  //    Traditional-Chinese pack, so we skip it and let the JP logo win.
+  let result: SetImageResult | null = null;
+  if (language === 'zh-tw') {
+    const tw = await fetchTwOfficialImage(code);
+    result = tw ? { imageUrl: tw, kind: 'card', edition: language } : null;
+  }
 
-  // 2) Bulbagarden expansion logo.
+  // 2) Bulbagarden expansion logo (searches "<code> Logo JP", so ja-appropriate).
   if (!result) {
     const logo = await fetchBulbaLogo(code);
     result = logo ? { imageUrl: logo, kind: 'logo', edition: language } : null;

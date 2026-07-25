@@ -5,7 +5,7 @@ import { CollectionItem, CollectionItemType, CollectionCondition, CardEdition, G
 import { PTCG_PRODUCTS } from '../data/ptcg-products';
 import { cn } from '../lib/utils';
 import { recognizeCardFromPhoto } from '../lib/gemini';
-import { lookupCard, lookupSetImage, lookupTwCardImage, type ScanLanguage } from '../lib/tcgdex';
+import { lookupCard, lookupSetImage, lookupTwCardImage, resolveJaSetCode, type ScanLanguage } from '../lib/tcgdex';
 import { fetchCardPrice, fetchFxJpyToTwd } from '../lib/pricing';
 import { Plus, Trash2, Pencil, X, Check, TrendingUp, TrendingDown, Package, CreditCard, Layers, Camera, Loader2, Sparkles, ImagePlus, ImageOff, RefreshCw, Search, ArrowUp, ArrowDown } from 'lucide-react';
 
@@ -242,10 +242,16 @@ function CollectionForm({
         : null;
 
       if (card) {
-        // Prefer precise official TW artwork — TCGdex often lacks images for
-        // zh-tw / brand-new sets, and the proxy resolves the exact card by
-        // set code + collector number.
-        const twImage = await lookupTwCardImage(scan.setCode, scan.localId);
+        // Pick artwork in the card's OWN language. For zh-tw, the official TW
+        // proxy has precise per-card art (TCGdex often lacks zh-tw images). For
+        // ja we must NOT use the TW proxy (it would show the Chinese version) —
+        // lookupCard already returns TCGdex's ja image, or the Limitless JP CDN
+        // fallback for brand-new sets TCGdex hasn't published art for yet.
+        let img = card.imageUrl;
+        if (card.edition === 'zh-tw') {
+          const tw = await lookupTwCardImage(scan.setCode, scan.localId);
+          if (tw) img = tw;
+        }
         setForm(f => ({
           ...f,
           name:       card.name,
@@ -253,7 +259,7 @@ function CollectionForm({
           series:     card.series  || f.series,
           rarity:     card.rarity  || scan.rarity || f.rarity,
           cardNumber: scan.localId || f.cardNumber,
-          imageUrl:   twImage || card.imageUrl || f.imageUrl,
+          imageUrl:   img || f.imageUrl,
           edition:    card.edition,
         }));
         setScanResult('matched');
@@ -309,11 +315,13 @@ function CollectionForm({
       {/* Photo scan — single only */}
       {form.itemType === 'single' && (
         <div>
+          {/* No `capture` attribute: on mobile this lets the user pick from the
+              photo library or files as well as taking a new photo (with
+              `capture` set, iOS/Android jump straight to the camera). */}
           <input
             ref={fileInputRef}
             type="file"
             accept="image/*"
-            capture="environment"
             className="hidden"
             onChange={handlePhotoScan}
           />
@@ -693,17 +701,34 @@ function GalleryImage({ item }: { item: CollectionItem }) {
     const code = SET_CODE_BY_NAME[item.setName];
     const stored = item.imageUrl || undefined;
     const lang = editionToLang(item.edition ?? '');
+    // A ja card that stored a Traditional-Chinese image (from the TW proxy, back
+    // when resolution was language-agnostic) is wrong: drop it so it re-resolves
+    // in ja below. Genuine ja/other stored art is kept.
+    const storedUsable =
+      stored && !(lang === 'ja' && stored.includes('asia.pokemon-card.com'))
+        ? stored
+        : undefined;
 
     const resolve = async (): Promise<string | undefined> => {
       if (item.itemType === 'single') {
-        // Keep genuine scanned card art; otherwise pull the precise official
-        // card image by collector number, then a set representative.
-        if (stored) return stored;
-        if (code && item.cardNumber) {
-          const tw = await lookupTwCardImage(code, item.cardNumber);
-          if (tw) return tw;
+        // Keep genuine scanned art; otherwise resolve per-card art in the card's
+        // OWN language — the TW proxy is zh-tw only, so ja must use TCGdex's ja
+        // image (never the Chinese one), then a set representative.
+        if (storedUsable) return storedUsable;
+        // The setName of a brand-new set (e.g. M4) isn't in local products, so
+        // fall back to TCGdex's ja set-name → code map to recover its code.
+        let sc = code;
+        if (!sc && lang === 'ja') sc = (await resolveJaSetCode(item.setName)) ?? undefined;
+        if (sc && item.cardNumber) {
+          if (lang === 'zh-tw') {
+            const tw = await lookupTwCardImage(sc, item.cardNumber);
+            if (tw) return tw;
+          } else {
+            const card = await lookupCard(sc, String(item.cardNumber), lang);
+            if (card?.imageUrl) return card.imageUrl;
+          }
         }
-        if (code) return (await lookupSetImage(code, lang))?.imageUrl;
+        if (sc) return (await lookupSetImage(sc, lang))?.imageUrl;
         return undefined;
       }
       // Boxes / packs: prefer the official pack artwork over any stored logo.
@@ -711,12 +736,12 @@ function GalleryImage({ item }: { item: CollectionItem }) {
         const rep = await lookupSetImage(code, lang);
         if (rep?.imageUrl) return rep.imageUrl;
       }
-      return stored;
+      return storedUsable;
     };
 
     resolve()
       .then(url => { if (alive) setSrc(url); })
-      .catch(() => { if (alive) setSrc(stored); });
+      .catch(() => { if (alive) setSrc(storedUsable); });
     return () => { alive = false; };
   }, [item.imageUrl, item.setName, item.edition, item.itemType, item.cardNumber]);
 
@@ -1266,6 +1291,11 @@ export function Collection() {
                         title={item.marketPriceSource ? `市場價來源：${item.marketPriceSource}` : undefined}
                       >
                         {estTwd != null ? `NT$${estTwd.toLocaleString()}` : '—'}
+                        {estTwd != null && est?.currency === 'JPY' && est.amount != null && (
+                          <span className="ml-0.5 text-[10px] font-normal text-slate-400">
+                            (¥{Math.round(est.amount).toLocaleString()})
+                          </span>
+                        )}
                       </span>
                       {diffPct != null && (
                         <span className={cn(
