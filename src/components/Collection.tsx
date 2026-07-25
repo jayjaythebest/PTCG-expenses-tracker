@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useCollection } from '../lib/useCollection';
 import { CollectionItem, CollectionItemType, CollectionCondition, CardEdition, GradingCompany } from '../types';
@@ -7,7 +7,7 @@ import { cn } from '../lib/utils';
 import { recognizeCardFromPhoto } from '../lib/gemini';
 import { lookupCard, lookupSetImage, lookupTwCardImage, type ScanLanguage } from '../lib/tcgdex';
 import { fetchCardPrice, fetchFxJpyToTwd } from '../lib/pricing';
-import { Plus, Trash2, Pencil, X, Check, TrendingUp, TrendingDown, Package, CreditCard, Layers, Camera, Loader2, Sparkles, ImagePlus, ImageOff, RefreshCw } from 'lucide-react';
+import { Plus, Trash2, Pencil, X, Check, TrendingUp, TrendingDown, Package, CreditCard, Layers, Camera, Loader2, Sparkles, ImagePlus, ImageOff, RefreshCw, Search, ArrowUp, ArrowDown } from 'lucide-react';
 
 const ITEM_TYPE_LABELS: Record<CollectionItemType, string> = {
   single: '單卡',
@@ -50,6 +50,17 @@ const SET_CODE_BY_NAME: Record<string, string> = Object.fromEntries(
 const editionToLang = (e: CardEdition | ''): ScanLanguage => (e === 'zh-tw' ? 'zh-tw' : 'ja');
 
 type FilterType = 'all' | CollectionItemType;
+type SortKey = 'value' | 'purchase' | 'pnl' | 'name' | 'date';
+type SortDir = 'desc' | 'asc';
+type GradedFilter = 'all' | 'graded' | 'raw';
+
+const SORT_LABELS: Record<SortKey, string> = {
+  value: '現估市值',
+  purchase: '入手價',
+  pnl: '損益',
+  name: '名稱',
+  date: '加入日期',
+};
 
 const EMPTY_FORM = {
   name: '',
@@ -104,37 +115,6 @@ function twdOf(jpy: number, rate: number) {
 // Convert an amount in its native currency to TWD.
 function toTwd(amount: number, currency: 'JPY' | 'TWD', rate: number) {
   return currency === 'TWD' ? Math.round(amount) : twdOf(amount, rate);
-}
-
-function Money({
-  amount,
-  currency = 'JPY',
-  rate,
-  label,
-  className,
-  showOriginal = true,
-}: {
-  amount?: number | null;
-  currency?: 'JPY' | 'TWD';
-  rate: number;
-  label?: string;
-  className?: string;
-  showOriginal?: boolean;
-}) {
-  if (amount == null) return <span className="text-slate-300">—</span>;
-  // Only JPY values need the original figure in parens; TWD is already home.
-  const showParen = showOriginal && currency === 'JPY';
-  return (
-    <span className={className}>
-      {label && <span className="text-xs text-slate-400 mr-0.5">{label}</span>}
-      <span className="font-bold">NT${toTwd(amount, currency, rate).toLocaleString()}</span>
-      {showParen && (
-        <span className="text-[10px] text-slate-400 font-normal ml-0.5">
-          (¥{Math.round(amount).toLocaleString()})
-        </span>
-      )}
-    </span>
-  );
 }
 
 // Consistent image slot for a collection item. Renders the artwork when we have
@@ -793,6 +773,13 @@ function CollectionModal({
 export function Collection() {
   const { items, loading, addItem, updateItem, deleteItem } = useCollection();
   const [filterType, setFilterType] = useState<FilterType>('all');
+  const [query, setQuery] = useState('');
+  const [sortKey, setSortKey] = useState<SortKey>('value');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const [fEdition, setFEdition] = useState<'all' | CardEdition>('all');
+  const [fRarity, setFRarity] = useState<'all' | string>('all');
+  const [fGraded, setFGraded] = useState<GradedFilter>('all');
+  const [fCondition, setFCondition] = useState<'all' | CollectionCondition>('all');
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -804,7 +791,6 @@ export function Collection() {
     fetchFxJpyToTwd().then(setFxRate).catch(() => {});
   }, []);
 
-  const filtered = items.filter(i => filterType === 'all' || i.itemType === filterType);
   const editingItem = editingId ? (items.find(i => i.id === editingId) ?? null) : null;
 
   // Best-known current value for a card, in its native currency: a manual
@@ -816,6 +802,57 @@ export function Collection() {
     if (i.purchasePrice != null) return { amount: i.purchasePrice, currency: 'JPY' };
     return null;
   };
+
+  // Editions actually present in the collection, so the version chips only list
+  // what the user really owns.
+  const editionsPresent = useMemo(() => {
+    const set = new Set<CardEdition>();
+    for (const i of items) if (i.edition) set.add(i.edition);
+    return [...set];
+  }, [items]);
+
+  // Filter → sort pipeline. Filters stack (type, edition, rarity, graded,
+  // condition, free-text query); sort value depends on sortKey, all normalised
+  // to TWD so JPY/TWD cards compare fairly. Missing values sort to 0.
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const rows = items.filter(i => {
+      if (filterType !== 'all' && i.itemType !== filterType) return false;
+      if (fEdition !== 'all' && i.edition !== fEdition) return false;
+      if (fRarity !== 'all' && i.rarity !== fRarity) return false;
+      if (fGraded === 'graded' && !i.isGraded) return false;
+      if (fGraded === 'raw' && i.isGraded) return false;
+      if (fCondition !== 'all' && i.condition !== fCondition) return false;
+      if (q) {
+        const hay = `${i.name} ${i.setName} ${i.cardNumber ?? ''}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+
+    const valueOf = (i: CollectionItem): number => {
+      const e = estValue(i);
+      return e ? toTwd(e.amount, e.currency, fxRate) : 0;
+    };
+    const purchaseOf = (i: CollectionItem) => toTwd(i.purchasePrice ?? 0, 'JPY', fxRate);
+
+    const cmp = (a: CollectionItem, b: CollectionItem): number => {
+      switch (sortKey) {
+        case 'name': return a.name.localeCompare(b.name, 'zh-Hant');
+        case 'purchase': return purchaseOf(a) - purchaseOf(b);
+        case 'pnl': return (valueOf(a) - purchaseOf(a)) - (valueOf(b) - purchaseOf(b));
+        case 'date': return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        case 'value':
+        default: return valueOf(a) - valueOf(b);
+      }
+    };
+
+    rows.sort((a, b) => sortDir === 'asc' ? cmp(a, b) : -cmp(a, b));
+    return rows;
+  }, [items, filterType, fEdition, fRarity, fGraded, fCondition, query, sortKey, sortDir, fxRate]);
+
+  const filtersActive = filterType !== 'all' || fEdition !== 'all' || fRarity !== 'all'
+    || fGraded !== 'all' || fCondition !== 'all' || query.trim() !== '';
 
   // Aggregates are computed in TWD (per-item, honouring each value's currency)
   // so JPY and TWD cards can be summed together.
@@ -914,86 +951,204 @@ export function Collection() {
 
   return (
     <div className="space-y-4">
-      {/* Stats */}
+      {/* Portfolio hero */}
       {hasPrices && (
-        <div className="grid grid-cols-3 gap-3">
-          <div className="bg-white rounded-xl border border-slate-200 p-4 text-center">
-            <p className="text-xs text-slate-400 font-bold mb-1">入手總價</p>
-            <p className="text-lg font-black text-slate-700">
-              <Money amount={totalPurchaseTwd} currency="TWD" rate={fxRate} showOriginal={false} />
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
+          className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-poke-blue to-poke-dark-blue text-white p-5 shadow-md"
+        >
+          {/* Decorative glow */}
+          <div className="pointer-events-none absolute -top-16 -right-10 w-48 h-48 rounded-full bg-white/10 blur-2xl" />
+
+          <div className="relative">
+            <p className="text-xs font-bold uppercase tracking-wide text-white/70">
+              Portfolio · 收藏現估總值
             </p>
+            <div className="mt-1 flex items-end flex-wrap gap-x-3 gap-y-1">
+              <span className="text-3xl sm:text-4xl font-black tracking-tight">
+                NT${Math.round(totalCurrentTwd).toLocaleString()}
+              </span>
+              {totalPurchaseTwd > 0 && (
+                <span className={cn(
+                  'inline-flex items-center gap-1 px-2 py-1 rounded-full text-sm font-black bg-white/15',
+                  pnlTwd >= 0 ? 'text-emerald-200' : 'text-red-200',
+                )}>
+                  {pnlTwd >= 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+                  {pnlTwd >= 0 ? '+' : ''}NT${Math.round(pnlTwd).toLocaleString()}
+                  <span className="opacity-80">
+                    ({pnlTwd >= 0 ? '+' : ''}{(pnlTwd / totalPurchaseTwd * 100).toFixed(1)}%)
+                  </span>
+                </span>
+              )}
+            </div>
+
+            <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs font-bold text-white/70">
+              <span>入手總價 <span className="text-white/90">NT${Math.round(totalPurchaseTwd).toLocaleString()}</span></span>
+              <span>收藏件數 <span className="text-white/90">{items.reduce((s, i) => s + i.quantity, 0)}</span></span>
+            </div>
           </div>
-          <div className="bg-white rounded-xl border border-slate-200 p-4 text-center">
-            <p className="text-xs text-slate-400 font-bold mb-1">現估總價</p>
-            <p className="text-lg font-black text-slate-700">
-              <Money amount={totalCurrentTwd} currency="TWD" rate={fxRate} showOriginal={false} />
-            </p>
+        </motion.div>
+      )}
+
+      {/* Toolbar: search + sort + actions */}
+      {items.length > 0 && (
+        <div className="space-y-2.5">
+          {/* Row 1: search, sort, actions */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative flex-1 min-w-[180px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+              <input
+                type="text"
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                placeholder="搜尋名稱／系列／卡號"
+                className="w-full pl-9 pr-3 py-2 rounded-lg bg-white border border-slate-200 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:border-poke-blue focus:ring-1 focus:ring-poke-blue"
+              />
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <select
+                value={sortKey}
+                onChange={e => setSortKey(e.target.value as SortKey)}
+                className="px-2.5 py-2 rounded-lg bg-white border border-slate-200 text-sm font-bold text-slate-600 focus:outline-none focus:border-poke-blue"
+                title="排序依據"
+              >
+                {(Object.keys(SORT_LABELS) as SortKey[]).map(k => (
+                  <option key={k} value={k}>{SORT_LABELS[k]}</option>
+                ))}
+              </select>
+              <button
+                onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}
+                title={sortDir === 'asc' ? '升序（低→高）' : '降序（高→低）'}
+                className="p-2 rounded-lg bg-white border border-slate-200 text-slate-500 hover:text-poke-blue hover:border-poke-blue transition-colors"
+              >
+                {sortDir === 'asc' ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />}
+              </button>
+            </div>
+
+            {priceable.length > 0 && (
+              <button
+                onClick={handleRefreshPrices}
+                disabled={refreshing}
+                title="更新市場價格（日文卡 Huca、繁中卡 卡拍拍）"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold bg-white border border-slate-200 text-slate-500 hover:text-poke-blue hover:border-poke-blue transition-colors disabled:opacity-60"
+              >
+                <RefreshCw className={cn('w-4 h-4', refreshing && 'animate-spin')} />
+                {refreshing && priceProgress
+                  ? `${priceProgress.done}/${priceProgress.total}`
+                  : '更新價格'}
+              </button>
+            )}
+
+            <button
+              onClick={() => { setEditingId(null); setShowAddForm(true); }}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold bg-poke-blue text-white hover:bg-poke-dark-blue transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              新增
+            </button>
           </div>
-          <div className={cn(
-            'rounded-xl border p-4 text-center',
-            pnlTwd >= 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-red-50 border-red-200',
-          )}>
-            <p className="text-xs font-bold mb-1 text-slate-400">損益</p>
-            <p className={cn('text-lg font-black flex items-center justify-center gap-1', pnlTwd >= 0 ? 'text-emerald-600' : 'text-red-500')}>
-              {pnlTwd >= 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
-              {pnlTwd >= 0 ? '+' : ''}NT${Math.round(pnlTwd).toLocaleString()}
-            </p>
+
+          {/* Row 2: type chips + edition chips */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex bg-white border border-slate-200 rounded-lg p-0.5 gap-0.5">
+              {(['all', 'single', 'box', 'pack'] as FilterType[]).map(t => (
+                <button
+                  key={t}
+                  onClick={() => setFilterType(t)}
+                  className={cn(
+                    'px-3 py-1.5 rounded-md text-xs font-bold transition-colors',
+                    filterType === t
+                      ? 'bg-poke-blue text-white shadow-sm'
+                      : 'text-slate-400 hover:text-slate-600',
+                  )}
+                >
+                  {t === 'all' ? '全部' : ITEM_TYPE_LABELS[t]}
+                  <span className="ml-1 opacity-60">
+                    {t === 'all' ? items.length : items.filter(i => i.itemType === t).length}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {editionsPresent.length > 0 && (
+              <div className="flex bg-white border border-slate-200 rounded-lg p-0.5 gap-0.5">
+                <button
+                  onClick={() => setFEdition('all')}
+                  className={cn(
+                    'px-3 py-1.5 rounded-md text-xs font-bold transition-colors',
+                    fEdition === 'all' ? 'bg-poke-blue text-white shadow-sm' : 'text-slate-400 hover:text-slate-600',
+                  )}
+                >
+                  全部版本
+                </button>
+                {editionsPresent.map(e => (
+                  <button
+                    key={e}
+                    onClick={() => setFEdition(e)}
+                    className={cn(
+                      'px-3 py-1.5 rounded-md text-xs font-bold transition-colors',
+                      fEdition === e ? 'bg-poke-blue text-white shadow-sm' : 'text-slate-400 hover:text-slate-600',
+                    )}
+                  >
+                    {EDITION_LABELS[e]}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Row 3: secondary selects */}
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <select
+              value={fRarity}
+              onChange={e => setFRarity(e.target.value)}
+              className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 font-bold text-slate-600 focus:outline-none focus:border-poke-blue"
+              title="稀有度"
+            >
+              <option value="all">全部稀有度</option>
+              {RARITY_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+
+            <select
+              value={fGraded}
+              onChange={e => setFGraded(e.target.value as GradedFilter)}
+              className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 font-bold text-slate-600 focus:outline-none focus:border-poke-blue"
+              title="鑑定狀態"
+            >
+              <option value="all">全部（鑑定/未鑑定）</option>
+              <option value="graded">已鑑定</option>
+              <option value="raw">未鑑定</option>
+            </select>
+
+            <select
+              value={fCondition}
+              onChange={e => setFCondition(e.target.value as 'all' | CollectionCondition)}
+              className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 font-bold text-slate-600 focus:outline-none focus:border-poke-blue"
+              title="品相"
+            >
+              <option value="all">全部品相</option>
+              {(Object.keys(CONDITION_LABELS) as CollectionCondition[]).map(c => (
+                <option key={c} value={c}>{CONDITION_LABELS[c]}</option>
+              ))}
+            </select>
+
+            <span className="ml-auto text-slate-400 font-bold">{filtered.length} 筆</span>
           </div>
         </div>
       )}
-
-      {/* Filter + Add */}
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex bg-white border border-slate-200 rounded-lg p-0.5 gap-0.5">
-          {(['all', 'single', 'box', 'pack'] as FilterType[]).map(t => (
-            <button
-              key={t}
-              onClick={() => setFilterType(t)}
-              className={cn(
-                'px-3 py-1.5 rounded-md text-xs font-bold transition-colors',
-                filterType === t
-                  ? 'bg-poke-blue text-white shadow-sm'
-                  : 'text-slate-400 hover:text-slate-600',
-              )}
-            >
-              {t === 'all' ? '全部' : ITEM_TYPE_LABELS[t]}
-              <span className="ml-1 opacity-60">
-                {t === 'all' ? items.length : items.filter(i => i.itemType === t).length}
-              </span>
-            </button>
-          ))}
-        </div>
-
-        <div className="flex items-center gap-2">
-          {priceable.length > 0 && (
-            <button
-              onClick={handleRefreshPrices}
-              disabled={refreshing}
-              title="更新市場價格（日文卡 Huca、繁中卡 卡拍拍）"
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold bg-white border border-slate-200 text-slate-500 hover:text-poke-blue hover:border-poke-blue transition-colors disabled:opacity-60"
-            >
-              <RefreshCw className={cn('w-4 h-4', refreshing && 'animate-spin')} />
-              {refreshing && priceProgress
-                ? `更新中 ${priceProgress.done}/${priceProgress.total}`
-                : '更新價格'}
-            </button>
-          )}
-
-          <button
-            onClick={() => { setEditingId(null); setShowAddForm(true); }}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold bg-poke-blue text-white hover:bg-poke-dark-blue transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            新增
-          </button>
-        </div>
-      </div>
 
       {/* Empty state */}
       {filtered.length === 0 && (
         <div className="text-center p-12 bg-white rounded-xl border-2 border-dashed border-slate-200">
           <p className="text-slate-500 text-sm">
-            {filterType === 'all' ? '尚無收藏紀錄，點右上角「新增」開始記錄吧！' : `尚無${ITEM_TYPE_LABELS[filterType]}紀錄`}
+            {items.length === 0
+              ? '尚無收藏紀錄，點右上角「新增」開始記錄吧！'
+              : filtersActive
+                ? '找不到符合條件的收藏'
+                : '尚無收藏紀錄'}
           </p>
         </div>
       )}
@@ -1006,17 +1161,26 @@ export function Collection() {
             // purchase price), in its native currency; the diff is in TWD.
             const est = estValue(item);
             const estTwd = est ? toTwd(est.amount, est.currency, fxRate) : null;
-            const diff = (item.purchasePrice != null && estTwd != null)
-              ? (estTwd - toTwd(item.purchasePrice, 'JPY', fxRate)) * item.quantity
+            const purchaseTwd = item.purchasePrice != null ? toTwd(item.purchasePrice, 'JPY', fxRate) : null;
+            const diff = (purchaseTwd != null && estTwd != null)
+              ? (estTwd - purchaseTwd) * item.quantity
+              : null;
+            const diffPct = (purchaseTwd != null && purchaseTwd > 0 && estTwd != null)
+              ? (estTwd - purchaseTwd) / purchaseTwd * 100
               : null;
             return (
-              <div
+              <motion.div
                 key={item.id}
-                className="group relative bg-white rounded-xl border border-slate-200 overflow-hidden flex flex-col"
+                whileHover={{ y: -4 }}
+                transition={{ type: 'spring', stiffness: 300, damping: 22 }}
+                className="group relative bg-white rounded-xl border border-slate-200 overflow-hidden flex flex-col shadow-sm hover:shadow-lg hover:border-slate-300 transition-shadow"
               >
                 {/* Image */}
                 <div className="relative aspect-[3/4] bg-slate-50 border-b border-slate-100">
                   <GalleryImage item={item} />
+
+                  {/* Bottom gradient for badge legibility */}
+                  <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/45 to-transparent" />
 
                   {/* Top-left badges */}
                   <div className="absolute top-1.5 left-1.5 flex flex-col items-start gap-1">
@@ -1035,8 +1199,8 @@ export function Collection() {
                     </span>
                   )}
 
-                  {/* Actions */}
-                  <div className="absolute top-1.5 right-1.5 flex gap-1">
+                  {/* Actions (reveal on hover) */}
+                  <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
                       onClick={() => { setEditingId(item.id); setShowAddForm(false); }}
                       className="p-1.5 rounded-lg bg-white/80 backdrop-blur text-slate-500 hover:text-poke-blue shadow-sm transition-colors"
@@ -1067,7 +1231,7 @@ export function Collection() {
                         {item.rarity}
                       </span>
                     )}
-                    {item.condition && (
+                    {!item.isGraded && item.condition && (
                       <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded-full">
                         {CONDITION_LABELS[item.condition]}
                       </span>
@@ -1082,18 +1246,37 @@ export function Collection() {
                     </p>
                   )}
 
-                  <div className="mt-auto pt-1 flex items-baseline justify-between gap-1">
-                    <div className="min-w-0" title={item.marketPriceSource ? `市場價來源：${item.marketPriceSource}` : undefined}>
-                      <Money label="現估" amount={est?.amount} currency={est?.currency ?? 'JPY'} rate={fxRate} />
-                    </div>
-                    {diff != null && (
-                      <span className={cn('text-[11px] font-bold shrink-0', diff >= 0 ? 'text-emerald-500' : 'text-red-400')}>
-                        {diff >= 0 ? '+' : ''}NT${Math.round(diff).toLocaleString()}
+                  <div className="mt-auto pt-1.5">
+                    <div className="flex items-baseline justify-between gap-1">
+                      <span
+                        className="text-base font-black text-slate-800"
+                        title={item.marketPriceSource ? `市場價來源：${item.marketPriceSource}` : undefined}
+                      >
+                        {estTwd != null ? `NT$${estTwd.toLocaleString()}` : '—'}
                       </span>
+                      {diffPct != null && (
+                        <span className={cn(
+                          'inline-flex items-center gap-0.5 text-[11px] font-black shrink-0',
+                          diffPct >= 0 ? 'text-emerald-500' : 'text-red-400',
+                        )}>
+                          {diffPct >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                          {diffPct >= 0 ? '+' : ''}{diffPct.toFixed(1)}%
+                        </span>
+                      )}
+                    </div>
+                    {(purchaseTwd != null || (est?.currency === 'JPY' && est.amount != null)) && (
+                      <div className="mt-0.5 flex items-center justify-between text-[10px] text-slate-400 font-medium">
+                        {purchaseTwd != null && <span>入手 NT${purchaseTwd.toLocaleString()}</span>}
+                        {diff != null && (
+                          <span className={cn(diff >= 0 ? 'text-emerald-500/80' : 'text-red-400/80')}>
+                            {diff >= 0 ? '+' : ''}NT${Math.round(diff).toLocaleString()}
+                          </span>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>
-              </div>
+              </motion.div>
             );
           })}
         </div>
