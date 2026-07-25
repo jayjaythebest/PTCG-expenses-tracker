@@ -78,7 +78,17 @@ export async function recognizeCardFromPhoto(file: File): Promise<CardScanResult
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ imageBase64: base64, mimeType }),
     });
-    if (!res.ok) return { ...EMPTY_SCAN, error: 'ai_failed' };
+    // Non-OK means the serverless endpoint itself failed — NOT that the AI
+    // providers are misconfigured. 404 = function not deployed; 5xx = it crashed
+    // (e.g. bad import) or timed out. Flag this distinctly so the UI doesn't
+    // wrongly blame "no AI keys" (which is a res.ok=200 + reason:'no_provider').
+    if (!res.ok) {
+      return {
+        ...EMPTY_SCAN,
+        error: 'ai_failed',
+        reason: res.status === 404 ? 'endpoint_missing' : 'endpoint_error',
+      };
+    }
     const data = await res.json();
     const lang = data.language === 'ja' || data.language === 'zh-tw' ? data.language : '';
     return {
@@ -94,7 +104,8 @@ export async function recognizeCardFromPhoto(file: File): Promise<CardScanResult
       reason: typeof data.reason === 'string' ? data.reason : undefined,
     };
   } catch {
-    return { ...EMPTY_SCAN, error: 'ai_failed' };
+    // fetch threw before we got a response (offline, DNS, CORS, aborted).
+    return { ...EMPTY_SCAN, error: 'ai_failed', reason: 'network' };
   }
 }
 

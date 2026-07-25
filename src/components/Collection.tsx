@@ -285,7 +285,14 @@ function CollectionForm({
         // unreadable) — nothing was read. Tell the user it's a service issue,
         // not that the card is unknown, so they don't assume the card is invalid.
         const provs = scan.providers ?? [];
-        if (scan.reason === 'no_provider' || provs.length === 0) {
+        if (scan.reason === 'endpoint_missing') {
+          // 404: the /api/scan-card function isn't deployed on this host.
+          setScanHint('找不到掃描服務（/api/scan-card 未部署）；請確認已部署最新版本到 Vercel');
+        } else if (scan.reason === 'endpoint_error' || scan.reason === 'network') {
+          // 5xx / crash / offline: the endpoint exists but couldn't respond.
+          setScanHint('掃描服務暫時無法回應；請稍後重試，或查看 Vercel Functions 記錄');
+        } else if (scan.reason === 'no_provider') {
+          // 200 + explicit no_provider: the server ran but has zero AI keys.
           setScanHint('伺服器尚未設定任何 AI 金鑰，請在 Vercel 設定 GEMINI / GROQ / OPENROUTER_API_KEY');
         } else if (scan.reason === 'quota' || provs.length === 1) {
           setScanHint(`目前只有 ${provs.join('、') || 'gemini'} 可用，額度可能已用盡；建議在 Vercel 再補上 Groq / OpenRouter 免費金鑰`);
