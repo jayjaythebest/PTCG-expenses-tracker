@@ -50,7 +50,10 @@ const geminiAdapter: Adapter = {
   enabled: () => !!process.env.GEMINI_API_KEY,
   async vision({ imageBase64, mimeType, prompt, schema }) {
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY ?? '' });
-    const model = process.env.GEMINI_VISION_MODEL || 'gemini-2.5-flash';
+    // Use the maintained "-latest" alias, not a pinned version. Google
+    // discontinues dated flash builds (2.0/2.5 are gone as of mid-2026) and a
+    // pinned ID 404s for new API keys — which is exactly what broke scanning.
+    const model = process.env.GEMINI_VISION_MODEL || 'gemini-flash-latest';
     const res = await ai.models.generateContent({
       model,
       contents: [
@@ -70,7 +73,7 @@ const geminiAdapter: Adapter = {
   },
   async text({ prompt }) {
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY ?? '' });
-    const model = process.env.GEMINI_TEXT_MODEL || 'gemini-2.0-flash';
+    const model = process.env.GEMINI_TEXT_MODEL || 'gemini-flash-latest';
     const res = await ai.models.generateContent({ model, contents: prompt });
     return { text: res.text ?? '', model };
   },
@@ -139,7 +142,9 @@ const groqAdapter = openAiCompatible({
   baseUrl: 'https://api.groq.com/openai/v1',
   keyEnv: 'GROQ_API_KEY',
   visionModelEnv: 'GROQ_VISION_MODEL',
-  visionModelDefault: 'meta-llama/llama-4-scout-17b-16e-instruct',
+  // llama-4-scout was deprecated on Groq; use the current Llama-4 Maverick
+  // vision model. Override with GROQ_VISION_MODEL if Groq rotates it again.
+  visionModelDefault: 'meta-llama/llama-4-maverick-17b-128e-instruct',
   textModelEnv: 'GROQ_TEXT_MODEL',
   textModelDefault: 'llama-3.3-70b-versatile',
 });
@@ -149,9 +154,11 @@ const openRouterAdapter = openAiCompatible({
   baseUrl: 'https://openrouter.ai/api/v1',
   keyEnv: 'OPENROUTER_API_KEY',
   visionModelEnv: 'OPENROUTER_VISION_MODEL',
-  visionModelDefault: 'meta-llama/llama-3.2-11b-vision-instruct:free',
+  // llama-3.2-11b-vision:free was removed from OpenRouter. Default to a current
+  // free vision model; override with OPENROUTER_VISION_MODEL as needed.
+  visionModelDefault: 'meta-llama/llama-4-scout:free',
   textModelEnv: 'OPENROUTER_TEXT_MODEL',
-  textModelDefault: 'meta-llama/llama-3.2-11b-vision-instruct:free',
+  textModelDefault: 'meta-llama/llama-4-scout:free',
   extraHeaders: { 'X-Title': 'PTCG Expenses Tracker' },
 });
 
