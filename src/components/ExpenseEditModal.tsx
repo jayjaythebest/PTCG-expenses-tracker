@@ -80,25 +80,25 @@ export function ExpenseEditModal({ expense, onClose }: Props) {
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 40 }}
         transition={{ duration: 0.2 }}
-        className="relative w-full sm:max-w-lg bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl max-h-[92vh] overflow-y-auto"
+        className="relative w-full sm:max-w-lg bg-surface border border-white/10 rounded-t-2xl sm:rounded-2xl shadow-2xl max-h-[92vh] overflow-y-auto"
       >
         {/* Header */}
-        <div className="sticky top-0 bg-white border-b border-slate-100 px-5 py-4 flex items-center justify-between z-10">
-          <h2 className="font-black text-lg text-poke-dark-blue">編輯記錄</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 transition-colors">
-            <X className="w-5 h-5 text-slate-500" />
+        <div className="sticky top-0 bg-surface border-b border-white/10 px-5 py-4 flex items-center justify-between z-10">
+          <h2 className="font-black text-lg text-slate-100">編輯記錄</h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors">
+            <X className="w-5 h-5 text-slate-400" />
           </button>
         </div>
 
         <div className="p-5 space-y-5">
           {/* Type toggle */}
-          <div className="flex p-1 bg-slate-100 rounded-xl">
+          <div className="flex p-1 bg-white/5 rounded-xl">
             <button
               type="button"
               onClick={() => setType('Expense')}
               className={cn(
                 'flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg font-bold text-sm transition-all',
-                type === 'Expense' ? 'bg-white text-slate-700 shadow-sm' : 'text-slate-500'
+                type === 'Expense' ? 'bg-surface-hi text-slate-100 shadow-sm' : 'text-slate-400'
               )}
             >
               <Minus className="w-4 h-4" /> 支出
@@ -108,7 +108,7 @@ export function ExpenseEditModal({ expense, onClose }: Props) {
               onClick={() => setType('Income')}
               className={cn(
                 'flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg font-bold text-sm transition-all',
-                type === 'Income' ? 'bg-white text-poke-blue shadow-sm' : 'text-slate-500'
+                type === 'Income' ? 'bg-surface-hi text-poke-accent shadow-sm' : 'text-slate-400'
               )}
             >
               <Plus className="w-4 h-4" /> 收入 (賣出)
@@ -117,7 +117,7 @@ export function ExpenseEditModal({ expense, onClose }: Props) {
 
           {/* Title */}
           <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1.5">商品名稱</label>
+            <label className="block text-sm font-bold text-slate-300 mb-1.5">商品名稱</label>
             <input
               type="text"
               className="poke-input text-base"
@@ -128,7 +128,7 @@ export function ExpenseEditModal({ expense, onClose }: Props) {
 
           {/* Amount */}
           <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1.5">
+            <label className="block text-sm font-bold text-slate-300 mb-1.5">
               金額 (¥){category === 'Box' ? ' — 每盒單價' : ''}
             </label>
             <input
@@ -142,7 +142,7 @@ export function ExpenseEditModal({ expense, onClose }: Props) {
 
           {/* Category */}
           <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1.5">類別</label>
+            <label className="block text-sm font-bold text-slate-300 mb-1.5">類別</label>
             <div className="grid grid-cols-2 gap-2">
               {[
                 { value: 'Card', label: '單張卡片' },
@@ -166,8 +166,8 @@ export function ExpenseEditModal({ expense, onClose }: Props) {
                     className={cn(
                       'py-2.5 px-3 rounded-lg border-2 text-sm font-bold transition-all text-center',
                       selected
-                        ? 'border-poke-blue bg-poke-blue/10 text-poke-dark-blue'
-                        : 'border-slate-200 bg-white text-slate-500'
+                        ? 'border-poke-accent bg-poke-accent/10 text-poke-accent'
+                        : 'border-white/10 bg-white/5 text-slate-400'
                     )}
                   >
                     {label}
@@ -179,7 +179,7 @@ export function ExpenseEditModal({ expense, onClose }: Props) {
 
           {isCustomCategory && (
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1.5">自定義類別</label>
+              <label className="block text-sm font-bold text-slate-300 mb-1.5">自定義類別</label>
               <input
                 type="text"
                 className="poke-input text-base"
@@ -193,9 +193,9 @@ export function ExpenseEditModal({ expense, onClose }: Props) {
           {category === 'Box' && (
             <>
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1.5">數量</label>
+                <label className="block text-sm font-bold text-slate-300 mb-1.5">數量</label>
                 <div className="flex items-center gap-3">
-                  <div className="flex p-0.5 bg-slate-100 rounded-lg">
+                  <div className="flex p-0.5 bg-white/5 rounded-lg">
                     {(['盒', '包'] as const).map(u => (
                       <button
                         key={u}
@@ -203,7 +203,7 @@ export function ExpenseEditModal({ expense, onClose }: Props) {
                         onClick={() => setQuantityUnit(u)}
                         className={cn(
                           'px-3 py-1.5 rounded-md text-sm font-bold transition-all',
-                          quantityUnit === u ? 'bg-white text-slate-700 shadow-sm' : 'text-slate-400'
+                          quantityUnit === u ? 'bg-surface-hi text-slate-100 shadow-sm' : 'text-slate-400'
                         )}
                       >
                         {u}
@@ -213,7 +213,7 @@ export function ExpenseEditModal({ expense, onClose }: Props) {
                   <button
                     type="button"
                     onClick={() => setQuantity(q => Math.max(1, q - 1))}
-                    className="w-10 h-10 rounded-lg border-2 border-slate-200 flex items-center justify-center text-slate-600 hover:border-poke-blue transition-colors"
+                    className="w-10 h-10 rounded-lg border border-white/10 flex items-center justify-center text-slate-300 hover:border-poke-accent transition-colors"
                   >
                     <Minus className="w-4 h-4" />
                   </button>
@@ -226,17 +226,17 @@ export function ExpenseEditModal({ expense, onClose }: Props) {
                       const n = parseInt(e.target.value, 10);
                       setQuantity(Number.isNaN(n) ? 1 : Math.max(1, n));
                     }}
-                    className="w-16 text-center text-xl font-black text-slate-800 border-2 border-slate-200 rounded-lg py-1.5 focus:outline-none focus:border-poke-blue"
+                    className="w-16 text-center text-xl font-black text-slate-100 bg-white/5 border border-white/10 rounded-lg py-1.5 focus:outline-none focus:border-poke-accent"
                   />
                   <button
                     type="button"
                     onClick={() => setQuantity(q => q + 1)}
-                    className="w-10 h-10 rounded-lg border-2 border-slate-200 flex items-center justify-center text-slate-600 hover:border-poke-blue transition-colors"
+                    className="w-10 h-10 rounded-lg border border-white/10 flex items-center justify-center text-slate-300 hover:border-poke-accent transition-colors"
                   >
                     <Plus className="w-4 h-4" />
                   </button>
                   {amount && quantity > 1 && (
-                    <span className="text-sm text-slate-500 font-bold">
+                    <span className="text-sm text-slate-400 font-bold">
                       = ¥{(Number(amount) * quantity).toLocaleString()}
                     </span>
                   )}
@@ -244,7 +244,7 @@ export function ExpenseEditModal({ expense, onClose }: Props) {
               </div>
 
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-1.5">系列/世代</label>
+                <label className="block text-sm font-bold text-slate-300 mb-1.5">系列/世代</label>
                 <div className="flex gap-2">
                   <select
                     className="poke-input text-base flex-1"
@@ -272,7 +272,7 @@ export function ExpenseEditModal({ expense, onClose }: Props) {
                         setDetectingSeries(false);
                       }
                     }}
-                    className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg bg-poke-blue/10 text-poke-dark-blue text-sm font-bold hover:bg-poke-blue/20 transition-colors disabled:opacity-40"
+                    className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg bg-poke-accent/15 text-poke-accent text-sm font-bold hover:bg-poke-accent/25 transition-colors disabled:opacity-40"
                   >
                     {detectingSeries
                       ? <Loader2 className="w-4 h-4 animate-spin" />
@@ -288,14 +288,14 @@ export function ExpenseEditModal({ expense, onClose }: Props) {
           {/* Payment status — expense only */}
           {type === 'Expense' && (
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1.5">付款狀態</label>
-              <div className="flex p-1 bg-slate-100 rounded-xl">
+              <label className="block text-sm font-bold text-slate-300 mb-1.5">付款狀態</label>
+              <div className="flex p-1 bg-white/5 rounded-xl">
                 <button
                   type="button"
                   onClick={() => setPaymentStatus('paid')}
                   className={cn(
                     'flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg font-bold text-sm transition-all',
-                    paymentStatus === 'paid' ? 'bg-white text-slate-700 shadow-sm' : 'text-slate-500'
+                    paymentStatus === 'paid' ? 'bg-surface-hi text-slate-100 shadow-sm' : 'text-slate-400'
                   )}
                 >
                   <Wallet className="w-4 h-4" /> Jay 已付
@@ -305,7 +305,7 @@ export function ExpenseEditModal({ expense, onClose }: Props) {
                   onClick={() => setPaymentStatus('pending')}
                   className={cn(
                     'flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg font-bold text-sm transition-all',
-                    paymentStatus === 'pending' ? 'bg-white text-amber-600 shadow-sm' : 'text-slate-500'
+                    paymentStatus === 'pending' ? 'bg-surface-hi text-amber-300 shadow-sm' : 'text-slate-400'
                   )}
                 >
                   <Clock className="w-4 h-4" /> 待報銷
@@ -316,7 +316,7 @@ export function ExpenseEditModal({ expense, onClose }: Props) {
 
           {/* Date */}
           <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1.5">日期</label>
+            <label className="block text-sm font-bold text-slate-300 mb-1.5">日期</label>
             <input
               type="date"
               className="poke-input text-base"
@@ -327,7 +327,7 @@ export function ExpenseEditModal({ expense, onClose }: Props) {
 
           {/* Notes */}
           <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1.5">備註 (選填)</label>
+            <label className="block text-sm font-bold text-slate-300 mb-1.5">備註 (選填)</label>
             <textarea
               className="poke-input text-base resize-none"
               rows={2}
@@ -344,7 +344,7 @@ export function ExpenseEditModal({ expense, onClose }: Props) {
             disabled={saving || !title || !amount}
             className={cn(
               'w-full py-4 rounded-xl font-black text-lg shadow-lg flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50',
-              type === 'Expense' ? 'bg-slate-700 text-white' : 'bg-poke-blue text-white'
+              type === 'Expense' ? 'bg-slate-600 text-white' : 'bg-poke-blue text-white'
             )}
           >
             {saving ? <Loader2 className="w-6 h-6 animate-spin" /> : '儲存變更'}

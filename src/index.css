@@ -3,27 +3,36 @@
 @theme {
   --color-poke-blue: #2A75BB;
   --color-poke-dark-blue: #3C5AA6;
+  /* Brighter blue that stays legible as text/icon on dark surfaces. */
+  --color-poke-accent: #5b9bd9;
+
+  /* Soft dark blue-gray palette (Folio-style). */
+  --color-ink: #0d1220;         /* page background */
+  --color-surface: #161d2e;     /* card surface */
+  --color-surface-hi: #1f2941;  /* elevated / hover */
+
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
 }
 
 @layer base {
   body {
-    @apply bg-slate-50 text-slate-900;
+    @apply bg-ink text-slate-100;
   }
 }
 
+/* Shared card surface — dark, softly rounded, subtle hairline border + shadow. */
 .poke-card {
-  @apply bg-white rounded-xl shadow-sm border-2 border-poke-blue/10 overflow-hidden;
+  @apply bg-surface rounded-2xl border border-white/10 shadow-lg shadow-black/20 overflow-hidden;
 }
 
 .poke-button-primary {
-  @apply bg-poke-blue text-white px-4 py-2 rounded-lg font-medium hover:bg-poke-dark-blue transition-colors disabled:opacity-50;
+  @apply bg-poke-blue text-white px-4 py-2 rounded-lg font-medium hover:bg-poke-accent transition-colors disabled:opacity-50;
 }
 
 .poke-button-secondary {
-  @apply bg-slate-100 text-slate-600 px-4 py-2 rounded-lg font-medium hover:bg-slate-200 transition-colors disabled:opacity-50;
+  @apply bg-white/5 text-slate-300 px-4 py-2 rounded-lg font-medium hover:bg-white/10 transition-colors disabled:opacity-50;
 }
 
 .poke-input {
-  @apply w-full px-3 py-2 border-2 border-slate-200 rounded-lg focus:border-poke-blue focus:outline-none transition-colors;
+  @apply w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-slate-100 placeholder:text-slate-500 focus:border-poke-accent focus:outline-none transition-colors;
 }

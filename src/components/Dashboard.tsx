@@ -160,7 +160,7 @@ export function Dashboard() {
               'flex-1 py-2 rounded-lg text-sm font-bold transition-all',
               !selectedMonth && period === p
                 ? 'bg-poke-blue text-white shadow-sm'
-                : 'bg-white border-2 border-slate-200 text-slate-500 hover:border-poke-blue/40'
+                : 'bg-white/5 border border-white/10 text-slate-400 hover:border-poke-accent/50'
             )}
           >
             {PERIOD_LABELS[p]}
@@ -174,10 +174,10 @@ export function Dashboard() {
           value={selectedMonth ?? ''}
           onChange={e => setSelectedMonth(e.target.value || null)}
           className={cn(
-            'flex-1 py-2 px-3 rounded-lg text-sm font-bold border-2 bg-white focus:outline-none transition-all',
+            'flex-1 py-2 px-3 rounded-lg text-sm font-bold border bg-surface text-slate-200 focus:outline-none transition-all',
             selectedMonth
-              ? 'border-poke-blue text-poke-dark-blue'
-              : 'border-slate-200 text-slate-500'
+              ? 'border-poke-accent text-white'
+              : 'border-white/10 text-slate-400'
           )}
         >
           <option value="">指定月份…</option>
@@ -188,7 +188,7 @@ export function Dashboard() {
         {selectedMonth && (
           <button
             onClick={() => setSelectedMonth(null)}
-            className="px-3 py-2 rounded-lg text-sm font-bold text-slate-400 border-2 border-slate-200 hover:text-slate-600 transition-colors"
+            className="px-3 py-2 rounded-lg text-sm font-bold text-slate-400 border border-white/10 hover:text-slate-200 transition-colors"
           >
             清除
           </button>
@@ -205,7 +205,7 @@ export function Dashboard() {
               'flex-shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold transition-all',
               catFilter === value
                 ? 'bg-poke-dark-blue text-white'
-                : 'bg-white border-2 border-slate-200 text-slate-500 hover:border-slate-300'
+                : 'bg-white/5 border border-white/10 text-slate-400 hover:border-white/20'
             )}
           >
             {label}
@@ -216,14 +216,14 @@ export function Dashboard() {
       {/* Weekly AI summary */}
       <div className="poke-card p-4 space-y-2">
         <div className="flex items-center justify-between gap-3">
-          <h3 className="text-sm font-black text-slate-700 flex items-center gap-1.5">
-            <Sparkles className="w-4 h-4 text-poke-blue" />
+          <h3 className="text-sm font-black text-slate-100 flex items-center gap-1.5">
+            <Sparkles className="w-4 h-4 text-poke-accent" />
             本週 AI 摘要
           </h3>
           <button
             onClick={handleGenerateSummary}
             disabled={summaryLoading}
-            className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-poke-blue/10 text-poke-dark-blue text-xs font-bold hover:bg-poke-blue/20 transition-colors disabled:opacity-40"
+            className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-poke-accent/15 text-poke-accent text-xs font-bold hover:bg-poke-accent/25 transition-colors disabled:opacity-40"
           >
             {summaryLoading
               ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -236,50 +236,50 @@ export function Dashboard() {
           <p className="text-xs text-red-500 font-bold">產生摘要失敗，請稍後再試。</p>
         )}
         {weeklySummary && !summaryLoading && (
-          <p className="text-sm text-slate-600 leading-relaxed whitespace-pre-line">{weeklySummary}</p>
+          <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-line">{weeklySummary}</p>
         )}
         {!weeklySummary && !summaryLoading && !summaryError && (
-          <p className="text-xs text-slate-400 italic">點擊「產生摘要」讓 AI 幫你總結本週的收支狀況</p>
+          <p className="text-xs text-slate-500 italic">點擊「產生摘要」讓 AI 幫你總結本週的收支狀況</p>
         )}
       </div>
 
       {/* Income / Expense summary */}
       <div className="grid grid-cols-2 gap-4">
-        <div className="poke-card p-4 border-l-4 border-l-poke-blue">
-          <div className="flex items-center gap-2 text-slate-500 mb-1">
-            <ArrowUpCircle className="w-4 h-4 text-poke-blue" />
+        <div className="poke-card p-4 border-l-4 border-l-poke-accent bg-gradient-to-br from-poke-accent/10 to-transparent">
+          <div className="flex items-center gap-2 text-slate-400 mb-1">
+            <ArrowUpCircle className="w-4 h-4 text-poke-accent" />
             <span className="text-xs font-black uppercase tracking-wider">總收入</span>
           </div>
-          <p className="text-xl font-black text-poke-blue">¥{totalIncome.toLocaleString()}</p>
+          <p className="text-xl font-black text-poke-accent">¥{totalIncome.toLocaleString()}</p>
         </div>
         <div className="poke-card p-4 border-l-4 border-l-slate-400">
-          <div className="flex items-center gap-2 text-slate-500 mb-1">
+          <div className="flex items-center gap-2 text-slate-400 mb-1">
             <ArrowDownCircle className="w-4 h-4 text-slate-400" />
             <span className="text-xs font-black uppercase tracking-wider">總支出</span>
           </div>
-          <p className="text-xl font-black text-slate-700">¥{totalExpense.toLocaleString()}</p>
+          <p className="text-xl font-black text-slate-100">¥{totalExpense.toLocaleString()}</p>
         </div>
       </div>
 
       {/* Expense split: Jay 已付 vs 待報銷 */}
       {totalExpense > 0 && (
         <div className="grid grid-cols-2 gap-4">
-          <div className="poke-card p-4 border-l-4 border-l-emerald-400 bg-emerald-50/40">
-            <div className="flex items-center gap-2 text-emerald-700 mb-1">
+          <div className="poke-card p-4 border-l-4 border-l-emerald-400 bg-gradient-to-br from-emerald-500/10 to-transparent">
+            <div className="flex items-center gap-2 text-emerald-300 mb-1">
               <Wallet className="w-4 h-4" />
               <span className="text-xs font-black uppercase tracking-wider">Jay 已付</span>
             </div>
-            <p className="text-xl font-black text-emerald-600">¥{totalPaid.toLocaleString()}</p>
+            <p className="text-xl font-black text-emerald-300">¥{totalPaid.toLocaleString()}</p>
           </div>
           <div className={cn(
             'poke-card p-4 border-l-4',
-            totalPending > 0 ? 'border-l-amber-400 bg-amber-50/40' : 'border-l-slate-200',
+            totalPending > 0 ? 'border-l-amber-400 bg-gradient-to-br from-amber-500/10 to-transparent' : 'border-l-white/10',
           )}>
-            <div className={cn('flex items-center gap-2 mb-1', totalPending > 0 ? 'text-amber-700' : 'text-slate-400')}>
+            <div className={cn('flex items-center gap-2 mb-1', totalPending > 0 ? 'text-amber-300' : 'text-slate-400')}>
               <Clock className="w-4 h-4" />
               <span className="text-xs font-black uppercase tracking-wider">待報銷</span>
             </div>
-            <p className={cn('text-xl font-black', totalPending > 0 ? 'text-amber-600' : 'text-slate-400')}>
+            <p className={cn('text-xl font-black', totalPending > 0 ? 'text-amber-300' : 'text-slate-400')}>
               ¥{totalPending.toLocaleString()}
             </p>
           </div>
@@ -315,7 +315,7 @@ export function Dashboard() {
                       <div
                         className={cn(
                           'w-full rounded-t-sm transition-all duration-500 group-hover:opacity-80',
-                          isActive ? 'bg-poke-dark-blue' : bucket.expense > 0 ? 'bg-poke-blue' : 'bg-slate-100'
+                          isActive ? 'bg-poke-accent' : bucket.expense > 0 ? 'bg-poke-blue' : 'bg-white/10'
                         )}
                         style={{ height: bucket.expense > 0 ? `${Math.max(pct * 100, 4)}%` : '4%' }}
                       />
@@ -325,13 +325,13 @@ export function Dashboard() {
                     )}
                     <span className={cn(
                       'text-[9px] font-bold mt-1 leading-none',
-                      isActive ? 'text-poke-dark-blue' : 'text-slate-400'
+                      isActive ? 'text-poke-accent' : 'text-slate-400'
                     )}>{bucket.label}</span>
                   </button>
                 );
               })}
             </div>
-            <div className="flex items-center gap-3 mt-2 pt-2 border-t border-slate-100">
+            <div className="flex items-center gap-3 mt-2 pt-2 border-t border-white/10">
               <span className="flex items-center gap-1 text-[10px] text-slate-400 font-bold">
                 <span className="w-2.5 h-2.5 rounded-sm bg-poke-blue inline-block" /> 支出
               </span>
@@ -352,12 +352,12 @@ export function Dashboard() {
               <span className="text-[10px] font-black text-slate-400 uppercase truncate">{getCategoryLabel(cat)}</span>
               <div className="flex flex-col">
                 {totals.income > 0 && <p className="text-xs font-bold text-poke-blue">+¥{totals.income.toLocaleString()}</p>}
-                {totals.expense > 0 && <p className="text-xs font-bold text-slate-600">-¥{totals.expense.toLocaleString()}</p>}
+                {totals.expense > 0 && <p className="text-xs font-bold text-slate-300">-¥{totals.expense.toLocaleString()}</p>}
               </div>
             </div>
           ))}
           {expenses.length === 0 && (
-            <div className="col-span-full text-center py-6 text-slate-400 text-sm italic bg-white rounded-xl border-2 border-dashed border-slate-100">
+            <div className="col-span-full text-center py-6 text-slate-400 text-sm italic bg-surface rounded-xl border-2 border-dashed border-white/10">
               尚無數據可顯示
             </div>
           )}
@@ -368,18 +368,18 @@ export function Dashboard() {
       {seriesRows.length > 0 && (
         <div className="space-y-3">
           <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest px-1">世代卡包統計</h3>
-          <div className="poke-card divide-y divide-slate-100">
+          <div className="poke-card divide-y divide-white/10">
             {seriesRows.map(([code, totals]) => {
               const name = code !== '未標記' ? (CODE_NAME_MAP[code] ?? '') : '';
               const barPct = Math.round((totals.expense / maxSeriesExpense) * 100);
               return (
                 <div key={code} className="px-4 py-3 flex items-center gap-3">
                   <div className="w-16 flex-shrink-0">
-                    <span className="text-xs font-black text-poke-dark-blue font-mono">{code}</span>
+                    <span className="text-xs font-black text-poke-accent font-mono">{code}</span>
                     {name && <p className="text-[10px] text-slate-400 truncate">{name}</p>}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                    <div className="h-2 bg-white/10 rounded-full overflow-hidden">
                       <div
                         className="h-full bg-poke-blue rounded-full transition-all duration-500"
                         style={{ width: `${barPct}%` }}
@@ -388,7 +388,7 @@ export function Dashboard() {
                   </div>
                   <div className="flex-shrink-0 text-right min-w-[5rem]">
                     {totals.expense > 0 && (
-                      <p className="text-sm font-black text-slate-700">-¥{totals.expense.toLocaleString()}</p>
+                      <p className="text-sm font-black text-slate-100">-¥{totals.expense.toLocaleString()}</p>
                     )}
                     {totals.income > 0 && (
                       <p className={cn('text-xs font-bold text-poke-blue', totals.expense > 0 && 'mt-0.5')}>

@@ -98,9 +98,9 @@ function ItemTypeIcon({ type }: { type: CollectionItemType }) {
 
 function ItemTypeBadge({ type }: { type: CollectionItemType }) {
   const colours: Record<CollectionItemType, string> = {
-    single: 'bg-poke-blue/10 text-poke-dark-blue',
-    box: 'bg-amber-100 text-amber-700',
-    pack: 'bg-emerald-100 text-emerald-700',
+    single: 'bg-poke-accent/20 text-poke-accent',
+    box: 'bg-amber-400/20 text-amber-300',
+    pack: 'bg-emerald-400/20 text-emerald-300',
   };
   return (
     <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold', colours[type])}>
@@ -142,12 +142,12 @@ function Thumb({
 }) {
   const [broken, setBroken] = useState(false);
   const box = cn(
-    'w-12 h-16 rounded-md border bg-slate-50 flex-shrink-0 overflow-hidden flex items-center justify-center',
+    'w-12 h-16 rounded-md border bg-white/5 flex-shrink-0 overflow-hidden flex items-center justify-center',
     className,
   );
   if (!src || broken) {
     return (
-      <div className={cn(box, 'border-slate-100 text-slate-300')} title="無圖片">
+      <div className={cn(box, 'border-white/10 text-slate-500')} title="無圖片">
         <ItemTypeIcon type={type} />
       </div>
     );
@@ -159,7 +159,7 @@ function Thumb({
       referrerPolicy="no-referrer"
       onError={() => setBroken(true)}
       onClick={onClick}
-      className={cn(box, 'border-slate-100 object-contain', onClick && 'cursor-pointer')}
+      className={cn(box, 'border-white/10 object-contain', onClick && 'cursor-pointer')}
     />
   );
 }
@@ -339,8 +339,8 @@ function CollectionForm({
             className={cn(
               'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-bold border-2 transition-colors',
               form.itemType === t
-                ? 'border-poke-blue bg-poke-blue/5 text-poke-dark-blue'
-                : 'border-slate-200 text-slate-400 hover:border-slate-300',
+                ? 'border-poke-accent bg-poke-accent/10 text-poke-accent'
+                : 'border-white/10 text-slate-400 hover:border-white/20',
             )}
           >
             <ItemTypeIcon type={t} />
@@ -369,8 +369,8 @@ function CollectionForm({
             className={cn(
               'w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-dashed font-bold text-sm transition-colors',
               scanning
-                ? 'border-poke-blue/40 bg-poke-blue/5 text-poke-blue cursor-wait'
-                : 'border-slate-200 text-slate-400 hover:border-poke-blue hover:text-poke-blue hover:bg-poke-blue/5',
+                ? 'border-poke-accent/40 bg-poke-accent/10 text-poke-accent cursor-wait'
+                : 'border-white/10 text-slate-400 hover:border-poke-accent hover:text-poke-accent hover:bg-poke-accent/10',
             )}
           >
             {scanning ? (
@@ -383,25 +383,25 @@ function CollectionForm({
             <div className={cn(
               'mt-2 flex items-center gap-3 p-2 border rounded-lg',
               scanResult === 'matched'
-                ? 'bg-emerald-50 border-emerald-200'
+                ? 'bg-emerald-500/10 border-emerald-500/30'
                 : scanResult === 'error'
-                  ? 'bg-red-50 border-red-200'
-                  : 'bg-amber-50 border-amber-200',
+                  ? 'bg-red-500/10 border-red-500/30'
+                  : 'bg-amber-500/10 border-amber-500/30',
             )}>
               <img
                 src={scanResult === 'matched' && form.imageUrl ? form.imageUrl : (photoPreview ?? '')}
                 alt="card"
                 referrerPolicy="no-referrer"
-                className="w-12 h-16 object-contain rounded-md border border-slate-200 bg-white flex-shrink-0"
+                className="w-12 h-16 object-contain rounded-md border border-white/10 bg-white/5 flex-shrink-0"
               />
               <div className="min-w-0">
                 <p className={cn(
                   'text-xs font-bold',
                   scanResult === 'matched'
-                    ? 'text-emerald-700'
+                    ? 'text-emerald-300'
                     : scanResult === 'error'
-                      ? 'text-red-600'
-                      : 'text-amber-700',
+                      ? 'text-red-300'
+                      : 'text-amber-300',
                 )}>
                   {scanResult === 'matched' && form.edition ? `（${EDITION_LABELS[form.edition]}）` : ''}
                   {scanResult === 'matched'
@@ -415,7 +415,7 @@ function CollectionForm({
                 </p>
                 {scanResult === 'error' && (
                   <>
-                    {scanHint && <p className="mt-0.5 text-[11px] font-medium text-red-500/80">{scanHint}</p>}
+                    {scanHint && <p className="mt-0.5 text-[11px] font-medium text-red-300/80">{scanHint}</p>}
                     {scanDebug && (
                       <div className="mt-1 space-y-0.5">
                         {scanDebug.map((line, i) => (
@@ -426,7 +426,7 @@ function CollectionForm({
                     <button
                       type="button"
                       onClick={() => { if (lastFileRef.current) runScan(lastFileRef.current); }}
-                      className="mt-1.5 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-red-600 bg-white border border-red-200 hover:bg-red-50 transition-colors"
+                      className="mt-1.5 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-red-300 bg-white/5 border border-red-500/30 hover:bg-red-500/10 transition-colors"
                     >
                       <RefreshCw className="w-3 h-3" /> 重試
                     </button>
@@ -440,35 +440,35 @@ function CollectionForm({
 
       {/* Name */}
       <div>
-        <label className="text-xs font-bold text-slate-500 mb-1 block">卡名 / 商品名稱 *</label>
+        <label className="text-xs font-bold text-slate-400 mb-1 block">卡名 / 商品名稱 *</label>
         <input
           required
           value={form.name}
           onChange={e => set('name', e.target.value)}
           placeholder="e.g. リザードン ex SAR"
-          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-poke-blue"
+          className="w-full border border-white/10 bg-white/5 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-poke-accent"
         />
       </div>
 
       {/* Series + Set */}
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <label className="text-xs font-bold text-slate-500 mb-1 block">大系列</label>
+          <label className="text-xs font-bold text-slate-400 mb-1 block">大系列</label>
           <select
             value={form.series}
             onChange={e => handleSeriesChange(e.target.value)}
-            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-poke-blue bg-white"
+            className="w-full border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-poke-accent bg-surface"
           >
             <option value="">全部</option>
             {SERIES_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
         <div>
-          <label className="text-xs font-bold text-slate-500 mb-1 block">系列包名</label>
+          <label className="text-xs font-bold text-slate-400 mb-1 block">系列包名</label>
           <select
             value={form.setName}
             onChange={e => handleSetNameChange(e.target.value)}
-            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-poke-blue bg-white"
+            className="w-full border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-poke-accent bg-surface"
           >
             <option value="">選擇...</option>
             {filteredSets.map(s => <option key={s.value} value={s.value}>{s.value}</option>)}
@@ -479,7 +479,7 @@ function CollectionForm({
 
       {/* Image: preview + auto-fetch from set + manual URL */}
       <div>
-        <label className="text-xs font-bold text-slate-500 mb-1 block">圖片</label>
+        <label className="text-xs font-bold text-slate-400 mb-1 block">圖片</label>
         <div className="flex items-start gap-3">
           <Thumb src={form.imageUrl || undefined} type={form.itemType} alt={form.name} />
           <div className="flex-1 min-w-0 space-y-1.5">
@@ -491,8 +491,8 @@ function CollectionForm({
                 className={cn(
                   'flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold border-2 transition-colors',
                   fetchingImg
-                    ? 'border-poke-blue/40 bg-poke-blue/5 text-poke-blue cursor-wait'
-                    : 'border-slate-200 text-slate-500 hover:border-poke-blue hover:text-poke-blue hover:bg-poke-blue/5',
+                    ? 'border-poke-accent/40 bg-poke-accent/10 text-poke-accent cursor-wait'
+                    : 'border-white/10 text-slate-400 hover:border-poke-accent hover:text-poke-accent hover:bg-poke-accent/10',
                 )}
               >
                 {fetchingImg
@@ -503,7 +503,7 @@ function CollectionForm({
                 <button
                   type="button"
                   onClick={() => { set('imageUrl', ''); setImgMsg(null); }}
-                  className="flex items-center gap-1 px-2.5 py-2 rounded-lg text-xs font-bold text-slate-400 border-2 border-slate-200 hover:text-red-400 hover:border-red-200 transition-colors"
+                  className="flex items-center gap-1 px-2.5 py-2 rounded-lg text-xs font-bold text-slate-400 border border-white/10 hover:text-red-300 hover:border-red-500/40 transition-colors"
                 >
                   <ImageOff className="w-3.5 h-3.5" />清除
                 </button>
@@ -513,7 +513,7 @@ function CollectionForm({
               value={form.imageUrl}
               onChange={e => { set('imageUrl', e.target.value); setImgMsg(null); }}
               placeholder="或貼上圖片網址 https://..."
-              className="w-full border border-slate-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-poke-blue"
+              className="w-full border border-white/10 bg-white/5 rounded-lg px-3 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-poke-accent"
             />
             {imgMsg && <p className="text-xs text-slate-400">{imgMsg}</p>}
           </div>
@@ -528,18 +528,18 @@ function CollectionForm({
               type="checkbox"
               checked={form.isGraded}
               onChange={e => set('isGraded', e.target.checked)}
-              className="w-4 h-4 rounded border-slate-300 text-poke-blue focus:ring-poke-blue"
+              className="w-4 h-4 rounded border-white/20 bg-white/5 text-poke-blue focus:ring-poke-accent"
             />
-            <span className="text-sm font-bold text-slate-600">鑑定卡（PSA / BGS…）</span>
+            <span className="text-sm font-bold text-slate-300">鑑定卡（PSA / BGS…）</span>
           </label>
 
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="text-xs font-bold text-slate-500 mb-1 block">稀有度</label>
+              <label className="text-xs font-bold text-slate-400 mb-1 block">稀有度</label>
               <select
                 value={form.rarity}
                 onChange={e => set('rarity', e.target.value)}
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-poke-blue bg-white"
+                className="w-full border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-poke-accent bg-surface"
               >
                 <option value="">—</option>
                 {RARITY_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
@@ -547,11 +547,11 @@ function CollectionForm({
             </div>
             {form.isGraded ? (
               <div>
-                <label className="text-xs font-bold text-slate-500 mb-1 block">鑑定公司</label>
+                <label className="text-xs font-bold text-slate-400 mb-1 block">鑑定公司</label>
                 <select
                   value={form.gradingCompany}
                   onChange={e => set('gradingCompany', e.target.value as GradingCompany | '')}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-poke-blue bg-white"
+                  className="w-full border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-poke-accent bg-surface"
                 >
                   <option value="">—</option>
                   {(['psa', 'bgs', 'other'] as GradingCompany[]).map(g => (
@@ -561,11 +561,11 @@ function CollectionForm({
               </div>
             ) : (
               <div>
-                <label className="text-xs font-bold text-slate-500 mb-1 block">品相</label>
+                <label className="text-xs font-bold text-slate-400 mb-1 block">品相</label>
                 <select
                   value={form.condition}
                   onChange={e => set('condition', e.target.value as CollectionCondition | '')}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-poke-blue bg-white"
+                  className="w-full border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-poke-accent bg-surface"
                 >
                   <option value="">—</option>
                   {(Object.keys(CONDITION_LABELS) as CollectionCondition[]).map(c => (
@@ -579,23 +579,23 @@ function CollectionForm({
           {form.isGraded && (
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="text-xs font-bold text-slate-500 mb-1 block">評級分數</label>
+                <label className="text-xs font-bold text-slate-400 mb-1 block">評級分數</label>
                 <select
                   value={form.grade}
                   onChange={e => set('grade', e.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-poke-blue bg-white"
+                  className="w-full border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-poke-accent bg-surface"
                 >
                   <option value="">—</option>
                   {GRADE_OPTIONS.map(g => <option key={g} value={g}>{g}</option>)}
                 </select>
               </div>
               <div>
-                <label className="text-xs font-bold text-slate-500 mb-1 block">鑑定編號</label>
+                <label className="text-xs font-bold text-slate-400 mb-1 block">鑑定編號</label>
                 <input
                   value={form.gradingCert}
                   onChange={e => set('gradingCert', e.target.value)}
                   placeholder="選填，例：12345678"
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-poke-blue"
+                  className="w-full border border-white/10 bg-white/5 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-poke-accent"
                 />
               </div>
             </div>
@@ -607,11 +607,11 @@ function CollectionForm({
       {form.itemType === 'single' && (
         <div className="grid grid-cols-2 gap-2">
           <div>
-            <label className="text-xs font-bold text-slate-500 mb-1 block">版本</label>
+            <label className="text-xs font-bold text-slate-400 mb-1 block">版本</label>
             <select
               value={form.edition}
               onChange={e => set('edition', e.target.value as CardEdition | '')}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-poke-blue bg-white"
+              className="w-full border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-poke-accent bg-surface"
             >
               <option value="">—</option>
               {(['ja', 'zh-tw'] as CardEdition[]).map(ed => (
@@ -620,12 +620,12 @@ function CollectionForm({
             </select>
           </div>
           <div>
-            <label className="text-xs font-bold text-slate-500 mb-1 block">卡號</label>
+            <label className="text-xs font-bold text-slate-400 mb-1 block">卡號</label>
             <input
               value={form.cardNumber}
               onChange={e => set('cardNumber', e.target.value)}
               placeholder="e.g. 199/165"
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-poke-blue"
+              className="w-full border border-white/10 bg-white/5 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-poke-accent"
             />
           </div>
         </div>
@@ -634,24 +634,24 @@ function CollectionForm({
       {/* Quantity + current-value estimate */}
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <label className="text-xs font-bold text-slate-500 mb-1 block">數量</label>
+          <label className="text-xs font-bold text-slate-400 mb-1 block">數量</label>
           <input
             type="number"
             min={1}
             value={form.quantity}
             onChange={e => set('quantity', Number(e.target.value))}
-            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-poke-blue"
+            className="w-full border border-white/10 bg-white/5 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-poke-accent"
           />
         </div>
         <div>
-          <label className="text-xs font-bold text-slate-500 mb-1 block">現估價 (¥)</label>
+          <label className="text-xs font-bold text-slate-400 mb-1 block">現估價 (¥)</label>
           <input
             type="number"
             min={0}
             value={form.currentValue}
             onChange={e => set('currentValue', e.target.value)}
             placeholder="0"
-            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-poke-blue"
+            className="w-full border border-white/10 bg-white/5 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-poke-accent"
           />
           <p className="mt-0.5 text-[10px] text-slate-400">作為損益基準；更新價格後與市場價比較</p>
         </div>
@@ -659,23 +659,23 @@ function CollectionForm({
 
       {/* Acquired date */}
       <div>
-        <label className="text-xs font-bold text-slate-500 mb-1 block">入手日期</label>
+        <label className="text-xs font-bold text-slate-400 mb-1 block">入手日期</label>
         <input
           type="date"
           value={form.acquiredDate}
           onChange={e => set('acquiredDate', e.target.value)}
-          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-poke-blue"
+          className="w-full border border-white/10 bg-white/5 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-poke-accent"
         />
       </div>
 
       {/* Notes */}
       <div>
-        <label className="text-xs font-bold text-slate-500 mb-1 block">備註</label>
+        <label className="text-xs font-bold text-slate-400 mb-1 block">備註</label>
         <input
           value={form.notes}
           onChange={e => set('notes', e.target.value)}
           placeholder="例：已評級、二手、轉手來源..."
-          className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-poke-blue"
+          className="w-full border border-white/10 bg-white/5 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-poke-accent"
         />
       </div>
 
@@ -691,7 +691,7 @@ function CollectionForm({
         <button
           type="button"
           onClick={onCancel}
-          className="px-4 py-2.5 text-sm font-bold text-slate-500 hover:text-slate-700 border border-slate-200 rounded-lg hover:border-slate-300 transition-colors"
+          className="px-4 py-2.5 text-sm font-bold text-slate-400 hover:text-slate-200 border border-white/10 rounded-lg hover:border-white/20 transition-colors"
         >
           <X className="w-4 h-4" />
         </button>
@@ -821,7 +821,7 @@ function GalleryImage({ item }: { item: CollectionItem }) {
   const src = candidates[idx];
   if (!src) {
     return (
-      <div className="w-full h-full flex flex-col items-center justify-center gap-1 text-slate-300">
+      <div className="w-full h-full flex flex-col items-center justify-center gap-1 text-slate-600">
         <div className="scale-[2.2]"><ItemTypeIcon type={item.itemType} /></div>
         <span className="text-[10px] font-bold mt-2">無圖片</span>
       </div>
@@ -861,12 +861,12 @@ function CollectionModal({
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 40 }}
         transition={{ duration: 0.2 }}
-        className="relative w-full sm:max-w-lg bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl max-h-[92vh] overflow-y-auto"
+        className="relative w-full sm:max-w-lg bg-surface border border-white/10 rounded-t-2xl sm:rounded-2xl shadow-2xl max-h-[92vh] overflow-y-auto"
       >
-        <div className="sticky top-0 bg-white border-b border-slate-100 px-5 py-4 flex items-center justify-between z-10">
-          <h2 className="font-black text-lg text-poke-dark-blue">{title}</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100 transition-colors">
-            <X className="w-5 h-5 text-slate-500" />
+        <div className="sticky top-0 bg-surface border-b border-white/10 px-5 py-4 flex items-center justify-between z-10">
+          <h2 className="font-black text-lg text-slate-100">{title}</h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors">
+            <X className="w-5 h-5 text-slate-400" />
           </button>
         </div>
         <div className="p-5">
@@ -1135,7 +1135,7 @@ export function Collection() {
                 value={query}
                 onChange={e => setQuery(e.target.value)}
                 placeholder="搜尋名稱／系列／卡號"
-                className="w-full pl-9 pr-3 py-2 rounded-lg bg-white border border-slate-200 text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none focus:border-poke-blue focus:ring-1 focus:ring-poke-blue"
+                className="w-full pl-9 pr-3 py-2 rounded-lg bg-white/5 border border-white/10 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-poke-accent focus:ring-1 focus:ring-poke-accent"
               />
             </div>
 
@@ -1143,7 +1143,7 @@ export function Collection() {
               <select
                 value={sortKey}
                 onChange={e => setSortKey(e.target.value as SortKey)}
-                className="px-2.5 py-2 rounded-lg bg-white border border-slate-200 text-sm font-bold text-slate-600 focus:outline-none focus:border-poke-blue"
+                className="px-2.5 py-2 rounded-lg bg-surface border border-white/10 text-sm font-bold text-slate-200 focus:outline-none focus:border-poke-accent"
                 title="排序依據"
               >
                 {(Object.keys(SORT_LABELS) as SortKey[]).map(k => (
@@ -1153,7 +1153,7 @@ export function Collection() {
               <button
                 onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}
                 title={sortDir === 'asc' ? '升序（低→高）' : '降序（高→低）'}
-                className="p-2 rounded-lg bg-white border border-slate-200 text-slate-500 hover:text-poke-blue hover:border-poke-blue transition-colors"
+                className="p-2 rounded-lg bg-white/5 border border-white/10 text-slate-400 hover:text-poke-accent hover:border-poke-accent transition-colors"
               >
                 {sortDir === 'asc' ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />}
               </button>
@@ -1164,7 +1164,7 @@ export function Collection() {
                 onClick={handleRefreshPrices}
                 disabled={refreshing}
                 title="更新市場價格（日文卡 Huca、繁中卡 卡拍拍）"
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold bg-white border border-slate-200 text-slate-500 hover:text-poke-blue hover:border-poke-blue transition-colors disabled:opacity-60"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold bg-white/5 border border-white/10 text-slate-400 hover:text-poke-accent hover:border-poke-accent transition-colors disabled:opacity-60"
               >
                 <RefreshCw className={cn('w-4 h-4', refreshing && 'animate-spin')} />
                 {refreshing && priceProgress
@@ -1184,7 +1184,7 @@ export function Collection() {
 
           {/* Row 2: type chips + edition chips */}
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex bg-white border border-slate-200 rounded-lg p-0.5 gap-0.5">
+            <div className="flex bg-white/5 border border-white/10 rounded-lg p-0.5 gap-0.5">
               {(['all', 'single', 'box', 'pack'] as FilterType[]).map(t => (
                 <button
                   key={t}
@@ -1193,7 +1193,7 @@ export function Collection() {
                     'px-3 py-1.5 rounded-md text-xs font-bold transition-colors',
                     filterType === t
                       ? 'bg-poke-blue text-white shadow-sm'
-                      : 'text-slate-400 hover:text-slate-600',
+                      : 'text-slate-400 hover:text-slate-200',
                   )}
                 >
                   {t === 'all' ? '全部' : ITEM_TYPE_LABELS[t]}
@@ -1205,12 +1205,12 @@ export function Collection() {
             </div>
 
             {editionsPresent.length > 0 && (
-              <div className="flex bg-white border border-slate-200 rounded-lg p-0.5 gap-0.5">
+              <div className="flex bg-white/5 border border-white/10 rounded-lg p-0.5 gap-0.5">
                 <button
                   onClick={() => setFEdition('all')}
                   className={cn(
                     'px-3 py-1.5 rounded-md text-xs font-bold transition-colors',
-                    fEdition === 'all' ? 'bg-poke-blue text-white shadow-sm' : 'text-slate-400 hover:text-slate-600',
+                    fEdition === 'all' ? 'bg-poke-blue text-white shadow-sm' : 'text-slate-400 hover:text-slate-200',
                   )}
                 >
                   全部版本
@@ -1221,7 +1221,7 @@ export function Collection() {
                     onClick={() => setFEdition(e)}
                     className={cn(
                       'px-3 py-1.5 rounded-md text-xs font-bold transition-colors',
-                      fEdition === e ? 'bg-poke-blue text-white shadow-sm' : 'text-slate-400 hover:text-slate-600',
+                      fEdition === e ? 'bg-poke-blue text-white shadow-sm' : 'text-slate-400 hover:text-slate-200',
                     )}
                   >
                     {EDITION_LABELS[e]}
@@ -1236,7 +1236,7 @@ export function Collection() {
             <select
               value={fRarity}
               onChange={e => setFRarity(e.target.value)}
-              className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 font-bold text-slate-600 focus:outline-none focus:border-poke-blue"
+              className="px-2.5 py-1.5 rounded-lg bg-surface border border-white/10 font-bold text-slate-200 focus:outline-none focus:border-poke-accent"
               title="稀有度"
             >
               <option value="all">全部稀有度</option>
@@ -1246,7 +1246,7 @@ export function Collection() {
             <select
               value={fGraded}
               onChange={e => setFGraded(e.target.value as GradedFilter)}
-              className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 font-bold text-slate-600 focus:outline-none focus:border-poke-blue"
+              className="px-2.5 py-1.5 rounded-lg bg-surface border border-white/10 font-bold text-slate-200 focus:outline-none focus:border-poke-accent"
               title="鑑定狀態"
             >
               <option value="all">全部（鑑定/未鑑定）</option>
@@ -1257,7 +1257,7 @@ export function Collection() {
             <select
               value={fCondition}
               onChange={e => setFCondition(e.target.value as 'all' | CollectionCondition)}
-              className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 font-bold text-slate-600 focus:outline-none focus:border-poke-blue"
+              className="px-2.5 py-1.5 rounded-lg bg-surface border border-white/10 font-bold text-slate-200 focus:outline-none focus:border-poke-accent"
               title="品相"
             >
               <option value="all">全部品相</option>
@@ -1273,8 +1273,8 @@ export function Collection() {
 
       {/* Empty state */}
       {filtered.length === 0 && (
-        <div className="text-center p-12 bg-white rounded-xl border-2 border-dashed border-slate-200">
-          <p className="text-slate-500 text-sm">
+        <div className="text-center p-12 bg-surface rounded-2xl border-2 border-dashed border-white/10">
+          <p className="text-slate-400 text-sm">
             {items.length === 0
               ? '尚無收藏紀錄，點右上角「新增」開始記錄吧！'
               : filtersActive
@@ -1302,10 +1302,10 @@ export function Collection() {
                 key={item.id}
                 whileHover={{ y: -4 }}
                 transition={{ type: 'spring', stiffness: 300, damping: 22 }}
-                className="group relative bg-white rounded-xl border border-slate-200 overflow-hidden flex flex-col shadow-sm hover:shadow-lg hover:border-slate-300 transition-shadow"
+                className="group relative bg-surface rounded-2xl border border-white/10 overflow-hidden flex flex-col shadow-lg shadow-black/20 hover:shadow-xl hover:border-white/20 transition-shadow"
               >
                 {/* Image */}
-                <div className="relative aspect-[3/4] bg-slate-50 border-b border-slate-100">
+                <div className="relative aspect-[3/4] bg-white/5 border-b border-white/10">
                   <GalleryImage item={item} />
 
                   {/* Bottom gradient for badge legibility */}
@@ -1332,14 +1332,14 @@ export function Collection() {
                   <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
                       onClick={() => { setEditingId(item.id); setShowAddForm(false); }}
-                      className="p-1.5 rounded-lg bg-white/80 backdrop-blur text-slate-500 hover:text-poke-blue shadow-sm transition-colors"
+                      className="p-1.5 rounded-lg bg-black/40 backdrop-blur text-slate-200 hover:text-poke-accent shadow-sm transition-colors"
                       title="編輯"
                     >
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
                     <button
                       onClick={() => handleDelete(item.id)}
-                      className="p-1.5 rounded-lg bg-white/80 backdrop-blur text-slate-500 hover:text-red-500 shadow-sm transition-colors"
+                      className="p-1.5 rounded-lg bg-black/40 backdrop-blur text-slate-200 hover:text-red-400 shadow-sm transition-colors"
                       title="刪除"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -1351,23 +1351,23 @@ export function Collection() {
                 <div className="p-2.5 flex flex-col gap-1 flex-1">
                   <div className="flex items-center gap-1 flex-wrap">
                     {item.edition && (
-                      <span className="text-[10px] font-bold text-sky-600 bg-sky-50 px-1.5 py-0.5 rounded-full">
+                      <span className="text-[10px] font-bold text-sky-300 bg-sky-500/15 px-1.5 py-0.5 rounded-full">
                         {EDITION_LABELS[item.edition]}
                       </span>
                     )}
                     {item.rarity && (
-                      <span className="text-[10px] font-bold text-violet-600 bg-violet-50 px-1.5 py-0.5 rounded-full">
+                      <span className="text-[10px] font-bold text-violet-300 bg-violet-500/15 px-1.5 py-0.5 rounded-full">
                         {item.rarity}
                       </span>
                     )}
                     {!item.isGraded && item.condition && (
-                      <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded-full">
+                      <span className="text-[10px] font-bold text-slate-300 bg-white/10 px-1.5 py-0.5 rounded-full">
                         {CONDITION_LABELS[item.condition]}
                       </span>
                     )}
                   </div>
 
-                  <p className="font-black text-slate-800 text-sm leading-tight line-clamp-2">{item.name}</p>
+                  <p className="font-black text-slate-100 text-sm leading-tight line-clamp-2">{item.name}</p>
 
                   {(item.setName || item.cardNumber) && (
                     <p className="text-[11px] text-slate-400 truncate">
@@ -1378,7 +1378,7 @@ export function Collection() {
                   <div className="mt-auto pt-1.5">
                     <div className="flex items-baseline justify-between gap-1">
                       <span
-                        className="text-base font-black text-slate-800"
+                        className="text-base font-black text-slate-100"
                         title={item.marketPriceSource ? `市場價來源：${item.marketPriceSource}` : undefined}
                       >
                         {estTwd != null ? `NT$${estTwd.toLocaleString()}` : '—'}

@@ -19,10 +19,10 @@ function getCategoryText(category: string) {
 
 function getCategoryColor(category: string) {
   switch (category) {
-    case 'Card': return 'bg-blue-50 text-blue-600';
-    case 'Box': return 'bg-slate-100 text-slate-600';
-    case 'Tournament': return 'bg-blue-100 text-blue-700';
-    default: return 'bg-slate-50 text-slate-500';
+    case 'Card': return 'bg-blue-500/15 text-blue-300';
+    case 'Box': return 'bg-white/10 text-slate-300';
+    case 'Tournament': return 'bg-blue-500/20 text-blue-300';
+    default: return 'bg-white/5 text-slate-400';
   }
 }
 
@@ -56,7 +56,7 @@ function SeriesThumb({
   const fallback = (
     <div className={cn(
       'p-2.5 rounded-xl flex-shrink-0',
-      isIncome ? 'bg-blue-50 text-poke-blue' : getCategoryColor(category)
+      isIncome ? 'bg-poke-accent/15 text-poke-accent' : getCategoryColor(category)
     )}>
       <Tag className="w-5 h-5" />
     </div>
@@ -65,7 +65,7 @@ function SeriesThumb({
   if (!code || broken || !src) return fallback;
 
   return (
-    <div className="w-11 h-11 rounded-xl flex-shrink-0 overflow-hidden bg-white border border-slate-100 flex items-center justify-center">
+    <div className="w-11 h-11 rounded-xl flex-shrink-0 overflow-hidden bg-white/5 border border-white/10 flex items-center justify-center">
       <img
         src={src}
         alt=""
@@ -118,15 +118,15 @@ export function ExpenseList() {
   if (loading) {
     return (
       <div className="flex justify-center p-12">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-poke-blue"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-poke-accent"></div>
       </div>
     );
   }
 
   if (expenses.length === 0) {
     return (
-      <div className="text-center p-12 bg-white rounded-xl border-2 border-dashed border-slate-200">
-        <p className="text-slate-500">尚無記錄。開始新增一筆吧！</p>
+      <div className="text-center p-12 bg-surface rounded-xl border-2 border-dashed border-white/10">
+        <p className="text-slate-400">尚無記錄。開始新增一筆吧！</p>
       </div>
     );
   }
@@ -173,7 +173,7 @@ export function ExpenseList() {
         <select
           value={month}
           onChange={e => setMonth(e.target.value)}
-          className="text-xs font-bold text-slate-600 border-2 border-slate-200 rounded-lg px-2 py-1 bg-white focus:outline-none focus:border-poke-blue"
+          className="text-xs font-bold text-slate-300 border border-white/10 rounded-lg px-2 py-1 bg-surface focus:outline-none focus:border-poke-accent"
         >
           <option value="all">全部月份</option>
           {months.map(m => (
@@ -184,20 +184,20 @@ export function ExpenseList() {
 
       {/* Subtotal bar */}
       <div className="flex items-center gap-3 px-2 -mt-1 text-xs font-bold flex-wrap">
-        <span className="text-slate-500">支出 <span className="text-slate-700">¥{monthExpense.toLocaleString()}</span></span>
+        <span className="text-slate-400">支出 <span className="text-slate-100">¥{monthExpense.toLocaleString()}</span></span>
         {monthIncome > 0 && (
-          <span className="text-slate-500">收入 <span className="text-poke-blue">¥{monthIncome.toLocaleString()}</span></span>
+          <span className="text-slate-400">收入 <span className="text-poke-accent">¥{monthIncome.toLocaleString()}</span></span>
         )}
         {monthPending > 0 && (
-          <span className="inline-flex items-center gap-1 text-amber-600">
+          <span className="inline-flex items-center gap-1 text-amber-400">
             <Clock className="w-3 h-3" /> 待報銷 ¥{monthPending.toLocaleString()}
           </span>
         )}
       </div>
 
       {visible.length === 0 ? (
-        <div className="text-center p-8 bg-white rounded-xl border-2 border-dashed border-slate-200">
-          <p className="text-slate-500 text-sm">{formatMonthLabel(month)}尚無記錄</p>
+        <div className="text-center p-8 bg-surface rounded-xl border-2 border-dashed border-white/10">
+          <p className="text-slate-400 text-sm">{formatMonthLabel(month)}尚無記錄</p>
         </div>
       ) : (
       <div className="grid gap-3">
@@ -217,14 +217,14 @@ export function ExpenseList() {
                     category={expense.category as string}
                   />
                   <div className="min-w-0">
-                    <h3 className="font-bold text-slate-900 truncate text-sm sm:text-base">{expense.title}</h3>
+                    <h3 className="font-bold text-slate-100 truncate text-sm sm:text-base">{expense.title}</h3>
                     <div className="flex items-center gap-2 text-[10px] sm:text-xs text-slate-400 font-bold flex-wrap">
                       <span className="uppercase">{getCategoryText(expense.category as string)}</span>
                       {expense.category === 'Box' && expense.quantity > 1 && (
-                        <span className="text-poke-blue">{expense.quantity}{expense.quantityUnit}</span>
+                        <span className="text-poke-accent">{expense.quantity}{expense.quantityUnit}</span>
                       )}
                       {expense.seriesTag && (
-                        <span className="px-1.5 py-0.5 rounded bg-poke-blue/10 text-poke-dark-blue font-black text-[10px]">
+                        <span className="px-1.5 py-0.5 rounded bg-poke-accent/15 text-poke-accent font-black text-[10px]">
                           {expense.seriesTag}
                         </span>
                       )}
@@ -236,8 +236,8 @@ export function ExpenseList() {
                           className={cn(
                             'inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded font-black text-[10px] transition-colors',
                             expense.paymentStatus === 'pending'
-                              ? 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                              : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+                              ? 'bg-amber-500/15 text-amber-300 hover:bg-amber-500/25'
+                              : 'bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25'
                           )}
                         >
                           {expense.paymentStatus === 'pending'
@@ -251,7 +251,7 @@ export function ExpenseList() {
                         const created = format(new Date(expense.createdAt), 'MM/dd');
                         const dated   = format(new Date(expense.date), 'MM/dd');
                         return created !== dated ? (
-                          <span className="text-slate-300 font-normal">({created} 補記)</span>
+                          <span className="text-slate-500 font-normal">({created} 補記)</span>
                         ) : null;
                       })()}
                     </div>
@@ -263,7 +263,7 @@ export function ExpenseList() {
                   <div className="flex flex-col items-end mr-1">
                     <p className={cn(
                       "font-black text-sm sm:text-base",
-                      isIncome ? "text-poke-blue" : "text-slate-700"
+                      isIncome ? "text-poke-accent" : "text-slate-100"
                     )}>
                       {isIncome ? '+' : '-'}¥{(Number(expense.amount) * expense.quantity).toLocaleString()}
                     </p>
@@ -277,7 +277,7 @@ export function ExpenseList() {
                   {/* Edit button */}
                   <button
                     onClick={() => setEditingExpense(expense)}
-                    className="p-2 text-slate-300 hover:text-poke-blue hover:bg-blue-50 transition-colors rounded-lg"
+                    className="p-2 text-slate-500 hover:text-poke-accent hover:bg-white/10 transition-colors rounded-lg"
                     title="編輯"
                   >
                     <Pencil className="w-4 h-4" />
@@ -291,8 +291,8 @@ export function ExpenseList() {
                     className={cn(
                       "p-2 rounded-lg transition-colors",
                       hasImage
-                        ? "text-poke-blue hover:bg-blue-50"
-                        : "text-slate-300 hover:text-poke-blue hover:bg-blue-50"
+                        ? "text-poke-accent hover:bg-white/10"
+                        : "text-slate-500 hover:text-poke-accent hover:bg-white/10"
                     )}
                   >
                     {isUploading
@@ -308,7 +308,7 @@ export function ExpenseList() {
                     onClick={() => {
                       if (confirm('確定要刪除這筆記錄嗎？')) deleteExpense(expense.id);
                     }}
-                    className="p-2 text-slate-300 hover:text-red-500 transition-colors rounded-lg"
+                    className="p-2 text-slate-500 hover:text-red-400 transition-colors rounded-lg"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -321,20 +321,20 @@ export function ExpenseList() {
                   <img
                     src={expense.imageUrl}
                     alt="收據"
-                    className="w-14 h-14 object-cover rounded-lg border border-slate-200 cursor-pointer flex-shrink-0"
+                    className="w-14 h-14 object-cover rounded-lg border border-white/10 cursor-pointer flex-shrink-0"
                     onClick={() => window.open(expense.imageUrl, '_blank')}
                   />
                   <div className="flex flex-col gap-1">
                     <button
                       onClick={() => window.open(expense.imageUrl, '_blank')}
-                      className="text-xs font-bold text-poke-blue underline text-left"
+                      className="text-xs font-bold text-poke-accent underline text-left"
                     >
                       查看原圖
                     </button>
                     <button
                       onClick={() => handlePhotoButtonClick(expense.id)}
                       disabled={isUploading}
-                      className="text-xs font-bold text-slate-400 hover:text-poke-blue text-left transition-colors"
+                      className="text-xs font-bold text-slate-400 hover:text-poke-accent text-left transition-colors"
                     >
                       更換照片
                     </button>

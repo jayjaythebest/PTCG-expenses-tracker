@@ -109,21 +109,21 @@ export function ExpenseForm() {
 
   return (
     <div className="poke-card p-5 sm:p-6 shadow-md">
-      <h2 className="text-xl font-bold mb-5 flex items-center gap-2 text-poke-dark-blue">
+      <h2 className="text-xl font-bold mb-5 flex items-center gap-2 text-slate-100">
         <PlusCircle className="w-6 h-6" />
         新增記錄
       </h2>
 
       {/* Type Toggle */}
-      <div className="flex p-1 bg-slate-100 rounded-xl mb-6">
+      <div className="flex p-1 bg-white/5 rounded-xl mb-6">
         <button
           type="button"
           onClick={() => setType('Expense')}
           className={cn(
             "flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg font-bold text-sm transition-all",
             type === 'Expense'
-              ? "bg-white text-slate-700 shadow-sm"
-              : "text-slate-500 hover:text-slate-700"
+              ? "bg-surface-hi text-slate-100 shadow-sm"
+              : "text-slate-400 hover:text-slate-200"
           )}
         >
           <Minus className="w-4 h-4" />
@@ -135,8 +135,8 @@ export function ExpenseForm() {
           className={cn(
             "flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg font-bold text-sm transition-all",
             type === 'Income'
-              ? "bg-white text-poke-blue shadow-sm"
-              : "text-slate-500 hover:text-slate-700"
+              ? "bg-surface-hi text-poke-accent shadow-sm"
+              : "text-slate-400 hover:text-slate-200"
           )}
         >
           <Plus className="w-4 h-4" />
@@ -147,7 +147,7 @@ export function ExpenseForm() {
       <form onSubmit={handleSubmit} className="space-y-5">
         {/* Title — product combobox */}
         <div>
-          <label className="block text-sm font-bold text-slate-700 mb-1.5">商品名稱</label>
+          <label className="block text-sm font-bold text-slate-300 mb-1.5">商品名稱</label>
           <div className="relative">
             <input
               type="text"
@@ -168,11 +168,11 @@ export function ExpenseForm() {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -4 }}
                   transition={{ duration: 0.12 }}
-                  className="absolute z-30 w-full mt-1 bg-white border-2 border-slate-200 rounded-xl shadow-lg overflow-hidden max-h-64 overflow-y-auto"
+                  className="absolute z-30 w-full mt-1 bg-surface border border-white/10 rounded-xl shadow-lg overflow-hidden max-h-64 overflow-y-auto"
                 >
                   {Object.entries(grouped).map(([series, products]) => (
                     <div key={series}>
-                      <div className="px-3 py-1.5 text-[10px] font-black text-slate-400 uppercase tracking-wider bg-slate-50 sticky top-0">
+                      <div className="px-3 py-1.5 text-[10px] font-black text-slate-400 uppercase tracking-wider bg-surface-hi sticky top-0">
                         {series}
                       </div>
                       {products.map(p => (
@@ -181,9 +181,9 @@ export function ExpenseForm() {
                           type="button"
                           onPointerDown={e => e.preventDefault()}
                           onClick={() => selectProduct(p)}
-                          className="w-full text-left px-3 py-2.5 hover:bg-poke-blue/5 flex items-center justify-between gap-2 border-b border-slate-50 last:border-0"
+                          className="w-full text-left px-3 py-2.5 hover:bg-white/5 flex items-center justify-between gap-2 border-b border-white/5 last:border-0"
                         >
-                          <span className="font-bold text-sm text-slate-800">{p.name}</span>
+                          <span className="font-bold text-sm text-slate-100">{p.name}</span>
                           <span className="text-[10px] text-slate-400 flex-shrink-0 font-mono">{p.code}</span>
                         </button>
                       ))}
@@ -197,7 +197,7 @@ export function ExpenseForm() {
 
         {/* Amount */}
         <div>
-          <label className="block text-sm font-bold text-slate-700 mb-1.5">
+          <label className="block text-sm font-bold text-slate-300 mb-1.5">
             金額 (¥){category === 'Box' ? ' — 每盒單價' : ''}
           </label>
           <input
@@ -213,7 +213,7 @@ export function ExpenseForm() {
 
         {/* Date */}
         <div>
-          <label className="block text-sm font-bold text-slate-700 mb-1.5">消費日期</label>
+          <label className="block text-sm font-bold text-slate-300 mb-1.5">消費日期</label>
           <div className="flex gap-2 mb-2">
             {[
               { label: '今天', offset: 0 },
@@ -231,8 +231,8 @@ export function ExpenseForm() {
                   className={cn(
                     'px-3 py-1.5 rounded-lg text-sm font-bold border-2 transition-colors',
                     date === val
-                      ? 'border-poke-blue bg-poke-blue/10 text-poke-dark-blue'
-                      : 'border-slate-200 text-slate-400 hover:border-slate-300 hover:text-slate-600',
+                      ? 'border-poke-accent bg-poke-accent/10 text-poke-accent'
+                      : 'border-white/10 text-slate-400 hover:border-white/20 hover:text-slate-200',
                   )}
                 >
                   {label}
@@ -254,7 +254,7 @@ export function ExpenseForm() {
               const diff = Math.round((new Date(today).getTime() - new Date(date).getTime()) / 86400000);
               if (diff <= 0) return null;
               return (
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-amber-500 pointer-events-none">
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-amber-400 pointer-events-none">
                   {diff} 天前
                 </span>
               );
@@ -265,16 +265,16 @@ export function ExpenseForm() {
         {/* Payment status — expense only */}
         {type === 'Expense' && (
           <div>
-            <label className="block text-sm font-bold text-slate-700 mb-1.5">付款狀態</label>
-            <div className="flex p-1 bg-slate-100 rounded-xl">
+            <label className="block text-sm font-bold text-slate-300 mb-1.5">付款狀態</label>
+            <div className="flex p-1 bg-white/5 rounded-xl">
               <button
                 type="button"
                 onClick={() => setPaymentStatus('paid')}
                 className={cn(
                   'flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg font-bold text-sm transition-all',
                   paymentStatus === 'paid'
-                    ? 'bg-white text-slate-700 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-700'
+                    ? 'bg-surface-hi text-slate-100 shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
                 )}
               >
                 <Wallet className="w-4 h-4" />
@@ -286,8 +286,8 @@ export function ExpenseForm() {
                 className={cn(
                   'flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg font-bold text-sm transition-all',
                   paymentStatus === 'pending'
-                    ? 'bg-white text-amber-600 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-700'
+                    ? 'bg-surface-hi text-amber-300 shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
                 )}
               >
                 <Clock className="w-4 h-4" />
@@ -299,7 +299,7 @@ export function ExpenseForm() {
 
         {/* Category */}
         <div>
-          <label className="block text-sm font-bold text-slate-700 mb-1.5">類別</label>
+          <label className="block text-sm font-bold text-slate-300 mb-1.5">類別</label>
           <div className="grid grid-cols-2 gap-2">
             {[
               { value: 'Card', label: '單張卡片' },
@@ -320,8 +320,8 @@ export function ExpenseForm() {
                   className={cn(
                     'py-2.5 px-3 rounded-lg border-2 text-sm font-bold transition-all text-center',
                     selected
-                      ? 'border-poke-blue bg-poke-blue/10 text-poke-dark-blue'
-                      : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'
+                      ? 'border-poke-accent bg-poke-accent/10 text-poke-accent'
+                      : 'border-white/10 bg-white/5 text-slate-400 hover:border-white/20'
                   )}
                 >
                   {label}
@@ -340,10 +340,10 @@ export function ExpenseForm() {
               exit={{ opacity: 0, height: 0 }}
               className="overflow-hidden"
             >
-              <label className="block text-sm font-bold text-slate-700 mb-1.5">數量</label>
+              <label className="block text-sm font-bold text-slate-300 mb-1.5">數量</label>
               <div className="flex items-center gap-3">
                 {/* Unit toggle */}
-                <div className="flex p-0.5 bg-slate-100 rounded-lg">
+                <div className="flex p-0.5 bg-white/5 rounded-lg">
                   {(['盒', '包'] as const).map(u => (
                     <button
                       key={u}
@@ -352,8 +352,8 @@ export function ExpenseForm() {
                       className={cn(
                         'px-3 py-1.5 rounded-md text-sm font-bold transition-all',
                         quantityUnit === u
-                          ? 'bg-white text-slate-700 shadow-sm'
-                          : 'text-slate-400 hover:text-slate-600'
+                          ? 'bg-surface-hi text-slate-100 shadow-sm'
+                          : 'text-slate-400 hover:text-slate-200'
                       )}
                     >
                       {u}
@@ -363,7 +363,7 @@ export function ExpenseForm() {
                 <button
                   type="button"
                   onClick={() => setQuantity(q => Math.max(1, q - 1))}
-                  className="w-10 h-10 rounded-lg border-2 border-slate-200 flex items-center justify-center text-slate-600 hover:border-poke-blue hover:text-poke-blue transition-colors"
+                  className="w-10 h-10 rounded-lg border border-white/10 flex items-center justify-center text-slate-300 hover:border-poke-accent hover:text-poke-accent transition-colors"
                 >
                   <Minus className="w-4 h-4" />
                 </button>
@@ -376,24 +376,24 @@ export function ExpenseForm() {
                     const n = parseInt(e.target.value, 10);
                     setQuantity(Number.isNaN(n) ? 1 : Math.max(1, n));
                   }}
-                  className="w-16 text-center text-xl font-black text-slate-800 border-2 border-slate-200 rounded-lg py-1.5 focus:outline-none focus:border-poke-blue"
+                  className="w-16 text-center text-xl font-black text-slate-100 bg-white/5 border border-white/10 rounded-lg py-1.5 focus:outline-none focus:border-poke-accent"
                 />
                 <button
                   type="button"
                   onClick={() => setQuantity(q => q + 1)}
-                  className="w-10 h-10 rounded-lg border-2 border-slate-200 flex items-center justify-center text-slate-600 hover:border-poke-blue hover:text-poke-blue transition-colors"
+                  className="w-10 h-10 rounded-lg border border-white/10 flex items-center justify-center text-slate-300 hover:border-poke-accent hover:text-poke-accent transition-colors"
                 >
                   <Plus className="w-4 h-4" />
                 </button>
                 {amount && quantity > 1 && (
-                  <span className="text-sm text-slate-500 font-bold">
+                  <span className="text-sm text-slate-400 font-bold">
                     = ¥{(Number(amount) * quantity).toLocaleString()}
                   </span>
                 )}
               </div>
               {/* Series tag */}
               <div className="mt-3">
-                <label className="block text-sm font-bold text-slate-700 mb-1.5">系列/世代</label>
+                <label className="block text-sm font-bold text-slate-300 mb-1.5">系列/世代</label>
                 <div className="flex gap-2">
                   <select
                     className="poke-input text-base flex-1"
@@ -421,7 +421,7 @@ export function ExpenseForm() {
                         setDetectingSeries(false);
                       }
                     }}
-                    className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg bg-poke-blue/10 text-poke-dark-blue text-sm font-bold hover:bg-poke-blue/20 transition-colors disabled:opacity-40"
+                    className="flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-lg bg-poke-accent/15 text-poke-accent text-sm font-bold hover:bg-poke-accent/25 transition-colors disabled:opacity-40"
                   >
                     {detectingSeries
                       ? <Loader2 className="w-4 h-4 animate-spin" />
@@ -442,7 +442,7 @@ export function ExpenseForm() {
               exit={{ opacity: 0, height: 0 }}
               className="overflow-hidden"
             >
-              <label className="block text-sm font-bold text-slate-700 mb-1.5">自定義類別</label>
+              <label className="block text-sm font-bold text-slate-300 mb-1.5">自定義類別</label>
               <input
                 type="text"
                 className="poke-input text-base"
@@ -456,12 +456,12 @@ export function ExpenseForm() {
         </AnimatePresence>
 
         <div>
-          <label className="block text-sm font-bold text-slate-700 mb-1.5">上傳圖片 (選填)</label>
+          <label className="block text-sm font-bold text-slate-300 mb-1.5">上傳圖片 (選填)</label>
           <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-slate-100 text-slate-600 rounded-xl hover:bg-slate-200 transition-colors font-bold text-sm"
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-white/5 text-slate-300 rounded-xl hover:bg-white/10 transition-colors font-bold text-sm"
             >
               <Camera className="w-5 h-5" />
               拍照或選圖
@@ -475,11 +475,11 @@ export function ExpenseForm() {
             />
             {image && (
               <div className="relative w-12 h-12 flex-shrink-0">
-                <img src={image.preview} alt="Preview" className="w-full h-full object-cover rounded-lg border-2 border-poke-blue" />
+                <img src={image.preview} alt="Preview" className="w-full h-full object-cover rounded-lg border-2 border-poke-accent" />
                 <button
                   type="button"
                   onClick={() => { URL.revokeObjectURL(image.preview); setImage(null); }}
-                  className="absolute -top-2 -right-2 bg-slate-400 text-white rounded-full p-0.5 shadow-md"
+                  className="absolute -top-2 -right-2 bg-white/20 text-white rounded-full p-0.5 shadow-md"
                 >
                   <X className="w-3 h-3" />
                 </button>
@@ -493,7 +493,7 @@ export function ExpenseForm() {
           disabled={loading}
           className={cn(
             "w-full py-4 rounded-xl font-black text-lg shadow-lg flex items-center justify-center gap-2 transition-all active:scale-[0.98]",
-            type === 'Expense' ? "bg-slate-700 text-white shadow-slate-500/20" : "bg-poke-blue text-white shadow-poke-blue/20"
+            type === 'Expense' ? "bg-slate-600 text-white shadow-black/30" : "bg-poke-blue text-white shadow-poke-blue/30"
           )}
         >
           {loading ? <Loader2 className="w-6 h-6 animate-spin" /> : `提交${type === 'Expense' ? '支出' : '收入'}`}
