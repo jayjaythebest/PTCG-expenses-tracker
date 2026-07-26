@@ -142,9 +142,10 @@ const groqAdapter = openAiCompatible({
   baseUrl: 'https://api.groq.com/openai/v1',
   keyEnv: 'GROQ_API_KEY',
   visionModelEnv: 'GROQ_VISION_MODEL',
-  // llama-4-scout was deprecated on Groq; use the current Llama-4 Maverick
-  // vision model. Override with GROQ_VISION_MODEL if Groq rotates it again.
-  visionModelDefault: 'meta-llama/llama-4-maverick-17b-128e-instruct',
+  // Groq's Llama-4 vision previews 404 for this key. Point at a current Qwen VL
+  // model; if Groq rotates it again, override with GROQ_VISION_MODEL (no
+  // redeploy of code needed). Groq is only reached if Gemini fails anyway.
+  visionModelDefault: 'qwen/qwen3.6-27b',
   textModelEnv: 'GROQ_TEXT_MODEL',
   textModelDefault: 'llama-3.3-70b-versatile',
 });
@@ -154,11 +155,11 @@ const openRouterAdapter = openAiCompatible({
   baseUrl: 'https://openrouter.ai/api/v1',
   keyEnv: 'OPENROUTER_API_KEY',
   visionModelEnv: 'OPENROUTER_VISION_MODEL',
-  // llama-3.2-11b-vision:free was removed from OpenRouter. Default to a current
-  // free vision model; override with OPENROUTER_VISION_MODEL as needed.
-  visionModelDefault: 'meta-llama/llama-4-scout:free',
+  // llama-3.2-11b-vision:free was removed from OpenRouter. gemma-4-31b-it:free
+  // is confirmed available and vision-capable (verified via the models API).
+  visionModelDefault: 'google/gemma-4-31b-it:free',
   textModelEnv: 'OPENROUTER_TEXT_MODEL',
-  textModelDefault: 'meta-llama/llama-4-scout:free',
+  textModelDefault: 'google/gemma-4-31b-it:free',
   extraHeaders: { 'X-Title': 'PTCG Expenses Tracker' },
 });
 
