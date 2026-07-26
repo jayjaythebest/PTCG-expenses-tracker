@@ -257,25 +257,49 @@ function CollectionForm({
         ? await lookupCard(scan.setCode, scan.localId, scan.language || 'ja')
         : null;
 
-      // 2b) When TCGdex has no entry (common for brand-new zh-tw sets like the
-      //     MEGA/超級進化 "M#F" series it hasn't catalogued), resolve the full
-      //     card record (name + collector number + precise art) live from the
-      //     official TW site via /api/tw-card. This is the always-current
-      //     complete Chinese card table, so cards missing from TCGdex still
-      //     auto-fill. Only attempt for Chinese/MEGA-style codes.
-      const twCard = !card && !scan.error && scan.setCode && scan.localId
-        && (scan.language === 'zh-tw' || /^M\d+[A-Z]?$/i.test(scan.setCode))
+      // Is this physically a Traditional-Chinese card? Trust the AI's language
+      // read; the "M#F" code (zh-tw MEGA/超級進化) is itself a strong zh-tw
+      // signal even if the AI misdetects the language. JP MEGA prints "M#"
+      // (no trailing F), so this won't misfire on Japanese cards.
+      const isZhTw = scan.language === 'zh-tw' || /^M\d+F$/i.test(scan.setCode);
+
+      // 2b) TCGdex's zh-tw catalog is incomplete (e.g. brand-new sets, the whole
+      //     MEGA series). lookupCard cross-falls-back to the ja endpoint to find
+      //     ANY data, which would mislabel a Chinese card as Japanese with JP
+      //     name/art. When we have a confident zh-tw scan but no genuine zh-tw
+      //     TCGdex hit, resolve the authoritative Chinese record (name + collector
+      //     number + precise art) live from the official TW site via /api/tw-card
+      //     — the always-current complete Chinese card table.
+      const twCard = !scan.error && scan.setCode && scan.localId
+        && isZhTw && (!card || card.edition !== 'zh-tw')
         ? await lookupTwCard(scan.setCode, scan.localId)
         : null;
 
-      if (card) {
+      if (twCard) {
+        // Authoritative zh-tw record from the official TW site: Chinese name +
+        // precise per-card art. The site carries no rarity letter, so keep the
+        // rarity the AI read off the card. Treat as a confident match.
+        setForm(f => ({
+          ...f,
+          name:       twCard.name    || scan.name || f.name,
+          rarity:     scan.rarity    || f.rarity,
+          cardNumber: scan.localId   || twCard.localId || f.cardNumber,
+          imageUrl:   twCard.imageUrl || f.imageUrl,
+          edition:    'zh-tw',
+        }));
+        setScanResult('matched');
+      } else if (card) {
+        // The edition must reflect the ACTUAL card (what the AI read), not
+        // whichever endpoint happened to resolve — otherwise a zh-tw card whose
+        // data TCGdex only has in its ja catalog gets mislabeled Japanese.
+        const edition = (scan.language || card.edition) as CardEdition;
         // Pick artwork in the card's OWN language. For zh-tw, the official TW
         // proxy has precise per-card art (TCGdex often lacks zh-tw images). For
         // ja we must NOT use the TW proxy (it would show the Chinese version) —
         // use TCGdex's ja image, or the SNKRDUNK/Limitless proxy for brand-new
         // sets TCGdex hasn't published art for yet.
         let img = card.imageUrl;
-        if (card.edition === 'zh-tw') {
+        if (edition === 'zh-tw') {
           const tw = await lookupTwCardImage(scan.setCode, scan.localId);
           if (tw) img = tw;
         } else if (!img) {
@@ -290,20 +314,7 @@ function CollectionForm({
           rarity:     card.rarity  || scan.rarity || f.rarity,
           cardNumber: scan.localId || f.cardNumber,
           imageUrl:   img || f.imageUrl,
-          edition:    card.edition,
-        }));
-        setScanResult('matched');
-      } else if (twCard) {
-        // Full record resolved from the official TW site: authoritative Chinese
-        // name + precise per-card art. The site carries no rarity letter, so we
-        // keep the rarity the AI read off the card. Treat as a confident match.
-        setForm(f => ({
-          ...f,
-          name:       twCard.name    || scan.name || f.name,
-          rarity:     scan.rarity    || f.rarity,
-          cardNumber: scan.localId   || twCard.localId || f.cardNumber,
-          imageUrl:   twCard.imageUrl || f.imageUrl,
-          edition:    'zh-tw',
+          edition,
         }));
         setScanResult('matched');
       } else if (scan.error) {
@@ -336,7 +347,7 @@ function CollectionForm({
         // keep those AND try to auto-fill the artwork so the row isn't blank.
         let img = '';
         if (scan.setCode && scan.localId) {
-          if (scan.language === 'zh-tw') {
+          if (isZhTw) {
             // Prefer genuine zh-tw art (official TW proxy).
             img = (await lookupTwCardImage(scan.setCode, scan.localId)) || '';
             // zh-tw MEGA sets print "M#F"; the JP equivalent is "M#" and shares
@@ -355,7 +366,7 @@ function CollectionForm({
           name:       scan.name    || f.name,
           cardNumber: scan.localId || f.cardNumber,
           rarity:     scan.rarity  || f.rarity,
-          edition:    scan.language || f.edition,
+          edition:    isZhTw ? 'zh-tw' : (scan.language || f.edition),
           imageUrl:   img || f.imageUrl,
         }));
         setScanResult('fallback');
@@ -1081,10 +1092,47 @@ export function Collection() {
     setPriceProgress(null);
   };
 
+  // Resolve the live market price for a single card so a newly added row shows
+  // its current value immediately (previously ONLY the "更新價格" button did
+  // this, so freshly added cards had a blank estimate). Non-singles and lookup
+  // failures pass through unpriced. ja -> Huca (JPY), zh-tw -> kapaipai (TWD).
+  const withMarketPrice = async (
+    item: Omit<CollectionItem, 'id' | 'createdAt'>,
+  ): Promise<Omit<CollectionItem, 'id' | 'createdAt'>> => {
+    if (item.itemType !== 'single') return item;
+    const edition = item.edition ?? 'ja';
+    const setCode = SET_CODE_BY_NAME[item.setName] ?? '';
+    try {
+      const p = await fetchCardPrice({
+        setCode,
+        setName: item.setName,
+        number: item.cardNumber,
+        name: item.name,
+        edition,
+      });
+      if (p && p.price != null) {
+        return {
+          ...item,
+          marketPrice: p.price,
+          marketPriceCurrency: p.currency ?? (edition === 'zh-tw' ? 'TWD' : 'JPY'),
+          marketPriceSource: p.source ?? (edition === 'zh-tw' ? 'kapaipai' : 'huca'),
+          marketPriceUpdatedAt: p.updatedAt,
+        };
+      }
+    } catch (err) {
+      console.error('auto price lookup failed for', item.name, err);
+    }
+    return item;
+  };
+
   const handleAdd = async (f: FormState) => {
     setSubmitting(true);
     try {
-      await addItem(formToItem(f));
+      // Auto-price the card on the way in so its market value populates without
+      // a separate "更新價格" tap. Also refresh the FX rate so the TWD total is
+      // consistent with the just-fetched price.
+      fetchFxJpyToTwd().then(setFxRate).catch(() => {});
+      await addItem(await withMarketPrice(formToItem(f)));
       setShowAddForm(false);
     } catch (err) {
       console.error(err);
