@@ -45,6 +45,15 @@ export interface CollectionItem {
   createdAt: string;
 }
 
+// One daily snapshot of the whole collection's market value (stock-ticker
+// style), so the home screen can show week-over-week change. One row per day,
+// keyed by date; written by the daily cron and refreshed client-side on load.
+export interface CollectionValueSnapshot {
+  date: string;      // ISO 'YYYY-MM-DD'
+  totalTwd: number;  // total current market value that day, in TWD
+  itemCount: number; // total quantity of cards that day
+}
+
 export interface UserProfile {
   uid: string;
   email: string;

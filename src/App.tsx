@@ -4,14 +4,22 @@ import { ExpenseForm } from './components/ExpenseForm';
 import { ExpenseList } from './components/ExpenseList';
 import { Dashboard } from './components/Dashboard';
 import { Collection } from './components/Collection';
-import { Zap, ClipboardList, BarChart2, Star } from 'lucide-react';
+import { Home } from './components/Home';
+import { Zap, Home as HomeIcon, ClipboardList, BarChart2, Star } from 'lucide-react';
 import { cn } from './lib/utils';
 
-type Tab = 'record' | 'analysis' | 'collection';
+type Tab = 'home' | 'record' | 'analysis' | 'collection';
+
+const TABS: { id: Tab; label: string; icon: typeof HomeIcon }[] = [
+  { id: 'home', label: '首頁', icon: HomeIcon },
+  { id: 'record', label: '記帳', icon: ClipboardList },
+  { id: 'analysis', label: '支出分析', icon: BarChart2 },
+  { id: 'collection', label: '收藏庫', icon: Star },
+];
 
 function AppContent() {
   const { loading } = useAuth();
-  const [tab, setTab] = useState<Tab>('record');
+  const [tab, setTab] = useState<Tab>('home');
 
   if (loading) {
     return (
@@ -35,47 +43,30 @@ function AppContent() {
         </div>
 
         {/* Tab bar */}
-        <div className="max-w-4xl mx-auto px-4 flex border-t border-white/10">
-          <button
-            onClick={() => setTab('record')}
-            className={cn(
-              'flex items-center gap-2 px-4 py-3 text-sm font-black border-b-2 transition-colors',
-              tab === 'record'
-                ? 'border-poke-accent text-white'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            )}
-          >
-            <ClipboardList className="w-4 h-4" />
-            記帳
-          </button>
-          <button
-            onClick={() => setTab('analysis')}
-            className={cn(
-              'flex items-center gap-2 px-4 py-3 text-sm font-black border-b-2 transition-colors',
-              tab === 'analysis'
-                ? 'border-poke-accent text-white'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            )}
-          >
-            <BarChart2 className="w-4 h-4" />
-            支出分析
-          </button>
-          <button
-            onClick={() => setTab('collection')}
-            className={cn(
-              'flex items-center gap-2 px-4 py-3 text-sm font-black border-b-2 transition-colors',
-              tab === 'collection'
-                ? 'border-poke-accent text-white'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            )}
-          >
-            <Star className="w-4 h-4" />
-            收藏庫
-          </button>
+        <div className="max-w-4xl mx-auto px-4 flex border-t border-white/10 overflow-x-auto">
+          {TABS.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              onClick={() => setTab(id)}
+              className={cn(
+                'flex items-center gap-2 px-4 py-3 text-sm font-black border-b-2 transition-colors whitespace-nowrap',
+                tab === id
+                  ? 'border-poke-accent text-white'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
+              )}
+            >
+              <Icon className="w-4 h-4" />
+              {label}
+            </button>
+          ))}
         </div>
       </header>
 
       <main className="max-w-4xl mx-auto px-4 py-6">
+        {tab === 'home' && (
+          <Home onNavigate={setTab} />
+        )}
+
         {tab === 'record' && (
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
             <div className="lg:col-span-2">

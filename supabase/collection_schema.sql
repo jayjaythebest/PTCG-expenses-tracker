@@ -79,3 +79,27 @@ alter table public.collection_items
 -- ============================================================
 alter table public.collection_items
   add column if not exists acquired_date date;
+
+-- ============================================================
+-- Daily collection-value snapshots (stock-ticker style).
+-- One row per calendar day; the home screen compares the latest value against
+-- ~7 days ago and draws a recent trend line. Written by the daily Vercel cron
+-- (/api/snapshot-collection) and refreshed client-side on load — both upsert by
+-- snapshot_date, so writes are idempotent. Safe to run repeatedly.
+-- ============================================================
+create table if not exists public.collection_value_snapshots (
+  snapshot_date date        primary key,
+  total_twd     numeric     not null default 0,
+  item_count    integer     not null default 0,
+  created_at    timestamptz not null default now()
+);
+
+alter table public.collection_value_snapshots enable row level security;
+
+drop policy if exists "Allow all operations on collection_value_snapshots"
+  on public.collection_value_snapshots;
+create policy "Allow all operations on collection_value_snapshots"
+  on public.collection_value_snapshots
+  for all
+  using (true)
+  with check (true);
