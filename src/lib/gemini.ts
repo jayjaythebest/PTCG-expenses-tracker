@@ -21,9 +21,13 @@ export interface CardScanResult {
   // distinguish "AI couldn't run" from "card genuinely not in the database".
   error?: string;
   // Diagnostics for the failure banner: which providers are configured on the
-  // server, and why the chain failed ('quota' | 'no_provider' | 'unreadable').
+  // server, and why the chain failed ('quota' | 'no_provider' | 'unreadable' |
+  // 'endpoint_missing' | 'endpoint_error' | 'network').
   providers?: string[];
   reason?: string;
+  // Per-provider failure lines (e.g. "gemini:error API key not valid",
+  // "groq:invalid") so the banner can show the true cause of an "unreadable".
+  debug?: string[];
 }
 
 const EMPTY_SCAN: CardScanResult = { setCode: '', localId: '', name: '', rarity: '', language: '' };
@@ -102,6 +106,7 @@ export async function recognizeCardFromPhoto(file: File): Promise<CardScanResult
       error: typeof data.error === 'string' ? data.error : undefined,
       providers: Array.isArray(data.providers) ? data.providers.map(String) : undefined,
       reason: typeof data.reason === 'string' ? data.reason : undefined,
+      debug: Array.isArray(data.debug) ? data.debug.map(String) : undefined,
     };
   } catch {
     // fetch threw before we got a response (offline, DNS, CORS, aborted).

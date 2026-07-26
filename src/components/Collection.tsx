@@ -180,6 +180,7 @@ function CollectionForm({
   const [scanResult, setScanResult] = useState<'matched' | 'fallback' | 'error' | null>(null);
   const [scanProvider, setScanProvider] = useState<string | null>(null);
   const [scanHint, setScanHint] = useState<string | null>(null);
+  const [scanDebug, setScanDebug] = useState<string[] | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [fetchingImg, setFetchingImg] = useState(false);
   const [imgMsg, setImgMsg] = useState<string | null>(null);
@@ -244,6 +245,7 @@ function CollectionForm({
     setScanResult(null);
     setScanProvider(null);
     setScanHint(null);
+    setScanDebug(null);
     setScanning(true);
     try {
       // 1) The AI provider chain reads the reliable identifiers (language + set code + card number).
@@ -299,6 +301,9 @@ function CollectionForm({
         } else {
           setScanHint('可換張更清晰、少反光的照片再試一次');
         }
+        // Per-provider failure lines (gemini:error… / groq:invalid / …) so we can
+        // see the real cause behind an "unreadable" instead of guessing.
+        setScanDebug(scan.debug && scan.debug.length ? scan.debug : null);
         setScanResult('error');
       } else {
         // Fallback: at least pre-fill what the model could read.
@@ -411,6 +416,13 @@ function CollectionForm({
                 {scanResult === 'error' && (
                   <>
                     {scanHint && <p className="mt-0.5 text-[11px] font-medium text-red-500/80">{scanHint}</p>}
+                    {scanDebug && (
+                      <div className="mt-1 space-y-0.5">
+                        {scanDebug.map((line, i) => (
+                          <p key={i} className="font-mono text-[10px] leading-tight text-red-400/70 break-all">{line}</p>
+                        ))}
+                      </div>
+                    )}
                     <button
                       type="button"
                       onClick={() => { if (lastFileRef.current) runScan(lastFileRef.current); }}

@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { Type } from '@google/genai';
-import { visionJson, enabledProviders } from './_lib/ai.js';
+import { visionJson, enabledProviders, type VisionAttempt } from './_lib/ai.js';
 import { getKnownSetCodes } from './_lib/setcodes.js';
 
 // Vision OCR of a Pokémon card. The client posts a (downscaled) base64 image;
@@ -100,13 +100,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // report which providers are configured + the last error, so the UI can hint
     // (e.g. only one provider set up → a single quota wall breaks the whole chain).
     const providers = enabledProviders();
-    const msg = e instanceof Error ? e.message : String(e ?? '');
-    const quotaHit = /\b429\b|quota|rate.?limit|exhausted|insufficient/i.test(msg);
+    // Per-provider outcomes from visionJson (if it was the thrower). Turn them
+    // into short, human-readable lines so the client banner can show exactly
+    // which provider failed and why ("gemini:error API key not valid", etc.).
+    const attempts = (e as { attempts?: VisionAttempt[] }).attempts;
+    const debug = attempts?.map(a =>
+      `${a.provider}:${a.outcome}${a.detail ? ' ' + a.detail : ''}`.slice(0, 160),
+    );
+    // Detect a quota wall across ALL attempt details (not just the last error).
+    const haystack = [
+      e instanceof Error ? e.message : String(e ?? ''),
+      ...(attempts?.map(a => a.detail ?? '') ?? []),
+    ].join(' ');
+    const quotaHit = /\b429\b|quota|rate.?limit|exhausted|insufficient/i.test(haystack);
     return res.status(200).json({
       ...EMPTY,
       error: 'ai_failed',
       providers,
       reason: quotaHit ? 'quota' : (providers.length === 0 ? 'no_provider' : 'unreadable'),
+      debug,
     });
   }
 }

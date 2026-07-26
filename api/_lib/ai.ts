@@ -204,28 +204,56 @@ export interface AiResult<T> {
   data: T;
   provider: Provider;
   model: string;
+  attempts?: VisionAttempt[];
+}
+
+// Per-provider outcome of one vision→JSON pass, kept so a total failure isn't a
+// black box: the endpoint can report exactly which provider failed and why
+// (bad key, wrong model, quota, or a model that simply couldn't read the card).
+export interface VisionAttempt {
+  provider: Provider;
+  model?: string;
+  outcome: 'ok' | 'error' | 'invalid' | 'empty';
+  detail?: string;
+}
+
+// Error thrown when every provider fails; carries the per-provider attempts so
+// callers can surface them for diagnosis.
+export interface VisionChainError extends Error {
+  attempts: VisionAttempt[];
 }
 
 // Run a vision→JSON task across the provider chain. `validate` decides whether a
-// parsed object is acceptable; a rejected/failed provider is skipped.
+// parsed object is acceptable; a rejected/failed provider is skipped. Records an
+// attempt per provider so the caller can see why the whole chain failed.
 export async function visionJson<T>(
   args: VisionArgs & { validate: (obj: unknown) => obj is T },
 ): Promise<AiResult<T>> {
   const order = providerOrder();
-  let lastErr: unknown = null;
+  const attempts: VisionAttempt[] = [];
   for (const p of order) {
     try {
       const raw = await ADAPTERS[p].vision(args);
       const parsed = parseJsonLoose<unknown>(raw.text);
       if (parsed && args.validate(parsed)) {
-        return { data: parsed, provider: p, model: raw.model };
+        attempts.push({ provider: p, model: raw.model, outcome: 'ok' });
+        return { data: parsed, provider: p, model: raw.model, attempts };
       }
-      lastErr = new Error(`${p}: invalid/empty JSON`);
+      // Distinguish "couldn't parse any JSON" (empty) from "parsed but the shape
+      // didn't pass validation" (invalid) — the two point at different fixes.
+      attempts.push({
+        provider: p,
+        model: raw.model,
+        outcome: parsed ? 'invalid' : 'empty',
+      });
     } catch (e) {
-      lastErr = e;
+      const detail = (e instanceof Error ? e.message : String(e ?? '')).slice(0, 140);
+      attempts.push({ provider: p, outcome: 'error', detail });
     }
   }
-  throw lastErr ?? new Error('no AI provider available');
+  const err = new Error('all vision providers failed') as VisionChainError;
+  err.attempts = attempts;
+  throw err;
 }
 
 // Run a text-completion task across the provider chain. Returns trimmed text.
