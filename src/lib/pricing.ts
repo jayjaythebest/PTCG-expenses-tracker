@@ -18,6 +18,11 @@ export async function fetchCardPrice(params: {
   edition?: string;
   name?: string;
   setName?: string; // zh-tw: kapaipai is resolved by set name (no local set-code map)
+  // Grading intent: when the card is graded, the endpoint matches the slab's
+  // grade (e.g. PSA10) instead of a raw price.
+  isGraded?: boolean;
+  gradingCompany?: string;
+  grade?: string;
 }): Promise<CardPrice | null> {
   try {
     const res = await fetch('/api/card-price', {

@@ -42,6 +42,7 @@ export interface CollectionItem {
   marketPriceCurrency?: string;  // 'JPY' | 'TWD'
   marketPriceSource?: string;    // 'huca' | 'kapaipai' | …
   marketPriceUpdatedAt?: string; // ISO timestamp of the last successful fetch
+  marketPriceCondition?: string; // normalised condition of the priced row: raw 'A'/'B'/… or graded 'PSA10'
   createdAt: string;
 }
 

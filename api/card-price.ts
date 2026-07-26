@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { resolveCardPrice, EMPTY_PRICE, type PriceResult } from './_lib/pricing';
+import { resolveCardPrice, buildWantGrade, EMPTY_PRICE, type PriceResult } from './_lib/pricing';
 
 // Resolves a card's market price from a free source, keyed by set code + number
 // (+ edition). Japanese cards use Huca (huca.tw), which exposes a clean JSON API
@@ -31,6 +31,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const number = String(src.number ?? '').trim();
   const name = String(src.name ?? '').trim();
   const edition = String(src.edition ?? 'ja').trim();
+  const isGraded = src.isGraded === true || src.isGraded === 'true';
+  const gradingCompany = String(src.gradingCompany ?? '').trim();
+  const grade = String(src.grade ?? '').trim();
+  const wantGrade = buildWantGrade(isGraded, gradingCompany, grade);
 
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'public, max-age=3600, s-maxage=43200');
@@ -45,7 +49,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ ...EMPTY_PRICE, updatedAt: now(), error: 'missing setCode/name' });
   }
 
-  const key = `${edition}:${(setName || setCode).toUpperCase()}:${number}`;
+  const key = `${edition}:${(setName || setCode).toUpperCase()}:${number}:${wantGrade ?? 'raw'}`;
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < TTL_MS) {
     return res.status(200).json(hit.result);
@@ -54,7 +58,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const emptySource = edition === 'zh-tw' ? 'kapaipai' : null;
 
   try {
-    const result = await resolveCardPrice({ setCode, setName, number, name, edition });
+    const result = await resolveCardPrice({ setCode, setName, number, name, edition, wantGrade });
     if (result) {
       cache.set(key, { at: Date.now(), result });
       return res.status(200).json(result);

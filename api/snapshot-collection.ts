@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
-import { resolveCardPrice } from './_lib/pricing';
+import { resolveCardPrice, buildWantGrade } from './_lib/pricing';
 import { PTCG_PRODUCTS } from '../src/data/ptcg-products';
 
 // Daily cron. Two jobs, in order:
@@ -26,6 +26,9 @@ interface ItemRow {
   market_price_currency: string | null;
   current_value: number | null;
   quantity: number | null;
+  is_graded: boolean | null;
+  grading_company: string | null;
+  grade: string | null;
 }
 
 const HUCA_FX = 'https://huca.tw/api/fx_rates.php';
@@ -70,43 +73,61 @@ function valueTwd(row: ItemRow, rate: number): number {
 // per card: a lookup miss or error leaves the previous price untouched. The
 // Supabase client is untyped here — the generated-schema generics fight the
 // plain snake_case write payload and add no safety for a server-side script.
+// Refresh one card's live price and persist it. Best-effort: returns true only
+// when a fresh price was fetched and written. Mutates the row so the snapshot
+// below totals today's price.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function refreshOne(supabase: any, row: ItemRow): Promise<boolean> {
+  const edition = row.edition ?? 'ja';
+  const setName = row.set_name ?? '';
+  // ja resolves via set code (from our local map); zh-tw resolves via set name.
+  const setCode = edition === 'zh-tw' ? '' : (SET_CODE_BY_NAME[setName] ?? '');
+  const wantGrade = buildWantGrade(row.is_graded, row.grading_company, row.grade);
+  try {
+    const p = await resolveCardPrice({
+      setCode,
+      setName,
+      number: row.card_number ?? '',
+      name: row.name ?? '',
+      edition,
+      wantGrade,
+    });
+    if (!p || p.price == null) return false;
+    const currency = p.currency ?? (edition === 'zh-tw' ? 'TWD' : 'JPY');
+    const source = p.source ?? (edition === 'zh-tw' ? 'kapaipai' : 'huca');
+    const { error } = await supabase
+      .from('collection_items')
+      .update({
+        market_price: p.price,
+        market_price_currency: currency,
+        market_price_source: source,
+        market_price_updated_at: p.updatedAt,
+        market_price_condition: p.condition ?? null,
+      } as never)
+      .eq('id', row.id);
+    if (error) return false;
+    // Reflect the fresh price locally so the snapshot totals it.
+    row.market_price = p.price;
+    row.market_price_currency = currency;
+    return true;
+  } catch {
+    // leave the previous price in place
+    return false;
+  }
+}
+
+// Refresh every single card's live market price, running a small number of
+// lookups concurrently (gentle on the sources, but well under maxDuration).
+const REFRESH_CONCURRENCY = 5;
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function refreshPrices(supabase: any, rows: ItemRow[]): Promise<{ refreshed: number }> {
+  const singles = rows.filter(r => r.item_type === 'single');
   let refreshed = 0;
-  for (const row of rows) {
-    if (row.item_type !== 'single') continue;
-    const edition = row.edition ?? 'ja';
-    const setName = row.set_name ?? '';
-    // ja resolves via set code (from our local map); zh-tw resolves via set name.
-    const setCode = edition === 'zh-tw' ? '' : (SET_CODE_BY_NAME[setName] ?? '');
-    try {
-      const p = await resolveCardPrice({
-        setCode,
-        setName,
-        number: row.card_number ?? '',
-        name: row.name ?? '',
-        edition,
-      });
-      if (!p || p.price == null) continue;
-      const currency = p.currency ?? (edition === 'zh-tw' ? 'TWD' : 'JPY');
-      const source = p.source ?? (edition === 'zh-tw' ? 'kapaipai' : 'huca');
-      const { error } = await supabase
-        .from('collection_items')
-        .update({
-          market_price: p.price,
-          market_price_currency: currency,
-          market_price_source: source,
-          market_price_updated_at: p.updatedAt,
-        } as never)
-        .eq('id', row.id);
-      if (error) continue;
-      // Reflect the fresh price locally so the snapshot totals it.
-      row.market_price = p.price;
-      row.market_price_currency = currency;
-      refreshed += 1;
-    } catch {
-      // leave the previous price in place
-    }
+  for (let i = 0; i < singles.length; i += REFRESH_CONCURRENCY) {
+    const batch = singles.slice(i, i + REFRESH_CONCURRENCY);
+    const results = await Promise.all(batch.map(row => refreshOne(supabase, row)));
+    refreshed += results.filter(Boolean).length;
   }
   return { refreshed };
 }
@@ -129,7 +150,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const { data: items, error } = await supabase
     .from('collection_items')
-    .select('id, name, set_name, card_number, edition, item_type, market_price, market_price_currency, current_value, quantity');
+    .select('id, name, set_name, card_number, edition, item_type, market_price, market_price_currency, current_value, quantity, is_graded, grading_company, grade');
 
   if (error) {
     return res.status(500).json({ error: error.message });

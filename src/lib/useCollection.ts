@@ -22,6 +22,7 @@ function mapRow(row: Record<string, unknown>): CollectionItem {
     marketPriceCurrency:  row.market_price_currency as string | undefined,
     marketPriceSource:    row.market_price_source as string | undefined,
     marketPriceUpdatedAt: row.market_price_updated_at as string | undefined,
+    marketPriceCondition: row.market_price_condition as string | undefined,
     notes:         row.notes as string | undefined,
     imageUrl:      row.image_url as string | undefined,
     edition:       (row.edition as CollectionItem['edition']) ?? undefined,
@@ -82,6 +83,7 @@ export function useCollection() {
       market_price_currency:   item.marketPriceCurrency ?? null,
       market_price_source:     item.marketPriceSource ?? null,
       market_price_updated_at: item.marketPriceUpdatedAt ?? null,
+      market_price_condition:  item.marketPriceCondition ?? null,
       notes:          item.notes ?? null,
       image_url:      item.imageUrl ?? null,
       edition:        item.edition ?? 'ja',
@@ -110,6 +112,7 @@ export function useCollection() {
     if ('marketPriceCurrency' in updates)    dbUpdates.market_price_currency = updates.marketPriceCurrency ?? null;
     if ('marketPriceSource' in updates)      dbUpdates.market_price_source = updates.marketPriceSource ?? null;
     if ('marketPriceUpdatedAt' in updates)   dbUpdates.market_price_updated_at = updates.marketPriceUpdatedAt ?? null;
+    if ('marketPriceCondition' in updates)   dbUpdates.market_price_condition = updates.marketPriceCondition ?? null;
     if ('notes' in updates)                  dbUpdates.notes = updates.notes ?? null;
     if ('edition' in updates)                dbUpdates.edition = updates.edition ?? null;
     if (updates.isGraded !== undefined)      dbUpdates.is_graded = updates.isGraded;

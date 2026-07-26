@@ -85,45 +85,122 @@ export function extractNumber(num: string): string {
 
 // -------- Huca (Japanese cards) --------------------------------------------
 
-function pickHucaPrice(row: HucaRow): number | null {
+// Pick a usable price from a Huca row. Prefer the average, then the latest
+// transaction, then `sort_price` — which is frequently the ONLY populated field
+// on set+number lookups (average/latest come back null for many cards), so
+// ignoring it used to make clearly-listed cards look price-less.
+export function pickHucaPrice(row: HucaRow): number | null {
   const avg = row.average_price != null ? Number(row.average_price) : NaN;
   if (Number.isFinite(avg) && avg > 0) return Math.round(avg);
   if (Number.isFinite(row.latest_price) && (row.latest_price as number) > 0) {
     return Math.round(row.latest_price as number);
   }
+  if (Number.isFinite(row.sort_price) && (row.sort_price as number) > 0) {
+    return Math.round(row.sort_price as number);
+  }
   return null;
 }
 
-// Look a Japanese card up on Huca. Prefer an exact set+number query; if that
-// misses (odd set-code spellings, promos), retry a keyword search on the name.
-async function lookupHuca(setCode: string, num: string, name: string): Promise<PriceResult | null> {
-  const digits = extractNumber(num);
-  const attempts: string[] = [];
-  if (setCode && digits) {
-    attempts.push(
-      `${HUCA_API}?search=&set_code=${encodeURIComponent(setCode)}&card_number=${encodeURIComponent(digits)}&promo=0&accuracy=1&limit=3`,
-    );
+// Classify a Huca `latest_condition` string as raw (ungraded) or graded, and
+// normalise it to a stable label. Raw grades are single letters A/B/C/D. Graded
+// slabs look like "PSA10", "PSA 10", "BGS 9.5", "CGC-9" etc. — we normalise to a
+// compact `${COMPANY}${GRADE}` form ("PSA10", "BGS9.5") so it can be compared to
+// a wanted grade built from the collection item's grading fields.
+export function classifyCondition(raw: string | null | undefined): { graded: boolean; label: string | null } {
+  const t = (raw ?? '').trim();
+  if (!t) return { graded: false, label: null };
+  const m = t.match(/^(PSA|BGS|CGC|ARS)\s*-?\s*(10|\d(?:\.5)?)/i);
+  if (m) {
+    return { graded: true, label: `${m[1].toUpperCase()}${m[2]}` };
   }
-  if (name) {
-    attempts.push(`${HUCA_API}?search=${encodeURIComponent(name)}&promo=0&accuracy=1&limit=5`);
+  const upper = t.toUpperCase();
+  if (/^[ABCD]$/.test(upper)) return { graded: false, label: upper };
+  return { graded: false, label: upper };
+}
+
+// Build the wanted graded label ("PSA10", "BGS9.5") from a collection item's
+// grading fields, or null when the card is not graded. Shared by the on-demand
+// endpoint and the daily cron so both match the same slab price.
+export function buildWantGrade(
+  isGraded?: boolean | null,
+  company?: string | null,
+  grade?: string | null,
+): string | null {
+  if (!isGraded || !company || !grade) return null;
+  return `${String(company).toUpperCase()}${String(grade).trim()}`;
+}
+
+// Turn a chosen Huca row into a PriceResult, tagging it with the normalised
+// condition label so callers can honestly show "PSA10 參考" vs a raw grade.
+function hucaResult(row: HucaRow, price: number): PriceResult {
+  return {
+    price,
+    currency: 'JPY',
+    source: 'huca',
+    condition: classifyCondition(row.latest_condition).label,
+    url: row.product_link ?? `https://huca.tw/cards/${row.id}`,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+// Pick the best-matching priced row from a Huca set+number result.
+//  - Graded card (wantGrade set): prefer an exact grade match, then any graded
+//    row, then any priced row.
+//  - Raw card (wantGrade null): prefer an ungraded row; if only graded
+//    representative rows exist, still return one but keep its graded label so we
+//    never masquerade a slab price as a raw price.
+function pickHucaRow(rows: HucaRow[], wantGrade: string | null): PriceResult | null {
+  const priced = rows
+    .map(row => ({ row, price: pickHucaPrice(row), cls: classifyCondition(row.latest_condition) }))
+    .filter((r): r is { row: HucaRow; price: number; cls: { graded: boolean; label: string | null } } => r.price != null);
+  if (priced.length === 0) return null;
+
+  if (wantGrade) {
+    const exact = priced.find(r => r.cls.label === wantGrade);
+    if (exact) return hucaResult(exact.row, exact.price);
+    const anyGraded = priced.find(r => r.cls.graded);
+    if (anyGraded) return hucaResult(anyGraded.row, anyGraded.price);
+    return hucaResult(priced[0].row, priced[0].price);
   }
 
-  for (const url of attempts) {
+  const raw = priced.find(r => !r.cls.graded);
+  if (raw) return hucaResult(raw.row, raw.price);
+  // Only graded representatives available: return one, labelled as graded.
+  return hucaResult(priced[0].row, priced[0].price);
+}
+
+// Look a Japanese card up on Huca. Prefer an exact set+number query. Only fall
+// back to a name keyword search when there's no set code to query with, and even
+// then require the returned title to contain the card name — the name search
+// otherwise returns unrelated cards and mis-prices them.
+async function lookupHuca(
+  setCode: string,
+  num: string,
+  name: string,
+  wantGrade: string | null = null,
+): Promise<PriceResult | null> {
+  const digits = extractNumber(num);
+
+  if (setCode && digits) {
+    const url = `${HUCA_API}?search=&set_code=${encodeURIComponent(setCode)}&card_number=${encodeURIComponent(digits)}&promo=0&accuracy=1&limit=10`;
     const json = await fetchJson<{ data?: HucaRow[] }>(url);
     const rows = json?.data ?? [];
-    if (rows.length === 0) continue;
-    const row = rows[0];
-    const price = pickHucaPrice(row);
-    if (price == null) continue;
-    return {
-      price,
-      currency: 'JPY',
-      source: 'huca',
-      condition: row.latest_condition ?? null,
-      url: row.product_link ?? `https://huca.tw/cards/${row.id}`,
-      updatedAt: new Date().toISOString(),
-    };
+    const result = pickHucaRow(rows, wantGrade);
+    if (result) return result;
   }
+
+  // Name-search fallback ONLY when we have no set code to query with.
+  if (!setCode && name) {
+    const url = `${HUCA_API}?search=${encodeURIComponent(name)}&promo=0&accuracy=1&limit=5`;
+    const json = await fetchJson<{ data?: HucaRow[] }>(url);
+    const rows = json?.data ?? [];
+    const needle = name.toLowerCase();
+    // Guard against unrelated matches: the title must mention the card name.
+    const related = rows.filter(r => (r.title ?? '').toLowerCase().includes(needle));
+    const result = pickHucaRow(related, wantGrade);
+    if (result) return result;
+  }
+
   return null;
 }
 
@@ -131,7 +208,7 @@ async function lookupHuca(setCode: string, num: string, name: string): Promise<P
 
 // Normalise a card-number token so "012", "12" and " 12 " all compare equal.
 // Falls back to an upper-cased trim for non-numeric ids (promos like "000P").
-function normNum(s: string): string {
+export function normNum(s: string): string {
   const t = (s ?? '').trim();
   const digits = t.match(/^0*(\d+)/)?.[1];
   return digits ?? t.toUpperCase();
@@ -269,14 +346,16 @@ export interface PriceQuery {
   number: string;
   name: string;
   edition: string; // 'ja' | 'zh-tw' | ...
+  wantGrade?: string | null; // e.g. 'PSA10' when the card is graded
 }
 
 // Resolve a single card's market price from the right free source for its
-// edition. zh-tw -> kapaipai (TWD), everything else -> Huca (JPY).
+// edition. zh-tw -> kapaipai (TWD), everything else -> Huca (JPY). Graded cards
+// pass a wantGrade so Huca lookups match the right slab price.
 export async function resolveCardPrice(q: PriceQuery): Promise<PriceResult | null> {
   const edition = (q.edition || 'ja').trim();
   if (edition === 'zh-tw') {
     return lookupKapaipai(q.setCode, q.setName, q.number, q.name);
   }
-  return lookupHuca(q.setCode, q.number, q.name);
+  return lookupHuca(q.setCode, q.number, q.name, q.wantGrade ?? null);
 }

@@ -68,6 +68,29 @@ const todayISO = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
+// Compact zh-TW relative time ("剛剛" / "3 小時前" / "5 天前") for the last
+// price-fetch timestamp. Returns null for missing/invalid input.
+const relativeTime = (iso: string | null | undefined): string | null => {
+  if (!iso) return null;
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return null;
+  const mins = Math.floor((Date.now() - t) / 60000);
+  if (mins < 1) return '剛剛';
+  if (mins < 60) return `${mins} 分鐘前`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs} 小時前`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days} 天前`;
+  const months = Math.floor(days / 30);
+  return `${months} 個月前`;
+};
+
+// Whether a stored market-price condition is a graded slab (PSA10, BGS9.5…) as
+// opposed to a raw grade (A/B/C/D). Used to label a graded reference price on an
+// ungraded card as "參考" so it isn't mistaken for a raw price.
+const isGradedCondition = (c: string | null | undefined): boolean =>
+  !!c && /^(PSA|BGS|CGC|ARS)/i.test(c);
+
 const EMPTY_FORM = {
   name: '',
   setName: '',
@@ -947,12 +970,15 @@ export function Collection() {
   const [fRarity, setFRarity] = useState<'all' | string>('all');
   const [fGraded, setFGraded] = useState<GradedFilter>('all');
   const [fCondition, setFCondition] = useState<'all' | CollectionCondition>('all');
+  const [fPrice, setFPrice] = useState<'all' | 'has' | 'none'>('all');
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [fxRate, setFxRate] = useState(0.2); // JPY -> TWD, refined from /api/fx
   const [refreshing, setRefreshing] = useState(false);
   const [priceProgress, setPriceProgress] = useState<{ done: number; total: number } | null>(null);
+  const [refreshErrors, setRefreshErrors] = useState<string[]>([]); // card names that failed to price
+  const [refreshDone, setRefreshDone] = useState<number | null>(null); // count priced on last refresh
 
   useEffect(() => {
     fetchFxJpyToTwd().then(setFxRate).catch(() => {});
@@ -1000,6 +1026,8 @@ export function Collection() {
       if (fGraded === 'graded' && !i.isGraded) return false;
       if (fGraded === 'raw' && i.isGraded) return false;
       if (fCondition !== 'all' && i.condition !== fCondition) return false;
+      if (fPrice === 'has' && i.marketPrice == null) return false;
+      if (fPrice === 'none' && i.marketPrice != null) return false;
       if (q) {
         const hay = `${i.name} ${i.setName} ${i.cardNumber ?? ''}`.toLowerCase();
         if (!hay.includes(q)) return false;
@@ -1026,10 +1054,10 @@ export function Collection() {
 
     rows.sort((a, b) => sortDir === 'asc' ? cmp(a, b) : -cmp(a, b));
     return rows;
-  }, [items, filterType, fEdition, fRarity, fGraded, fCondition, query, sortKey, sortDir, fxRate]);
+  }, [items, filterType, fEdition, fRarity, fGraded, fCondition, fPrice, query, sortKey, sortDir, fxRate]);
 
   const filtersActive = filterType !== 'all' || fEdition !== 'all' || fRarity !== 'all'
-    || fGraded !== 'all' || fCondition !== 'all' || query.trim() !== '';
+    || fGraded !== 'all' || fCondition !== 'all' || fPrice !== 'all' || query.trim() !== '';
 
   // Aggregates are computed in TWD (per-item, honouring each value's currency)
   // so JPY and TWD cards can be summed together.
@@ -1058,9 +1086,13 @@ export function Collection() {
     if (refreshing || priceable.length === 0) return;
     setRefreshing(true);
     setPriceProgress({ done: 0, total: priceable.length });
+    setRefreshErrors([]);
+    setRefreshDone(null);
     // Refresh the FX rate alongside prices so the display stays consistent.
     fetchFxJpyToTwd().then(setFxRate).catch(() => {});
     let done = 0;
+    let ok = 0;
+    const failed: string[] = [];
     for (const item of priceable) {
       const edition = item.edition ?? 'ja';
       // ja: Huca resolves by set code (from our local map). zh-tw: kapaipai
@@ -1073,6 +1105,9 @@ export function Collection() {
           number: item.cardNumber,
           name: item.name,
           edition,
+          isGraded: item.isGraded,
+          gradingCompany: item.gradingCompany,
+          grade: item.grade,
         });
         if (p && p.price != null) {
           await updateItem(item.id, {
@@ -1080,16 +1115,23 @@ export function Collection() {
             marketPriceCurrency: p.currency ?? (edition === 'zh-tw' ? 'TWD' : 'JPY'),
             marketPriceSource: p.source ?? (edition === 'zh-tw' ? 'kapaipai' : 'huca'),
             marketPriceUpdatedAt: p.updatedAt,
+            marketPriceCondition: p.condition ?? undefined,
           });
+          ok += 1;
+        } else {
+          failed.push(item.name);
         }
       } catch (err) {
         console.error('price refresh failed for', item.name, err);
+        failed.push(item.name);
       }
       done += 1;
       setPriceProgress({ done, total: priceable.length });
     }
     setRefreshing(false);
     setPriceProgress(null);
+    setRefreshErrors(failed);
+    setRefreshDone(ok);
   };
 
   // Resolve the live market price for a single card so a newly added row shows
@@ -1109,6 +1151,9 @@ export function Collection() {
         number: item.cardNumber,
         name: item.name,
         edition,
+        isGraded: item.isGraded,
+        gradingCompany: item.gradingCompany,
+        grade: item.grade,
       });
       if (p && p.price != null) {
         return {
@@ -1117,6 +1162,7 @@ export function Collection() {
           marketPriceCurrency: p.currency ?? (edition === 'zh-tw' ? 'TWD' : 'JPY'),
           marketPriceSource: p.source ?? (edition === 'zh-tw' ? 'kapaipai' : 'huca'),
           marketPriceUpdatedAt: p.updatedAt,
+          marketPriceCondition: p.condition ?? undefined,
         };
       }
     } catch (err) {
@@ -1358,8 +1404,39 @@ export function Collection() {
               ))}
             </select>
 
+            <select
+              value={fPrice}
+              onChange={e => setFPrice(e.target.value as 'all' | 'has' | 'none')}
+              className="px-2.5 py-1.5 rounded-lg bg-surface border border-white/10 font-bold text-slate-200 focus:outline-none focus:border-poke-accent"
+              title="價格狀態"
+            >
+              <option value="all">全部（有/無價格）</option>
+              <option value="has">已有市場價</option>
+              <option value="none">尚無市場價</option>
+            </select>
+
             <span className="ml-auto text-slate-400 font-bold">{filtered.length} 筆</span>
           </div>
+        </div>
+      )}
+
+      {/* Price refresh result: surface failures instead of only console.error */}
+      {!refreshing && refreshDone != null && (
+        <div className="rounded-xl border border-white/10 bg-surface px-3 py-2 text-xs">
+          <span className="font-bold text-emerald-400">已更新 {refreshDone} 張價格</span>
+          {refreshErrors.length > 0 && (
+            <span className="text-slate-400">
+              {' · '}
+              <span className="font-bold text-red-400">{refreshErrors.length} 張未取得價格</span>
+              ：{refreshErrors.slice(0, 8).join('、')}{refreshErrors.length > 8 ? ' …' : ''}
+            </span>
+          )}
+          <button
+            onClick={() => { setRefreshDone(null); setRefreshErrors([]); }}
+            className="ml-2 text-slate-500 hover:text-slate-300 font-bold"
+          >
+            ×
+          </button>
         </div>
       )}
 
@@ -1499,6 +1576,21 @@ export function Collection() {
                           </span>
                         )}
                       </div>
+                    )}
+                    {/* Provenance: price source · when fetched · condition. A graded
+                        reference price on an ungraded card is flagged "參考". */}
+                    {item.marketPrice != null && (item.marketPriceSource || item.marketPriceUpdatedAt || item.marketPriceCondition) && (
+                      <p className="mt-0.5 text-[10px] text-slate-400 truncate">
+                        {[
+                          item.marketPriceSource,
+                          relativeTime(item.marketPriceUpdatedAt),
+                          item.marketPriceCondition
+                            ? (!item.isGraded && isGradedCondition(item.marketPriceCondition)
+                                ? `${item.marketPriceCondition} 參考`
+                                : item.marketPriceCondition)
+                            : null,
+                        ].filter(Boolean).join(' · ')}
+                      </p>
                     )}
                   </div>
                 </div>

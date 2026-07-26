@@ -24,6 +24,7 @@ create table public.collection_items (
   market_price_currency text,
   market_price_source   text,
   market_price_updated_at timestamptz,
+  market_price_condition  text,
   notes          text,
   image_url      text,
   edition        text        default 'ja' check (edition in ('ja', 'zh-tw', 'en')),
@@ -71,6 +72,15 @@ alter table public.collection_items
   add column if not exists market_price_currency   text,
   add column if not exists market_price_source     text,
   add column if not exists market_price_updated_at timestamptz;
+
+-- ============================================================
+-- Migration: add `market_price_condition` — the normalised condition of the
+-- priced row (raw 'A'/'B'/'C'/'D' or graded 'PSA10'/'BGS9.5'), so the UI can
+-- honestly label a graded reference price stored for an ungraded card.
+-- Safe to run repeatedly.
+-- ============================================================
+alter table public.collection_items
+  add column if not exists market_price_condition text;
 
 -- ============================================================
 -- Migration: add `acquired_date` (the user-editable date a card was acquired,

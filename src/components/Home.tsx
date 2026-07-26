@@ -2,7 +2,7 @@ import { useEffect, useMemo } from 'react';
 import { useExpenses } from '../lib/useExpenses';
 import { useCollection } from '../lib/useCollection';
 import { useValueSnapshots } from '../lib/useValueSnapshots';
-import { useFxRate } from '../lib/useFxRate';
+import { useFxRateWithMeta } from '../lib/useFxRate';
 import { totalCurrentTwd, totalItemCount, totalPnlTwd } from '../lib/collectionValue';
 import { inMonth } from '../lib/utils';
 import { Expense } from '../types';
@@ -31,6 +31,19 @@ function yen(n: number): string {
   return `¥${Math.round(n).toLocaleString()}`;
 }
 
+// Compact zh-TW relative time for the FX "更新於 …" note.
+function relativeTime(iso: string | null): string | null {
+  if (!iso) return null;
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return null;
+  const mins = Math.floor((Date.now() - t) / 60000);
+  if (mins < 1) return '剛剛';
+  if (mins < 60) return `${mins} 分鐘前`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs} 小時前`;
+  return `${Math.floor(hrs / 24)} 天前`;
+}
+
 // A minimal stock-ticker sparkline over the recent value snapshots.
 function Sparkline({ values, up }: { values: number[]; up: boolean }) {
   if (values.length < 2) return null;
@@ -57,7 +70,7 @@ export function Home({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
   const { expenses } = useExpenses();
   const { items, loading: colLoading } = useCollection();
   const { snapshots, recordToday } = useValueSnapshots();
-  const fxRate = useFxRate();
+  const { rate: fxRate, updatedAt: fxUpdatedAt } = useFxRateWithMeta();
 
   const now = new Date();
   const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -74,17 +87,27 @@ export function Home({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
     if (!colLoading && liveTotalTwd > 0) recordToday(liveTotalTwd, itemCount);
   }, [colLoading, liveTotalTwd, itemCount, recordToday]);
 
-  // ---- Week-over-week change from snapshots ----
-  // Baseline = the most recent snapshot dated on/before 7 days ago. When none
-  // is that old yet, we're still building history — show a gentle notice.
+  // ---- Change vs. an earlier snapshot ----
+  // Prefer a true 7-day baseline; when history is younger, fall back to the
+  // oldest snapshot we have (labelled "近 N 日") so the hero isn't blank for a
+  // week. Needs ≥2 snapshots to have any baseline to compare against.
   const weekChange = useMemo(() => {
-    if (snapshots.length === 0) return null;
+    if (snapshots.length < 2) return null;
+    const asc = [...snapshots].sort((a, b) => a.date.localeCompare(b.date));
     const cutoff = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    const baseline = [...snapshots].reverse().find(s => s.date <= cutoff);
+    // Most recent snapshot on/before 7 days ago, else the oldest one we have.
+    const baseline = [...asc].reverse().find(s => s.date <= cutoff) ?? asc[0];
     if (!baseline || baseline.totalTwd <= 0) return null;
+    const days = Math.max(
+      1,
+      Math.round((now.getTime() - new Date(baseline.date).getTime()) / (24 * 60 * 60 * 1000)),
+    );
     const diff = liveTotalTwd - baseline.totalTwd;
-    return { diff, pct: (diff / baseline.totalTwd) * 100 };
+    return { diff, pct: (diff / baseline.totalTwd) * 100, days };
   }, [snapshots, liveTotalTwd, now]);
+
+  // Label for the change window: exactly 7 → "近 7 日變動", otherwise "近 N 日變動".
+  const changeLabel = weekChange ? `近 ${weekChange.days} 日變動` : '近 7 日變動';
 
   const sparkVals = useMemo(() => snapshots.slice(-30).map(s => s.totalTwd), [snapshots]);
 
@@ -124,21 +147,23 @@ export function Home({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
         </div>
         <p className="text-4xl font-black mt-1 tracking-tight">{nt(liveTotalTwd)}</p>
 
-        {/* Weekly change */}
+        {/* Value change vs. an earlier snapshot */}
         <div className="mt-2 flex items-center gap-2 flex-wrap">
           {weekChange ? (
-            <span className={cn(
-              'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-black bg-white/15',
-              weekChange.diff >= 0 ? 'text-emerald-200' : 'text-red-200',
-            )}>
-              {weekChange.diff >= 0 ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
-              {weekChange.diff >= 0 ? '+' : '−'}{nt(Math.abs(weekChange.diff))}
-              （{weekChange.diff >= 0 ? '+' : '−'}{Math.abs(weekChange.pct).toFixed(1)}%）
-            </span>
+            <>
+              <span className={cn(
+                'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-black bg-white/15',
+                weekChange.diff >= 0 ? 'text-emerald-200' : 'text-red-200',
+              )}>
+                {weekChange.diff >= 0 ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
+                {weekChange.diff >= 0 ? '+' : '−'}{nt(Math.abs(weekChange.diff))}
+                （{weekChange.diff >= 0 ? '+' : '−'}{Math.abs(weekChange.pct).toFixed(1)}%）
+              </span>
+              <span className="text-xs font-bold text-white/60">{changeLabel}</span>
+            </>
           ) : (
-            <span className="text-xs font-bold text-white/60">近 7 日 · 持續記錄中，一週後即可比較</span>
+            <span className="text-xs font-bold text-white/60">持續記錄中，多記幾天即可比較變動</span>
           )}
-          <span className="text-xs font-bold text-white/60">近 7 日變動</span>
         </div>
 
         {/* Sparkline */}
@@ -162,6 +187,12 @@ export function Home({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
             </span>
           )}
         </div>
+
+        {/* FX rate used for TWD conversion + when it was fetched */}
+        <p className="mt-2 text-[10px] text-white/50">
+          JPY→TWD {fxRate.toFixed(4)}
+          {fxUpdatedAt ? `（更新於 ${relativeTime(fxUpdatedAt)}）` : ''}
+        </p>
       </button>
 
       {/* This-month expense summary */}
