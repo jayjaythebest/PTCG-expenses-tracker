@@ -267,6 +267,51 @@ async function fetchTwOfficialImage(code: string, number?: number): Promise<stri
   }
 }
 
+// ---- Full official Traditional-Chinese card data (name + art) via /api proxy ----
+// For brand-new zh-tw sets TCGdex hasn't catalogued yet (e.g. the MEGA "M#"
+// series, SV11…), the official TW site is the authoritative, always-current card
+// table. This resolves the Chinese name + collector number + precise artwork by
+// set code + collector number. Rarity is intentionally absent (the site doesn't
+// print it) — the caller keeps the rarity read off the card by the AI scan.
+export interface TwCardData {
+  name: string;
+  localId: string;
+  collectorNumber: string;
+  imageUrl: string;
+  setCode: string; // the normalized site code that actually resolved (e.g. "M5")
+}
+
+const twCardCache = new Map<string, TwCardData | null>();
+export async function lookupTwCard(setCode: string, cardNumber: number | string): Promise<TwCardData | null> {
+  const code = setCode.trim();
+  const n = typeof cardNumber === 'number' ? cardNumber : Number(String(cardNumber).match(/\d+/)?.[0]);
+  if (!code || !n || !Number.isFinite(n)) return null;
+  const key = `${code.toLowerCase()}#${n}`;
+  const cached = twCardCache.get(key);
+  if (cached !== undefined) return cached;
+  let card: TwCardData | null = null;
+  try {
+    const res = await fetch(`/api/tw-card?set=${encodeURIComponent(code)}&number=${n}`);
+    if (res.ok) {
+      const data = await res.json();
+      const c = data?.card;
+      if (c && typeof c.name === 'string' && c.name) {
+        card = {
+          name: String(c.name),
+          localId: String(c.localId ?? ''),
+          collectorNumber: String(c.collectorNumber ?? ''),
+          imageUrl: String(c.imageUrl ?? ''),
+          setCode: String(c.setCode ?? code),
+        };
+      }
+    }
+  } catch {
+    card = null;
+  }
+  twCardCache.set(key, card);
+  return card;
+}
+
 // Precise single-card image from the official TW site, by set code + collector
 // number. Returns null (caller falls back) if the proxy can't resolve it.
 const twCardImageCache = new Map<string, string | null>();

@@ -5,7 +5,7 @@ import { CollectionItem, CollectionItemType, CollectionCondition, CardEdition, G
 import { PTCG_PRODUCTS } from '../data/ptcg-products';
 import { cn } from '../lib/utils';
 import { recognizeCardFromPhoto } from '../lib/gemini';
-import { lookupCard, lookupSetImage, lookupTwCardImage, lookupJpCardImage, resolveJaSetCode, jpCardImageUrl, type ScanLanguage } from '../lib/tcgdex';
+import { lookupCard, lookupTwCard, lookupSetImage, lookupTwCardImage, lookupJpCardImage, resolveJaSetCode, jpCardImageUrl, type ScanLanguage } from '../lib/tcgdex';
 import { fetchCardPrice, fetchFxJpyToTwd } from '../lib/pricing';
 import { Plus, Trash2, Pencil, X, Check, TrendingUp, TrendingDown, Package, CreditCard, Layers, Camera, Loader2, Sparkles, ImagePlus, ImageOff, RefreshCw, Search, ArrowUp, ArrowDown } from 'lucide-react';
 
@@ -257,6 +257,17 @@ function CollectionForm({
         ? await lookupCard(scan.setCode, scan.localId, scan.language || 'ja')
         : null;
 
+      // 2b) When TCGdex has no entry (common for brand-new zh-tw sets like the
+      //     MEGA/超級進化 "M#F" series it hasn't catalogued), resolve the full
+      //     card record (name + collector number + precise art) live from the
+      //     official TW site via /api/tw-card. This is the always-current
+      //     complete Chinese card table, so cards missing from TCGdex still
+      //     auto-fill. Only attempt for Chinese/MEGA-style codes.
+      const twCard = !card && !scan.error && scan.setCode && scan.localId
+        && (scan.language === 'zh-tw' || /^M\d+[A-Z]?$/i.test(scan.setCode))
+        ? await lookupTwCard(scan.setCode, scan.localId)
+        : null;
+
       if (card) {
         // Pick artwork in the card's OWN language. For zh-tw, the official TW
         // proxy has precise per-card art (TCGdex often lacks zh-tw images). For
@@ -280,6 +291,19 @@ function CollectionForm({
           cardNumber: scan.localId || f.cardNumber,
           imageUrl:   img || f.imageUrl,
           edition:    card.edition,
+        }));
+        setScanResult('matched');
+      } else if (twCard) {
+        // Full record resolved from the official TW site: authoritative Chinese
+        // name + precise per-card art. The site carries no rarity letter, so we
+        // keep the rarity the AI read off the card. Treat as a confident match.
+        setForm(f => ({
+          ...f,
+          name:       twCard.name    || scan.name || f.name,
+          rarity:     scan.rarity    || f.rarity,
+          cardNumber: scan.localId   || twCard.localId || f.cardNumber,
+          imageUrl:   twCard.imageUrl || f.imageUrl,
+          edition:    'zh-tw',
         }));
         setScanResult('matched');
       } else if (scan.error) {
