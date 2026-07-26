@@ -306,13 +306,33 @@ function CollectionForm({
         setScanDebug(scan.debug && scan.debug.length ? scan.debug : null);
         setScanResult('error');
       } else {
-        // Fallback: at least pre-fill what the model could read.
+        // Fallback: TCGdex has no catalog entry for this card yet (common for
+        // brand-new zh-tw sets — e.g. the MEGA/超級進化 "M#F" series isn't in
+        // TCGdex's Chinese DB). The AI still read name/rarity/number reliably, so
+        // keep those AND try to auto-fill the artwork so the row isn't blank.
+        let img = '';
+        if (scan.setCode && scan.localId) {
+          if (scan.language === 'zh-tw') {
+            // Prefer genuine zh-tw art (official TW proxy).
+            img = (await lookupTwCardImage(scan.setCode, scan.localId)) || '';
+            // zh-tw MEGA sets print "M#F"; the JP equivalent is "M#" and shares
+            // the identical illustration (only the text language differs), so use
+            // it as a stand-in thumbnail when no TW art exists.
+            if (!img && /^M\d+F$/i.test(scan.setCode)) {
+              const jpCode = scan.setCode.replace(/F$/i, '');
+              img = (await lookupJpCardImage(jpCode, scan.localId)) || '';
+            }
+          } else {
+            img = (await lookupJpCardImage(scan.setCode, scan.localId)) || '';
+          }
+        }
         setForm(f => ({
           ...f,
           name:       scan.name    || f.name,
           cardNumber: scan.localId || f.cardNumber,
           rarity:     scan.rarity  || f.rarity,
           edition:    scan.language || f.edition,
+          imageUrl:   img || f.imageUrl,
         }));
         setScanResult('fallback');
       }
