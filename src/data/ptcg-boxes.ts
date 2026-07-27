@@ -35,7 +35,9 @@ const SNKRDUNK_BOX_ID_JA: Record<string, number> = {
 // box can't be auto-priced. Only JA boxes are auto-priced today; zh-tw / en
 // boxes fall back to the manual estimate.
 export function boxSnkrdunkId(setCode: string, edition?: string | null): number | undefined {
-  if ((edition ?? 'ja') !== 'ja') return undefined;
+  // An unspecified edition ('' or null) is treated as JA — the only edition we
+  // can auto-price — so a box added without picking a version still gets a price.
+  if ((edition || 'ja') !== 'ja') return undefined;
   const want = (setCode ?? '').toLowerCase();
   if (!want) return undefined;
   const key = Object.keys(SNKRDUNK_BOX_ID_JA).find(k => k.toLowerCase() === want);

@@ -258,7 +258,18 @@ function CollectionForm({
   };
 
   const handleSetNameChange = (setName: string) => {
-    set('setName', setName);
+    setForm(f => {
+      const next = { ...f, setName };
+      // For boxes the product name is optional — auto-fill it from the chosen set
+      // (Chinese label preferred) when the user hasn't typed their own name yet.
+      // "Their own" = anything other than the previously auto-filled set label,
+      // so switching sets updates the name but a hand-typed name is preserved.
+      if (f.itemType === 'box' && setName && setName !== '其他') {
+        const prevAuto = f.setName ? setLabel(f.setName) : '';
+        if (!f.name.trim() || f.name === prevAuto) next.name = setLabel(setName);
+      }
+      return next;
+    });
     // For boxes, auto-grab a representative image when none is set yet.
     if (form.itemType === 'box' && !form.imageUrl && setName) {
       fetchSetImage(setName, form.edition);
@@ -426,7 +437,13 @@ function CollectionForm({
           <button
             key={t}
             type="button"
-            onClick={() => set('itemType', t)}
+            onClick={() => setForm(f => ({
+              ...f,
+              itemType: t,
+              // Default a box to the JA version (the only edition we auto-price)
+              // when no version has been chosen yet.
+              edition: t === 'box' && !f.edition ? 'ja' : f.edition,
+            }))}
             className={cn(
               'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-bold border-2 transition-colors',
               form.itemType === t
@@ -531,12 +548,14 @@ function CollectionForm({
 
       {/* Name */}
       <div>
-        <label className="text-xs font-bold text-slate-400 mb-1 block">卡名 / 商品名稱 *</label>
+        <label className="text-xs font-bold text-slate-400 mb-1 block">
+          卡名 / 商品名稱{form.itemType === 'single' ? ' *' : '（選填，選擇系列後自動帶入）'}
+        </label>
         <input
-          required
+          required={form.itemType === 'single'}
           value={form.name}
           onChange={e => set('name', e.target.value)}
-          placeholder="e.g. リザードン ex SAR"
+          placeholder={form.itemType === 'box' ? '選擇系列後自動帶入，也可自行修改' : 'e.g. リザードン ex SAR'}
           className="w-full border border-white/10 bg-white/5 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-poke-accent"
         />
       </div>
@@ -817,8 +836,11 @@ function CollectionForm({
 }
 
 function formToItem(f: FormState): Omit<CollectionItem, 'id' | 'createdAt'> {
+  // Box names are optional: if left blank, fall back to the chosen set's label
+  // (Chinese preferred) so the row still has a readable name.
+  const name = f.name.trim() || (f.itemType === 'box' && f.setName ? setLabel(f.setName) : '');
   return {
-    name:          f.name.trim(),
+    name,
     setName:       f.setName,
     series:        f.series,
     cardNumber:    f.cardNumber || undefined,
