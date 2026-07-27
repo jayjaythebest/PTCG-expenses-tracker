@@ -35,21 +35,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const gradingCompany = String(src.gradingCompany ?? '').trim();
   const grade = String(src.grade ?? '').trim();
   const wantGrade = buildWantGrade(isGraded, gradingCompany, grade);
+  const itemType = String(src.itemType ?? 'single').trim();
+  const snkrdunkId = String(src.snkrdunkId ?? '').trim();
 
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'public, max-age=3600, s-maxage=43200');
 
   const now = () => new Date().toISOString();
 
-  if (edition === 'zh-tw') {
-    if (!setCode && !setName && !number) {
-      return res.status(400).json({ ...EMPTY_PRICE, source: 'kapaipai', updatedAt: now(), error: 'missing set/number' });
+  const isBoxWithId = itemType === 'box' && !!snkrdunkId;
+  if (!isBoxWithId) {
+    if (edition === 'zh-tw') {
+      if (!setCode && !setName && !number) {
+        return res.status(400).json({ ...EMPTY_PRICE, source: 'kapaipai', updatedAt: now(), error: 'missing set/number' });
+      }
+    } else if (!setCode && !name) {
+      return res.status(400).json({ ...EMPTY_PRICE, updatedAt: now(), error: 'missing setCode/name' });
     }
-  } else if (!setCode && !name) {
-    return res.status(400).json({ ...EMPTY_PRICE, updatedAt: now(), error: 'missing setCode/name' });
   }
 
-  const key = `${edition}:${(setName || setCode).toUpperCase()}:${number}:${wantGrade ?? 'raw'}`;
+  const key = `${edition}:${itemType}:${(setName || setCode).toUpperCase()}:${number}:${snkrdunkId || (wantGrade ?? 'raw')}`;
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < TTL_MS) {
     return res.status(200).json(hit.result);
@@ -58,7 +63,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const emptySource = edition === 'zh-tw' ? 'kapaipai' : null;
 
   try {
-    const result = await resolveCardPrice({ setCode, setName, number, name, edition, wantGrade });
+    const result = await resolveCardPrice({ setCode, setName, number, name, edition, wantGrade, itemType, snkrdunkId });
     if (result) {
       cache.set(key, { at: Date.now(), result });
       return res.status(200).json(result);

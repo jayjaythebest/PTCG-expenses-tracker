@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 import { resolveCardPrice, buildWantGrade } from './_lib/pricing';
 import { PTCG_PRODUCTS } from '../src/data/ptcg-products';
+import { boxSnkrdunkId } from '../src/data/ptcg-boxes';
 
 // Daily cron. Two jobs, in order:
 //   1. Refresh every single card's live market price from its source (Huca for
@@ -83,6 +84,11 @@ async function refreshOne(supabase: any, row: ItemRow): Promise<boolean> {
   // ja resolves via set code (from our local map); zh-tw resolves via set name.
   const setCode = edition === 'zh-tw' ? '' : (SET_CODE_BY_NAME[setName] ?? '');
   const wantGrade = buildWantGrade(row.is_graded, row.grading_company, row.grade);
+  const itemType = row.item_type ?? 'single';
+  // Boxes are priced off a curated Snkrdunk id (JA only) when available.
+  const snkrdunkId = itemType === 'box'
+    ? boxSnkrdunkId(SET_CODE_BY_NAME[setName] ?? '', edition)
+    : undefined;
   try {
     const p = await resolveCardPrice({
       setCode,
@@ -91,6 +97,8 @@ async function refreshOne(supabase: any, row: ItemRow): Promise<boolean> {
       name: row.name ?? '',
       edition,
       wantGrade,
+      itemType,
+      snkrdunkId,
     });
     if (!p || p.price == null) return false;
     const currency = p.currency ?? (edition === 'zh-tw' ? 'TWD' : 'JPY');
@@ -122,10 +130,16 @@ const REFRESH_CONCURRENCY = 5;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function refreshPrices(supabase: any, rows: ItemRow[]): Promise<{ refreshed: number }> {
-  const singles = rows.filter(r => r.item_type === 'single');
+  // Singles always; boxes only when they map to a curated Snkrdunk id (JA).
+  const priceable = rows.filter(
+    r =>
+      r.item_type === 'single' ||
+      (r.item_type === 'box' &&
+        boxSnkrdunkId(SET_CODE_BY_NAME[r.set_name ?? ''] ?? '', r.edition ?? 'ja') != null),
+  );
   let refreshed = 0;
-  for (let i = 0; i < singles.length; i += REFRESH_CONCURRENCY) {
-    const batch = singles.slice(i, i + REFRESH_CONCURRENCY);
+  for (let i = 0; i < priceable.length; i += REFRESH_CONCURRENCY) {
+    const batch = priceable.slice(i, i + REFRESH_CONCURRENCY);
     const results = await Promise.all(batch.map(row => refreshOne(supabase, row)));
     refreshed += results.filter(Boolean).length;
   }

@@ -4,6 +4,7 @@ import {
   classifyCondition,
   buildWantGrade,
   pickHucaPrice,
+  pickSnkrdunkBoxPrice,
   normNum,
 } from './pricing';
 
@@ -72,6 +73,29 @@ describe('pickHucaPrice', () => {
   it('returns null when nothing usable', () => {
     expect(pickHucaPrice({ id: 1 })).toBeNull();
     expect(pickHucaPrice({ id: 1, average_price: 0, latest_price: 0, sort_price: 0 })).toBeNull();
+  });
+});
+
+describe('pickSnkrdunkBoxPrice', () => {
+  it('prefers the used floor over listing/new prices', () => {
+    expect(pickSnkrdunkBoxPrice({ usedMinPrice: 12000, minPrice: 15000, minPriceOfNewListing: 18000 }))
+      .toEqual({ price: 12000, condition: '二手' });
+  });
+  it('falls back to the lowest listing when there is no used floor', () => {
+    expect(pickSnkrdunkBoxPrice({ minPrice: 15000, minPriceOfNewListing: 18000 }))
+      .toEqual({ price: 15000, condition: '最低' });
+  });
+  it('falls back to the new-listing floor when the others are missing', () => {
+    expect(pickSnkrdunkBoxPrice({ minPriceOfNewListing: 18000 }))
+      .toEqual({ price: 18000, condition: '全新' });
+  });
+  it('rounds the chosen price', () => {
+    expect(pickSnkrdunkBoxPrice({ usedMinPrice: 11999.6 }))
+      .toEqual({ price: 12000, condition: '二手' });
+  });
+  it('returns null when nothing usable', () => {
+    expect(pickSnkrdunkBoxPrice({})).toBeNull();
+    expect(pickSnkrdunkBoxPrice({ usedMinPrice: 0, minPrice: 0, minPriceOfNewListing: 0 })).toBeNull();
   });
 });
 

@@ -6,7 +6,9 @@ export type CardEdition = 'ja' | 'zh-tw' | 'en';
 // Grading / certification company for graded (鑑定) cards.
 export type GradingCompany = 'psa' | 'bgs' | 'other';
 
-export type CollectionItemType = 'single' | 'box' | 'pack';
+// Only single cards and sealed boxes are tracked. Legacy rows may still carry
+// the retired 'pack' value; the UI falls back to treating those as a box.
+export type CollectionItemType = 'single' | 'box';
 export type CollectionCondition = 'mint' | 'nm' | 'lp' | 'mp';
 
 export interface CollectionItem {

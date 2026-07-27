@@ -2,18 +2,23 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useCollection } from '../lib/useCollection';
 import { CollectionItem, CollectionItemType, CollectionCondition, CardEdition, GradingCompany } from '../types';
-import { PTCG_PRODUCTS } from '../data/ptcg-products';
+import { PTCG_PRODUCTS, SERIES_ZH } from '../data/ptcg-products';
+import { boxSnkrdunkId } from '../data/ptcg-boxes';
 import { cn } from '../lib/utils';
 import { recognizeCardFromPhoto } from '../lib/gemini';
 import { lookupCard, lookupTwCard, lookupSetImage, lookupTwCardImage, lookupJpCardImage, resolveJaSetCode, jpCardImageUrl, type ScanLanguage } from '../lib/tcgdex';
 import { fetchCardPrice, fetchFxJpyToTwd } from '../lib/pricing';
-import { Plus, Trash2, Pencil, X, Check, TrendingUp, TrendingDown, Package, CreditCard, Layers, Camera, Loader2, Sparkles, ImagePlus, ImageOff, RefreshCw, Search, ArrowUp, ArrowDown } from 'lucide-react';
+import { Plus, Trash2, Pencil, X, Check, TrendingUp, TrendingDown, Package, CreditCard, Camera, Loader2, Sparkles, ImagePlus, ImageOff, RefreshCw, Search, ArrowUp, ArrowDown } from 'lucide-react';
 
 const ITEM_TYPE_LABELS: Record<CollectionItemType, string> = {
   single: '單卡',
   box: '整盒',
-  pack: '補充包',
 };
+
+// Legacy rows may still carry the retired 'pack' item type. Fold anything that
+// isn't a single card into 'box' for display so old data never breaks the UI.
+const displayType = (t: CollectionItemType | string): CollectionItemType =>
+  t === 'single' ? 'single' : 'box';
 
 const CONDITION_LABELS: Record<CollectionCondition, string> = {
   mint: 'Mint',
@@ -40,6 +45,15 @@ const GRADE_OPTIONS = ['10', '9.5', '9', '8.5', '8', '7.5', '7', '6.5', '6', '5.
 
 const SERIES_OPTIONS = [...new Set(PTCG_PRODUCTS.map(p => p.series))];
 const SET_OPTIONS = PTCG_PRODUCTS.map(p => ({ value: p.name, series: p.series }));
+
+// Japanese set name -> official Traditional-Chinese label (falls back to the
+// Japanese name when a set has no TW release yet). Used to show Chinese in the
+// series/set dropdowns while the stored value stays the Japanese name.
+const SET_NAME_ZH: Record<string, string> = Object.fromEntries(
+  PTCG_PRODUCTS.filter(p => p.nameZh).map(p => [p.name, p.nameZh as string]),
+);
+const seriesLabel = (s: string): string => SERIES_ZH[s] ?? s;
+const setLabel = (name: string): string => SET_NAME_ZH[name] ?? name;
 
 // Set name (as shown in the form) → TCGdex set code, so we can auto-fetch a
 // representative image for boxes / packs / manually-typed items.
@@ -114,21 +128,20 @@ const EMPTY_FORM = {
 type FormState = typeof EMPTY_FORM;
 
 function ItemTypeIcon({ type }: { type: CollectionItemType }) {
-  if (type === 'single') return <CreditCard className="w-3.5 h-3.5" />;
-  if (type === 'box') return <Package className="w-3.5 h-3.5" />;
-  return <Layers className="w-3.5 h-3.5" />;
+  if (displayType(type) === 'single') return <CreditCard className="w-3.5 h-3.5" />;
+  return <Package className="w-3.5 h-3.5" />;
 }
 
 function ItemTypeBadge({ type }: { type: CollectionItemType }) {
+  const t = displayType(type);
   const colours: Record<CollectionItemType, string> = {
     single: 'bg-poke-accent/20 text-poke-accent',
     box: 'bg-amber-400/20 text-amber-300',
-    pack: 'bg-emerald-400/20 text-emerald-300',
   };
   return (
-    <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold', colours[type])}>
-      <ItemTypeIcon type={type} />
-      {ITEM_TYPE_LABELS[type]}
+    <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold', colours[t])}>
+      <ItemTypeIcon type={t} />
+      {ITEM_TYPE_LABELS[t]}
     </span>
   );
 }
@@ -246,8 +259,8 @@ function CollectionForm({
 
   const handleSetNameChange = (setName: string) => {
     set('setName', setName);
-    // For boxes / packs, auto-grab a representative image when none is set yet.
-    if ((form.itemType === 'box' || form.itemType === 'pack') && !form.imageUrl && setName) {
+    // For boxes, auto-grab a representative image when none is set yet.
+    if (form.itemType === 'box' && !form.imageUrl && setName) {
       fetchSetImage(setName, form.edition);
     }
   };
@@ -409,7 +422,7 @@ function CollectionForm({
     >
       {/* Item type */}
       <div className="flex gap-2">
-        {(['single', 'box', 'pack'] as CollectionItemType[]).map(t => (
+        {(['single', 'box'] as CollectionItemType[]).map(t => (
           <button
             key={t}
             type="button"
@@ -528,6 +541,31 @@ function CollectionForm({
         />
       </div>
 
+      {/* Edition (box) — pick the version first so the Chinese labels below make
+          sense; boxes come in Chinese / Japanese / English printings. */}
+      {form.itemType === 'box' && (
+        <div>
+          <label className="text-xs font-bold text-slate-400 mb-1 block">版本</label>
+          <div className="flex gap-2">
+            {(['zh-tw', 'ja', 'en'] as CardEdition[]).map(ed => (
+              <button
+                key={ed}
+                type="button"
+                onClick={() => set('edition', ed)}
+                className={cn(
+                  'flex-1 py-2 rounded-lg text-sm font-bold border-2 transition-colors',
+                  form.edition === ed
+                    ? 'border-poke-accent bg-poke-accent/10 text-poke-accent'
+                    : 'border-white/10 text-slate-400 hover:border-white/20',
+                )}
+              >
+                {EDITION_LABELS[ed]}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Series + Set */}
       <div className="grid grid-cols-2 gap-2">
         <div>
@@ -538,7 +576,7 @@ function CollectionForm({
             className="w-full border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-poke-accent bg-surface"
           >
             <option value="">全部</option>
-            {SERIES_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+            {SERIES_OPTIONS.map(s => <option key={s} value={s}>{seriesLabel(s)}</option>)}
           </select>
         </div>
         <div>
@@ -549,7 +587,7 @@ function CollectionForm({
             className="w-full border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-poke-accent bg-surface"
           >
             <option value="">選擇...</option>
-            {filteredSets.map(s => <option key={s.value} value={s.value}>{s.value}</option>)}
+            {filteredSets.map(s => <option key={s.value} value={s.value}>{setLabel(s.value)}</option>)}
             <option value="其他">其他</option>
           </select>
         </div>
@@ -884,7 +922,7 @@ function GalleryImage({ item }: { item: CollectionItem }) {
         return out;
       }
 
-      // Boxes / packs: prefer official pack art, then any stored logo.
+      // Boxes (incl. legacy 'pack'): prefer official set art, then stored logo.
       if (sc) push((await lookupSetImage(sc, lang))?.imageUrl);
       push(storedUsable);
       return out;
@@ -1020,7 +1058,7 @@ export function Collection() {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     const rows = items.filter(i => {
-      if (filterType !== 'all' && i.itemType !== filterType) return false;
+      if (filterType !== 'all' && displayType(i.itemType) !== filterType) return false;
       if (fEdition !== 'all' && i.edition !== fEdition) return false;
       if (fRarity !== 'all' && i.rarity !== fRarity) return false;
       if (fGraded === 'graded' && !i.isGraded) return false;
@@ -1079,8 +1117,14 @@ export function Collection() {
   }
   const hasPrices = totalCurrentTwd > 0;
 
-  // Cards we can auto-price: singles. Japanese -> Huca, zh-tw -> kapaipai.
-  const priceable = items.filter(i => i.itemType === 'single');
+  // The Snkrdunk box id for an item, or undefined when it can't be auto-priced.
+  // Only boxes that map to a curated JA Snkrdunk product id are priceable.
+  const boxIdOf = (i: { itemType: CollectionItemType | string; setName: string; edition?: CardEdition }): number | undefined =>
+    displayType(i.itemType) === 'box' ? boxSnkrdunkId(SET_CODE_BY_NAME[i.setName] ?? '', i.edition) : undefined;
+
+  // Items we can auto-price: every single (ja -> Huca, zh-tw -> kapaipai) plus
+  // boxes that have a curated Snkrdunk id (ja -> Snkrdunk).
+  const priceable = items.filter(i => i.itemType === 'single' || boxIdOf(i) != null);
 
   const handleRefreshPrices = async () => {
     if (refreshing || priceable.length === 0) return;
@@ -1108,6 +1152,8 @@ export function Collection() {
           isGraded: item.isGraded,
           gradingCompany: item.gradingCompany,
           grade: item.grade,
+          itemType: displayType(item.itemType),
+          snkrdunkId: boxIdOf(item),
         });
         if (p && p.price != null) {
           await updateItem(item.id, {
@@ -1141,7 +1187,8 @@ export function Collection() {
   const withMarketPrice = async (
     item: Omit<CollectionItem, 'id' | 'createdAt'>,
   ): Promise<Omit<CollectionItem, 'id' | 'createdAt'>> => {
-    if (item.itemType !== 'single') return item;
+    const snkrdunkId = boxIdOf(item);
+    if (item.itemType !== 'single' && snkrdunkId == null) return item;
     const edition = item.edition ?? 'ja';
     const setCode = SET_CODE_BY_NAME[item.setName] ?? '';
     try {
@@ -1154,6 +1201,8 @@ export function Collection() {
         isGraded: item.isGraded,
         gradingCompany: item.gradingCompany,
         grade: item.grade,
+        itemType: displayType(item.itemType),
+        snkrdunkId,
       });
       if (p && p.price != null) {
         return {
@@ -1323,7 +1372,7 @@ export function Collection() {
           {/* Row 2: type chips + edition chips */}
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex bg-white/5 border border-white/10 rounded-lg p-0.5 gap-0.5">
-              {(['all', 'single', 'box', 'pack'] as FilterType[]).map(t => (
+              {(['all', 'single', 'box'] as FilterType[]).map(t => (
                 <button
                   key={t}
                   onClick={() => setFilterType(t)}
@@ -1336,7 +1385,7 @@ export function Collection() {
                 >
                   {t === 'all' ? '全部' : ITEM_TYPE_LABELS[t]}
                   <span className="ml-1 opacity-60">
-                    {t === 'all' ? items.length : items.filter(i => i.itemType === t).length}
+                    {t === 'all' ? items.length : items.filter(i => displayType(i.itemType) === t).length}
                   </span>
                 </button>
               ))}

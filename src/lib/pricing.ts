@@ -23,6 +23,10 @@ export async function fetchCardPrice(params: {
   isGraded?: boolean;
   gradingCompany?: string;
   grade?: string;
+  // Sealed-box pricing: a box with a curated Snkrdunk product id is priced off
+  // Snkrdunk (usedMinPrice/minPrice) instead of the single-card sources.
+  itemType?: string;
+  snkrdunkId?: number;
 }): Promise<CardPrice | null> {
   try {
     const res = await fetch('/api/card-price', {
