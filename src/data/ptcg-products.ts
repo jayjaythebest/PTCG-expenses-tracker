@@ -18,13 +18,13 @@ export const SERIES_ZH: Record<string, string> = {
 
 export const PTCG_PRODUCTS: PtcgProduct[] = [
   // ── ポケモンカードゲーム MEGA (2025〜) ──────────────────────
-  { code: 'm1L',  name: 'メガブレイブ',            series: 'ポケモンカードゲーム MEGA' },
-  { code: 'm1S',  name: 'メガシンフォニア',         series: 'ポケモンカードゲーム MEGA' },
-  { code: 'm2',   name: 'インフェルノX',            series: 'ポケモンカードゲーム MEGA' },
-  { code: 'm2a',  name: 'MEGAドリームex',           series: 'ポケモンカードゲーム MEGA' },
-  { code: 'm3',   name: 'ムニキスゼロ',             series: 'ポケモンカードゲーム MEGA' },
-  { code: 'm4',   name: 'ニンジャスピナー',         series: 'ポケモンカードゲーム MEGA' },
-  { code: 'm5',   name: 'アビスアイ',               series: 'ポケモンカードゲーム MEGA' },
+  { code: 'm1L',  name: 'メガブレイブ',            series: 'ポケモンカードゲーム MEGA', nameZh: '超級勇氣' },
+  { code: 'm1S',  name: 'メガシンフォニア',         series: 'ポケモンカードゲーム MEGA', nameZh: '超級交響樂' },
+  { code: 'm2',   name: 'インフェルノX',            series: 'ポケモンカードゲーム MEGA', nameZh: '烈獄狂火X' },
+  { code: 'm2a',  name: 'MEGAドリームex',           series: 'ポケモンカードゲーム MEGA', nameZh: '超級進化夢想ex' },
+  { code: 'm3',   name: 'ムニキスゼロ',             series: 'ポケモンカードゲーム MEGA', nameZh: '虛無歸零' },
+  { code: 'm4',   name: 'ニンジャスピナー',         series: 'ポケモンカードゲーム MEGA', nameZh: '忍者飛旋' },
+  { code: 'm5',   name: 'アビスアイ',               series: 'ポケモンカードゲーム MEGA', nameZh: '深淵之瞳' },
   // ── スカーレット＆バイオレット 2023 ─────────────────────────
   // nameZh values below are the official TW names verified against retail /
   // asia.pokemon-card.com/tw. Sets whose official TW name isn't yet confirmed
@@ -35,24 +35,24 @@ export const PTCG_PRODUCTS: PtcgProduct[] = [
   { code: 'sv1b', name: 'スノーハザード',           series: 'スカーレット＆バイオレット' },
   { code: 'sv1b', name: 'クレイバースト',           series: 'スカーレット＆バイオレット' },
   { code: 'sv2a', name: 'ポケモンカード151',        series: 'スカーレット＆バイオレット', nameZh: '151' },
-  { code: 'sv2',  name: '黒炎の支配者',             series: 'スカーレット＆バイオレット', nameZh: '黑炎支配者' },
-  { code: 'sv3',  name: 'レイジングサーフ',         series: 'スカーレット＆バイオレット' },
-  { code: 'sv4K', name: '古代の鼓動',               series: 'スカーレット＆バイオレット' },
-  { code: 'sv4M', name: '未来の一閃',               series: 'スカーレット＆バイオレット' },
+  { code: 'sv2',  name: '黒炎の支配者',             series: 'スカーレット＆バイオレット', nameZh: '黯焰支配者' },
+  { code: 'sv3',  name: 'レイジングサーフ',         series: 'スカーレット＆バイオレット', nameZh: '激狂駭浪' },
+  { code: 'sv4K', name: '古代の鼓動',               series: 'スカーレット＆バイオレット', nameZh: '古代咆哮' },
+  { code: 'sv4M', name: '未来の一閃',               series: 'スカーレット＆バイオレット', nameZh: '未來閃光' },
   // ── スカーレット＆バイオレット 2024 ─────────────────────────
-  { code: 'sv5K', name: 'ワイルドフォース',         series: 'スカーレット＆バイオレット' },
-  { code: 'sv5M', name: 'サイバージャッジ',         series: 'スカーレット＆バイオレット' },
-  { code: 'sv5a', name: 'クリムゾンヘイズ',         series: 'スカーレット＆バイオレット' },
-  { code: 'sv6',  name: 'ナイトワンダラー',         series: 'スカーレット＆バイオレット' },
+  { code: 'sv5K', name: 'ワイルドフォース',         series: 'スカーレット＆バイオレット', nameZh: '狂野之力' },
+  { code: 'sv5M', name: 'サイバージャッジ',         series: 'スカーレット＆バイオレット', nameZh: '異度審判' },
+  { code: 'sv5a', name: 'クリムゾンヘイズ',         series: 'スカーレット＆バイオレット', nameZh: '緋紅薄霧' },
+  { code: 'sv6',  name: 'ナイトワンダラー',         series: 'スカーレット＆バイオレット', nameZh: '黑夜漫遊者' },
   { code: 'sv6a', name: 'テラスタルフェスティバル', series: 'スカーレット＆バイオレット' },
-  { code: 'sv7',  name: 'ステラミラクル',           series: 'スカーレット＆バイオレット' },
-  { code: 'sv7a', name: '楽園ドラゴーナ',           series: 'スカーレット＆バイオレット' },
+  { code: 'sv7',  name: 'ステラミラクル',           series: 'スカーレット＆バイオレット', nameZh: '星晶奇跡' },
+  { code: 'sv7a', name: '楽園ドラゴーナ',           series: 'スカーレット＆バイオレット', nameZh: '樂園騰龍' },
   { code: 'sv8',  name: '超電ブレイカー',           series: 'スカーレット＆バイオレット', nameZh: '超電突圍' },
-  { code: 'sv8a', name: 'テラスタルフェスex',       series: 'スカーレット＆バイオレット' },
+  { code: 'sv8a', name: 'テラスタルフェスex',       series: 'スカーレット＆バイオレット', nameZh: '太晶慶典ex' },
   // ── スカーレット＆バイオレット 2025 ─────────────────────────
   { code: 'sv9',  name: 'バトルパートナーズ',       series: 'スカーレット＆バイオレット', nameZh: '對戰搭檔' },
-  { code: 'sv9a', name: '熱風のアリーナ',           series: 'スカーレット＆バイオレット' },
-  { code: 'sv10', name: 'ロケット団の栄光',         series: 'スカーレット＆バイオレット' },
+  { code: 'sv9a', name: '熱風のアリーナ',           series: 'スカーレット＆バイオレット', nameZh: '熱風競技場' },
+  { code: 'sv10', name: 'ロケット団の栄光',         series: 'スカーレット＆バイオレット', nameZh: '火箭隊的榮耀' },
   // ── ソード＆シールド 人気セット ─────────────────────────────
   // These predate the TW Traditional-Chinese launch (Oct 2023) and were never
   // released in 繁中, so there is no official Chinese name — JA is shown.
