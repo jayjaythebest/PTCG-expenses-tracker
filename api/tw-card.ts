@@ -213,16 +213,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     // 2) Set code didn't resolve (often an OCR-misread code on secret rares) —
-    //    fall back to the distinctive scanned name + collector number.
+    //    fall back to the distinctive scanned name + collector number. Cache ONLY
+    //    positive hits: the keyword search hits the flaky TW site, so a transient
+    //    empty response must NOT be cached as a permanent null (that poisons the
+    //    lookup for the warm lambda's lifetime). A miss simply retries next time.
     if (nameRaw) {
       const cacheKey = `name:${nameRaw}#${number}`;
       const cached = cardDataCache.get(cacheKey);
-      if (cached !== undefined) {
-        if (cached) return res.status(200).json({ card: cached });
-      } else {
-        const card = await findByName(nameRaw, number);
+      if (cached) return res.status(200).json({ card: cached });
+      const card = await findByName(nameRaw, number);
+      if (card) {
         cardDataCache.set(cacheKey, card);
-        if (card) return res.status(200).json({ card });
+        return res.status(200).json({ card });
       }
     }
 
