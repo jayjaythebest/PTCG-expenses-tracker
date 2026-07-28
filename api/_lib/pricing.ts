@@ -246,7 +246,11 @@ function pickHucaRow(rows: HucaRow[], wantGrade: string | null): PriceResult | n
 async function pickHucaRawResult(rows: HucaRow[]): Promise<PriceResult | null> {
   if (rows.length === 0) return null;
 
-  // 1) Genuine used average from Huca (prefer an ungraded row when present).
+  // 1) Genuine used average from Huca — ONLY from an ungraded row. Huca's
+  //    average_price on a graded (e.g. PSA10) row is a slab average, not a raw
+  //    price, so we must NOT fall back to it here (that's the MUR 甲賀忍蛙 bug:
+  //    its only Huca row is PSA10). Graded-only cards fall through to the
+  //    Snkrdunk used floor below, which is the true raw price.
   const avgCandidates = rows
     .map(row => ({
       row,
@@ -254,7 +258,7 @@ async function pickHucaRawResult(rows: HucaRow[]): Promise<PriceResult | null> {
       cls: classifyCondition(row.latest_condition),
     }))
     .filter(r => Number.isFinite(r.avg) && r.avg > 0);
-  const avgRow = avgCandidates.find(r => !r.cls.graded) ?? avgCandidates[0];
+  const avgRow = avgCandidates.find(r => !r.cls.graded);
   if (avgRow) {
     return {
       price: Math.round(avgRow.avg),
