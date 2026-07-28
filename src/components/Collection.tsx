@@ -61,6 +61,16 @@ const SET_CODE_BY_NAME: Record<string, string> = Object.fromEntries(
   PTCG_PRODUCTS.map(p => [p.name, p.code]),
 );
 
+// Dropdown-only label: the set name plus its expansion code in parentheses,
+// e.g. "深淵之瞳 (SV6A)". Helps users match the code printed on the pack and
+// pick manually when a scan fails or misreads. Kept separate from setLabel so
+// stored item names stay clean (code-free). Codes are uppercased to match the
+// print on the card.
+const setOptionLabel = (name: string): string => {
+  const code = SET_CODE_BY_NAME[name];
+  return code ? `${setLabel(name)} (${code.toUpperCase()})` : setLabel(name);
+};
+
 const editionToLang = (e: CardEdition | ''): ScanLanguage => (e === 'zh-tw' ? 'zh-tw' : 'ja');
 
 type FilterType = 'all' | CollectionItemType;
@@ -606,7 +616,7 @@ function CollectionForm({
             className="w-full border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-poke-accent bg-surface"
           >
             <option value="">選擇...</option>
-            {filteredSets.map(s => <option key={s.value} value={s.value}>{setLabel(s.value)}</option>)}
+            {filteredSets.map(s => <option key={s.value} value={s.value}>{setOptionLabel(s.value)}</option>)}
             <option value="其他">其他</option>
           </select>
         </div>

@@ -127,27 +127,55 @@ async function findByCollectorNumber(
 // 厄鬼椪 水井面具ex 208/187 SAR is printed such that the AI read "sv6a" but the
 // site files it under SV8a). The Chinese name is distinctive, so a keyword
 // search pins the card, and the collector number disambiguates its prints/SAR.
-async function findByName(name: string, target: number): Promise<TwCardData | null> {
+// Keyword variants to try, most-likely-to-work first. The TW site's keyword
+// search is unreliable with multi-token (space-separated) queries — a scanned
+// name like "厄鬼椪 水井面具ex" often returns nothing, while the distinctive
+// trailing token "水井面具ex" reliably returns the card's prints. So we try the
+// full name, then spaces-removed, then each token longest-first (the specific
+// form/ex name is usually the longest and least ambiguous).
+function keywordCandidates(name: string): string[] {
   const clean = name.trim();
-  if (!clean) return null;
+  const out: string[] = [];
+  const push = (s: string) => {
+    const t = s.trim();
+    if (t && !out.includes(t)) out.push(t);
+  };
+  push(clean);
+  push(clean.replace(/\s+/g, ''));
+  clean
+    .split(/\s+/)
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length)
+    .forEach(push);
+  return out;
+}
 
-  // A specific card name returns few hits (its own prints/variants), so a couple
-  // of pages is plenty; cap the detail probes to stay well under maxDuration.
-  const ids: number[] = [];
-  for (let page = 1; page <= 3; page++) {
-    const html = await fetchText(
-      `${BASE}/tw/card-search/list/?pageNo=${page}&keyword=${encodeURIComponent(clean)}`,
-    );
-    if (!html) break;
-    const pageIds = [...html.matchAll(/card-search\/detail\/(\d+)\//gi)].map(m => Number(m[1]));
-    if (pageIds.length === 0) break;
-    ids.push(...pageIds);
-    if (pageIds.length < PAGE_SIZE) break;
-  }
+async function findByName(name: string, target: number): Promise<TwCardData | null> {
+  if (!name.trim()) return null;
 
-  for (const id of [...new Set(ids)].slice(0, 40)) {
-    const d = await detailById(id, ''); // empty → detail page's own expansion code
-    if (d && collectorNum(d.collectorNumber) === target) return d;
+  // Probe each keyword variant until one yields the card. Track probed ids and
+  // cap total detail reads so a generic token can't blow past maxDuration.
+  const seen = new Set<number>();
+  let probes = 0;
+  for (const kw of keywordCandidates(name)) {
+    const ids: number[] = [];
+    for (let page = 1; page <= 3; page++) {
+      const html = await fetchText(
+        `${BASE}/tw/card-search/list/?pageNo=${page}&keyword=${encodeURIComponent(kw)}`,
+      );
+      if (!html) break;
+      const pageIds = [...html.matchAll(/card-search\/detail\/(\d+)\//gi)].map(m => Number(m[1]));
+      if (pageIds.length === 0) break;
+      ids.push(...pageIds);
+      if (pageIds.length < PAGE_SIZE) break;
+    }
+    for (const id of ids) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      if (probes++ >= 40) return null;
+      const d = await detailById(id, ''); // empty → detail page's own expansion code
+      if (d && collectorNum(d.collectorNumber) === target) return d;
+    }
   }
   return null;
 }
