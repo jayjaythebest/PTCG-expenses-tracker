@@ -305,10 +305,10 @@ function CollectionForm({
         : null;
 
       // Is this physically a Traditional-Chinese card? Trust the AI's language
-      // read; the "M#F" code (zh-tw MEGA/超級進化) is itself a strong zh-tw
-      // signal even if the AI misdetects the language. JP MEGA prints "M#"
-      // (no trailing F), so this won't misfire on Japanese cards.
-      const isZhTw = scan.language === 'zh-tw' || /^M\d+F$/i.test(scan.setCode);
+      // read; a trailing-"F" MEGA/超級進化 code (M5F, M2aF) is itself a strong
+      // zh-tw signal even if the AI misdetects the language. JP MEGA prints the
+      // same code WITHOUT the F (M5, M2a), so this won't misfire on Japanese cards.
+      const isZhTw = scan.language === 'zh-tw' || /^M\d+[A-Z]*F$/i.test(scan.setCode);
 
       // 2b) TCGdex's zh-tw catalog is incomplete (e.g. brand-new sets, the whole
       //     MEGA series). lookupCard cross-falls-back to the ja endpoint to find
@@ -400,7 +400,7 @@ function CollectionForm({
             // zh-tw MEGA sets print "M#F"; the JP equivalent is "M#" and shares
             // the identical illustration (only the text language differs), so use
             // it as a stand-in thumbnail when no TW art exists.
-            if (!img && /^M\d+F$/i.test(scan.setCode)) {
+            if (!img && /^M\d+[A-Z]*F$/i.test(scan.setCode)) {
               const jpCode = scan.setCode.replace(/F$/i, '');
               img = (await lookupJpCardImage(jpCode, scan.localId)) || '';
             }
