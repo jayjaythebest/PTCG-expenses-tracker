@@ -1,8 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
-import { resolveCardPrice, buildWantGrade } from './_lib/pricing';
-import { PTCG_PRODUCTS } from '../src/data/ptcg-products';
-import { boxSnkrdunkId } from '../src/data/ptcg-boxes';
+import { resolveCardPrice, buildWantGrade } from './_lib/pricing.js';
+import { PTCG_PRODUCTS } from '../src/data/ptcg-products.js';
+import { boxSnkrdunkId } from '../src/data/ptcg-boxes.js';
 
 // Daily cron. Two jobs, in order:
 //   1. Refresh every single card's live market price from its source (Huca for

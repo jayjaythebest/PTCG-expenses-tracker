@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { resolveCardPrice, buildWantGrade, EMPTY_PRICE, type PriceResult } from './_lib/pricing';
+import { resolveCardPrice, buildWantGrade, EMPTY_PRICE, type PriceResult } from './_lib/pricing.js';
 
 // Resolves a card's market price from a free source, keyed by set code + number
 // (+ edition). Japanese cards use Huca (huca.tw), which exposes a clean JSON API
