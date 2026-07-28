@@ -13,6 +13,10 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 //         imageUrl: "https://asia.pokemon-card.com/tw/card-img/tw00019279.png",
 //         setCode: "M5" }
 //
+// An optional &name=<zh-tw name> enables a fallback: when the (OCR-read) set code
+// can't resolve the number, we keyword-search by name and match the collector
+// number — rescuing secret rares whose printed code the AI misread.
+//
 // The site has NO rarity letter on the page, so rarity is intentionally omitted
 // (the caller keeps the rarity read off the card by the AI scan).
 //
@@ -117,7 +121,40 @@ async function findByCollectorNumber(
   return null;
 }
 
-// Read name + collector number + image off a single card's detail page.
+// Fallback resolver: match by the scanned Chinese NAME + collector number when
+// the (possibly OCR-misread) set code doesn't resolve. The AI reads the printed
+// set code off the card, and for high-numbered secret rares it can slip (e.g.
+// 厄鬼椪 水井面具ex 208/187 SAR is printed such that the AI read "sv6a" but the
+// site files it under SV8a). The Chinese name is distinctive, so a keyword
+// search pins the card, and the collector number disambiguates its prints/SAR.
+async function findByName(name: string, target: number): Promise<TwCardData | null> {
+  const clean = name.trim();
+  if (!clean) return null;
+
+  // A specific card name returns few hits (its own prints/variants), so a couple
+  // of pages is plenty; cap the detail probes to stay well under maxDuration.
+  const ids: number[] = [];
+  for (let page = 1; page <= 3; page++) {
+    const html = await fetchText(
+      `${BASE}/tw/card-search/list/?pageNo=${page}&keyword=${encodeURIComponent(clean)}`,
+    );
+    if (!html) break;
+    const pageIds = [...html.matchAll(/card-search\/detail\/(\d+)\//gi)].map(m => Number(m[1]));
+    if (pageIds.length === 0) break;
+    ids.push(...pageIds);
+    if (pageIds.length < PAGE_SIZE) break;
+  }
+
+  for (const id of [...new Set(ids)].slice(0, 40)) {
+    const d = await detailById(id, ''); // empty → detail page's own expansion code
+    if (d && collectorNum(d.collectorNumber) === target) return d;
+  }
+  return null;
+}
+
+// Read name + collector number + image off a single card's detail page. When
+// `setCode` is passed empty (the name-search fallback doesn't know it up front),
+// read the card's real expansion code straight off the detail page.
 async function fetchDetail(id: number, setCode: string): Promise<TwCardData | null> {
   const html = await fetchText(`${BASE}/tw/card-search/detail/${id}/`);
   if (!html) return null;
@@ -130,9 +167,11 @@ async function fetchDetail(id: number, setCode: string): Promise<TwCardData | nu
   const imgFile = html.match(/card-img\/(tw\d+\.png)/i)?.[1] ?? '';
   const imageUrl = imgFile ? `${BASE}/tw/card-img/${imgFile}` : '';
   const localId = collectorNumber ? collectorNumber.split('/')[0].replace(/^0+(?=\d)/, '') : '';
+  const resolvedCode =
+    setCode || (html.match(/expansionCodes=([A-Za-z0-9]+)/i)?.[1] ?? '').toUpperCase();
 
   if (!name) return null;
-  return { name, localId, collectorNumber, imageUrl, setCode };
+  return { name, localId, collectorNumber, imageUrl, setCode: resolvedCode };
 }
 
 // The AI reads the code PRINTED on the card (zh-tw MEGA/超級進化 prints a trailing
@@ -148,6 +187,7 @@ function setCodeCandidates(raw: string): string[] {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   const setRaw = String(req.query.set ?? '').trim();
   const numberRaw = String(req.query.number ?? '').trim();
+  const nameRaw = String(req.query.name ?? '').trim();
   const number = numberRaw ? Number(numberRaw.match(/\d+/)?.[0]) : NaN;
 
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -159,6 +199,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
+    // 1) Trust the scanned set code first (fast, exact).
     for (const set of setCodeCandidates(setRaw)) {
       const cacheKey = `${set}#${number}`;
       const cached = cardDataCache.get(cacheKey);
@@ -170,6 +211,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       cardDataCache.set(cacheKey, card);
       if (card) return res.status(200).json({ card });
     }
+
+    // 2) Set code didn't resolve (often an OCR-misread code on secret rares) —
+    //    fall back to the distinctive scanned name + collector number.
+    if (nameRaw) {
+      const cacheKey = `name:${nameRaw}#${number}`;
+      const cached = cardDataCache.get(cacheKey);
+      if (cached !== undefined) {
+        if (cached) return res.status(200).json({ card: cached });
+      } else {
+        const card = await findByName(nameRaw, number);
+        cardDataCache.set(cacheKey, card);
+        if (card) return res.status(200).json({ card });
+      }
+    }
+
     return res.status(200).json({ card: null });
   } catch {
     return res.status(200).json({ card: null });

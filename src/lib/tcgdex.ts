@@ -282,16 +282,24 @@ export interface TwCardData {
 }
 
 const twCardCache = new Map<string, TwCardData | null>();
-export async function lookupTwCard(setCode: string, cardNumber: number | string): Promise<TwCardData | null> {
+export async function lookupTwCard(
+  setCode: string,
+  cardNumber: number | string,
+  name?: string,
+): Promise<TwCardData | null> {
   const code = setCode.trim();
   const n = typeof cardNumber === 'number' ? cardNumber : Number(String(cardNumber).match(/\d+/)?.[0]);
   if (!code || !n || !Number.isFinite(n)) return null;
-  const key = `${code.toLowerCase()}#${n}`;
+  // Pass the scanned name so the endpoint can name-fallback when the (possibly
+  // OCR-misread) set code can't resolve the number. Include it in the cache key.
+  const nm = (name ?? '').trim();
+  const key = `${code.toLowerCase()}#${n}#${nm}`;
   const cached = twCardCache.get(key);
   if (cached !== undefined) return cached;
   let card: TwCardData | null = null;
   try {
-    const res = await fetch(`/api/tw-card?set=${encodeURIComponent(code)}&number=${n}`);
+    const nameParam = nm ? `&name=${encodeURIComponent(nm)}` : '';
+    const res = await fetch(`/api/tw-card?set=${encodeURIComponent(code)}&number=${n}${nameParam}`);
     if (res.ok) {
       const data = await res.json();
       const c = data?.card;

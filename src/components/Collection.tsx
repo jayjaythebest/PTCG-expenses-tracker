@@ -319,7 +319,7 @@ function CollectionForm({
       //     — the always-current complete Chinese card table.
       const twCard = !scan.error && scan.setCode && scan.localId
         && isZhTw && (!card || card.edition !== 'zh-tw')
-        ? await lookupTwCard(scan.setCode, scan.localId)
+        ? await lookupTwCard(scan.setCode, scan.localId, scan.name)
         : null;
 
       if (twCard) {
