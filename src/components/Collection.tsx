@@ -311,7 +311,7 @@ function CollectionForm({
       // 2) Resolve authoritative data (name/rarity/series/official art) from TCGdex,
       //    querying the endpoint that matches the detected language (falls back internally).
       const card = scan.setCode && scan.localId
-        ? await lookupCard(scan.setCode, scan.localId, scan.language || 'ja')
+        ? await lookupCard(scan.setCode, scan.localId, scan.language || 'ja', scan.name)
         : null;
 
       // Is this physically a Traditional-Chinese card? Trust the AI's language

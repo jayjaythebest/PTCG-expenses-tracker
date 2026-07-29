@@ -143,13 +143,41 @@ async function tryLookup(code: string, id: string, lang: ScanLanguage): Promise<
   }
 }
 
+// Fallback resolver: match by NAME + collector number when the (possibly
+// OCR-misread) set code doesn't resolve. TCGdex's name filter returns every
+// same-named card across ALL sets/generations, so we keep only the one whose
+// collector number matches and require a UNIQUE hit — never silently pick the
+// wrong set on a number collision. This is what lets an OLDER card still be
+// traced back when the scan's set code is garbled (mirrors the zh-tw path).
+async function lookupByName(name: string, id: string, lang: ScanLanguage): Promise<CardLookupResult | null> {
+  try {
+    const res = await fetch(`https://api.tcgdex.net/v2/${lang}/cards?name=${encodeURIComponent(name)}`);
+    if (!res.ok) return null;
+    const list = await res.json();
+    if (!Array.isArray(list)) return null;
+    const matches = list.filter(
+      (c: { localId?: unknown }) => String(c?.localId ?? '').replace(/^0+(?=\d)/, '') === id,
+    );
+    if (matches.length !== 1) return null; // 0 hits, or ambiguous across sets → don't guess
+    const cardId = String((matches[0] as { id?: unknown })?.id ?? '');
+    const resolvedCode = cardId.split('-')[0];
+    if (!resolvedCode) return null;
+    return await tryLookup(resolvedCode, id, lang);
+  } catch {
+    return null;
+  }
+}
+
 // Look up a card by set code and local id (e.g. "001" or "1").
-// Tries the detected language first, then the other one as a fallback.
-// Returns null on miss so callers can fall back to raw AI fields.
+// Tries the detected language first, then the other one as a fallback. When the
+// set code resolves nothing (commonly an OCR-misread code), falls back to the
+// scanned NAME + number so the card is still traced. Returns null on a complete
+// miss so callers can fall back to raw AI fields.
 export async function lookupCard(
   setCode: string,
   localId: string,
   language: ScanLanguage = 'ja',
+  name?: string,
 ): Promise<CardLookupResult | null> {
   const code = setCode.trim();
   const id = localId.trim().replace(/^0+(?=\d)/, ''); // TCGdex localId is unpadded ("1", not "001")
@@ -158,7 +186,15 @@ export async function lookupCard(
   const primary = language;
   const secondary: ScanLanguage = language === 'ja' ? 'zh-tw' : 'ja';
 
-  return (await tryLookup(code, id, primary)) ?? (await tryLookup(code, id, secondary));
+  const direct = (await tryLookup(code, id, primary)) ?? (await tryLookup(code, id, secondary));
+  if (direct) return direct;
+
+  // Set code didn't resolve — trace by the distinctive scanned name + number.
+  const nm = (name ?? '').trim();
+  if (nm) {
+    return (await lookupByName(nm, id, primary)) ?? (await lookupByName(nm, id, secondary));
+  }
+  return null;
 }
 
 // ---- Set-level representative image (for boxes / packs / manual singles) ----
