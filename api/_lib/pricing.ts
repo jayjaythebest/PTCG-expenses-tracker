@@ -40,7 +40,7 @@ interface KpPack {
   packId: string;
   packName: string;
 }
-interface KpCardRow {
+export interface KpCardRow {
   packId: string;
   packCardId: string;
   cardGlobalKey: string;
@@ -492,39 +492,99 @@ function rowLocalNumber(row: KpCardRow, packId: string): string {
   return pc;
 }
 
-async function lookupKapaipai(setCode: string, setName: string, num: string, name: string): Promise<PriceResult | null> {
-  const packId = await resolvePackId(setCode, setName);
-  if (!packId) return null;
-  const rows = await getKpPackDetail(packId);
-  if (rows.length === 0) return null;
+// Whitespace-insensitive name key so "超級噴火龍Xex" and "超級噴火龍X ex" compare
+// equal across kapaipai's inconsistent spacing.
+export function nameKey(s: string): string {
+  return (s ?? '').replace(/\s+/g, '').toLowerCase();
+}
 
-  const target = normNum(num);
+// Find the best-priced card row for a target number within one pack's rows.
+// Returns the row + its in-pack number, preferring an exact name match when a
+// number has several variants (sealed 原盒/散包 etc.).
+export function pickKpRowForNumber(
+  rows: KpCardRow[],
+  packId: string,
+  target: string,
+  name: string,
+): { row: KpCardRow; localNumber: string; price: number } | null {
   const matches = rows.filter(r => normNum(rowLocalNumber(r, packId)) === target);
   if (matches.length === 0) return null;
-  // Canonical kapaipai global key is `${packId}-${localNumber}` (padded form).
-  const localNumber = rowLocalNumber(matches[0], packId);
-
-  // Usually one match per number. When a number has several variants (sealed
-  // 原盒/散包 etc.), prefer an exact name match, then the first with a real price.
+  const wantKey = nameKey(name);
   const ordered = [...matches].sort((a, b) => {
-    const an = name && a.cardName === name ? 0 : 1;
-    const bn = name && b.cardName === name ? 0 : 1;
+    const an = wantKey && nameKey(a.cardName) === wantKey ? 0 : 1;
+    const bn = wantKey && nameKey(b.cardName) === wantKey ? 0 : 1;
     return an - bn;
   });
-
   for (const row of ordered) {
     const price = pickKpPrice(row);
     if (price == null) continue;
-    return {
-      price,
-      currency: 'TWD',
-      source: 'kapaipai',
-      condition: null,
-      url: `https://trade.kapaipai.tw/card/${packId}-${localNumber}`,
-      updatedAt: new Date().toISOString(),
-    };
+    return { row, localNumber: rowLocalNumber(row, packId), price };
   }
   return null;
+}
+
+function kpResult(packId: string, localNumber: string, price: number): PriceResult {
+  return {
+    price,
+    currency: 'TWD',
+    source: 'kapaipai',
+    condition: null,
+    // Canonical kapaipai global key is `${packId}-${localNumber}` (padded form).
+    url: `https://trade.kapaipai.tw/card/${packId}-${localNumber}`,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+// Cross-pack fallback: kapaipai frequently files a card under a packId that
+// differs from its printed set code (e.g. the SAR 超級噴火龍Xex printed "223/…"
+// lives in pack M2a, not M2), and secret-rare numbers run past the base set's
+// range — so a number lookup in the "expected" pack misses. When the direct
+// pack lookup fails (or the item has no stored setName at all), scan every pack
+// for a row whose card NAME matches (whitespace-insensitive) at the same number.
+// Short-circuits on the first exact-name hit; caches each pack's detail. Only
+// runs when we have both a name and a number to match on (avoids false hits).
+async function findKapaipaiByName(num: string, name: string): Promise<PriceResult | null> {
+  const wantKey = nameKey(name);
+  if (!wantKey) return null;
+  const pl = await getKpPackList();
+  if (!pl) return null;
+  const target = normNum(num);
+  const packIds = [...pl.idToId.values()];
+  // Scan packs in bounded-concurrency batches so a full miss (card in no pack)
+  // stays a few seconds instead of ~174 sequential round-trips (would risk the
+  // cron/interactive timeout). Detail fetches are cached, so this warms the
+  // cache for later cards in the same run too.
+  const BATCH = 8;
+  for (let i = 0; i < packIds.length; i += BATCH) {
+    const batch = packIds.slice(i, i + BATCH);
+    const results = await Promise.all(
+      batch.map(async packId => {
+        const rows = await getKpPackDetail(packId);
+        const hit = rows.find(
+          r => normNum(rowLocalNumber(r, packId)) === target && nameKey(r.cardName) === wantKey,
+        );
+        if (!hit) return null;
+        const price = pickKpPrice(hit);
+        return price != null ? kpResult(packId, rowLocalNumber(hit, packId), price) : null;
+      }),
+    );
+    const found = results.find(r => r != null);
+    if (found) return found;
+  }
+  return null;
+}
+
+async function lookupKapaipai(setCode: string, setName: string, num: string, name: string): Promise<PriceResult | null> {
+  // 1) Direct: resolve the item's set to a kapaipai packId and match by number.
+  const packId = await resolvePackId(setCode, setName);
+  if (packId) {
+    const rows = await getKpPackDetail(packId);
+    const picked = pickKpRowForNumber(rows, packId, normNum(num), name);
+    if (picked) return kpResult(packId, picked.localNumber, picked.price);
+  }
+  // 2) Fallback: the set didn't resolve, the number wasn't in that pack, or the
+  //    card is filed under a different packId (secret rares). Search by name.
+  return findKapaipaiByName(num, name);
 }
 
 export interface PriceQuery {

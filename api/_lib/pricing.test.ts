@@ -6,6 +6,9 @@ import {
   pickHucaPrice,
   pickSnkrdunkBoxPrice,
   normNum,
+  nameKey,
+  pickKpRowForNumber,
+  type KpCardRow,
 } from './pricing';
 
 describe('extractNumber', () => {
@@ -107,5 +110,59 @@ describe('normNum', () => {
   });
   it('upper-cases fully non-numeric ids', () => {
     expect(normNum('abc')).toBe('ABC');
+  });
+});
+
+describe('nameKey', () => {
+  it('ignores whitespace so spaced/unspaced names compare equal', () => {
+    expect(nameKey('超級噴火龍Xex')).toBe(nameKey('超級噴火龍X ex'));
+  });
+  it('is case-insensitive', () => {
+    expect(nameKey('Pikachu EX')).toBe('pikachuex');
+  });
+  it('handles null/undefined', () => {
+    expect(nameKey(undefined as unknown as string)).toBe('');
+  });
+});
+
+describe('pickKpRowForNumber', () => {
+  const row = (over: Partial<KpCardRow>): KpCardRow => ({
+    packId: 'M2a',
+    packCardId: '223',
+    cardGlobalKey: 'M2a-223',
+    cardName: '超級噴火龍Xex',
+    ...over,
+  });
+
+  it('matches on the in-pack number (zero-pad insensitive) and returns the price', () => {
+    const rows = [row({ packCardId: '223', averagePrice: 427 })];
+    const picked = pickKpRowForNumber(rows, 'M2a', normNum('223'), '超級噴火龍Xex');
+    expect(picked?.price).toBe(427);
+    expect(picked?.localNumber).toBe('223');
+  });
+
+  it('prefers an exact name match over another variant at the same number', () => {
+    const rows = [
+      row({ packCardId: 'M2a-223', cardName: '其他卡', averagePrice: 10 }),
+      row({ packCardId: 'M2a-223', cardName: '超級噴火龍X ex', averagePrice: 427 }),
+    ];
+    const picked = pickKpRowForNumber(rows, 'M2a', normNum('223'), '超級噴火龍Xex');
+    expect(picked?.price).toBe(427);
+  });
+
+  it('falls back to lowestPrice when averagePrice is missing/zero', () => {
+    const rows = [row({ averagePrice: 0, lowestPrice: 300 })];
+    const picked = pickKpRowForNumber(rows, 'M2a', normNum('223'), '超級噴火龍Xex');
+    expect(picked?.price).toBe(300);
+  });
+
+  it('returns null when no row matches the number', () => {
+    const rows = [row({ packCardId: '001' })];
+    expect(pickKpRowForNumber(rows, 'M2a', normNum('223'), '超級噴火龍Xex')).toBeNull();
+  });
+
+  it('returns null when the only match has no usable price', () => {
+    const rows = [row({ averagePrice: 0, lowestPrice: 0 })];
+    expect(pickKpRowForNumber(rows, 'M2a', normNum('223'), '超級噴火龍Xex')).toBeNull();
   });
 });

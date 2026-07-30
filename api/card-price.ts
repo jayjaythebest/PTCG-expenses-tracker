@@ -54,7 +54,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  const key = `${edition}:${itemType}:${(setName || setCode).toUpperCase()}:${number}:${snkrdunkId || (wantGrade ?? 'raw')}`;
+  // Include the card name in the cache key: zh-tw items with no stored set are
+  // now resolved by name across all packs (see findKapaipaiByName), so two
+  // different cards sharing a number but no set would otherwise collide here.
+  const namePart = name.replace(/\s+/g, '').toLowerCase();
+  const key = `${edition}:${itemType}:${(setName || setCode).toUpperCase()}:${number}:${namePart}:${snkrdunkId || (wantGrade ?? 'raw')}`;
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < TTL_MS) {
     return res.status(200).json(hit.result);

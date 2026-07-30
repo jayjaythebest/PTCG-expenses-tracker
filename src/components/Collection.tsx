@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useCollection } from '../lib/useCollection';
 import { CollectionItem, CollectionItemType, CollectionCondition, CardEdition, GradingCompany } from '../types';
-import { PTCG_PRODUCTS, SERIES_ZH } from '../data/ptcg-products';
+import { PTCG_PRODUCTS, SERIES_ZH, type PtcgProduct } from '../data/ptcg-products';
 import { boxSnkrdunkId } from '../data/ptcg-boxes';
 import { cn } from '../lib/utils';
 import { recognizeCardFromPhoto } from '../lib/gemini';
@@ -71,6 +71,25 @@ const SET_CODE_BY_NAME: Record<string, string> = Object.fromEntries(
   PTCG_PRODUCTS.map(p => [p.name, p.code]),
 );
 
+// Reverse of SET_CODE_BY_NAME: a scanned/printed set code → the catalog product,
+// so scan branches can persist a setName (the JP name existing rows store) even
+// when TCGdex has no entry for the card. Without a stored setName, price lookups
+// (kapaipai for zh-tw, Huca for ja) can't resolve which pack the card belongs to
+// and the row shows no price. zh-tw MEGA prints "M#F"/"M#aF"; the base JP code
+// drops the trailing F (M4F→M4), so we normalize before matching. Codes are
+// matched case-insensitively. Duplicate codes (e.g. sv1 = スカーレット/バイオレット)
+// resolve to the first product — fine, since both share the same code for pricing.
+const productForScanCode = (rawCode: string | undefined | null): PtcgProduct | undefined => {
+  const raw = (rawCode ?? '').trim();
+  if (!raw) return undefined;
+  const upper = raw.toUpperCase();
+  const base = /^M\d+[A-Z]*F$/i.test(raw) ? upper.replace(/F$/, '') : upper;
+  return (
+    PTCG_PRODUCTS.find(p => p.code.toUpperCase() === upper) ??
+    PTCG_PRODUCTS.find(p => p.code.toUpperCase() === base)
+  );
+};
+
 // Dropdown-only label: the set name plus its expansion code in parentheses,
 // e.g. "深淵之瞳 (SV6A)". Helps users match the code printed on the pack and
 // pick manually when a scan fails or misreads. Kept separate from setLabel so
@@ -136,6 +155,11 @@ const EMPTY_FORM = {
   quantity: 1,
   acquiredDate: '',
   currentValue: '',
+  // Manual market-price override (TWD). When set, it replaces the auto-fetched
+  // price and is protected from auto-refresh (source is stamped 'manual'). Used
+  // for thin-market chase cards whose auto price is unreliable — the user fills
+  // in a value they trust (from 蝦皮/樂天/Snkrdunk/…).
+  manualPrice: '',
   notes: '',
   imageUrl: '',
   edition: '' as CardEdition | '',
@@ -342,6 +366,13 @@ function CollectionForm({
         ? await lookupTwCard(scan.setCode, scan.localId, scan.name)
         : null;
 
+      // Map the scanned/printed set code back to a catalog product so we can
+      // persist a setName even when TCGdex has no record. Without a stored
+      // setName, price lookups can't resolve the pack and the row shows no price
+      // (this was the zh-tw "no price" bug — the twCard/fallback branches never
+      // set setName). Prefer the code the TW proxy resolved, else the AI's read.
+      const prod = productForScanCode(twCard?.setCode || scan.setCode);
+
       if (twCard) {
         // Authoritative zh-tw record from the official TW site: Chinese name +
         // precise per-card art. The site carries no rarity letter, so keep the
@@ -349,6 +380,8 @@ function CollectionForm({
         setForm(f => ({
           ...f,
           name:       twCard.name    || scan.name || f.name,
+          setName:    prod?.name     || f.setName,
+          series:     prod?.series   || f.series,
           rarity:     scan.rarity    || f.rarity,
           cardNumber: scan.localId   || twCard.localId || f.cardNumber,
           imageUrl:   twCard.imageUrl || f.imageUrl,
@@ -376,8 +409,8 @@ function CollectionForm({
         setForm(f => ({
           ...f,
           name:       card.name,
-          setName:    card.setName || f.setName,
-          series:     card.series  || f.series,
+          setName:    card.setName || prod?.name   || f.setName,
+          series:     card.series  || prod?.series || f.series,
           rarity:     card.rarity  || scan.rarity || f.rarity,
           cardNumber: scan.localId || f.cardNumber,
           imageUrl:   img || f.imageUrl,
@@ -431,6 +464,8 @@ function CollectionForm({
         setForm(f => ({
           ...f,
           name:       scan.name    || f.name,
+          setName:    prod?.name   || f.setName,
+          series:     prod?.series || f.series,
           cardNumber: scan.localId || f.cardNumber,
           rarity:     scan.rarity  || f.rarity,
           edition:    isZhTw ? 'zh-tw' : (scan.language || f.edition),
@@ -827,6 +862,20 @@ function CollectionForm({
         </div>
       </div>
 
+      {/* Manual market-price override */}
+      <div>
+        <label className="text-xs font-bold text-slate-400 mb-1 block">手動市價 (NT$)</label>
+        <input
+          type="number"
+          min={0}
+          value={form.manualPrice}
+          onChange={e => set('manualPrice', e.target.value)}
+          placeholder="留空＝自動抓價"
+          className="w-full border border-white/10 bg-white/5 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-poke-accent"
+        />
+        <p className="mt-0.5 text-[10px] text-slate-400">薄市/自動價不準時，填你查到的市價（蝦皮/樂天等）；填了就以此為準且不會被自動更新覆蓋。清空則恢復自動抓價。</p>
+      </div>
+
       {/* Acquired date */}
       <div>
         <label className="text-xs font-bold text-slate-400 mb-1 block">入手日期</label>
@@ -870,6 +919,19 @@ function CollectionForm({
   );
 }
 
+// Market-price fields for a manual override. Stamped source 'manual' so the
+// auto-refresh (client button + daily cron) leaves it alone. Stored in TWD —
+// that's what the user reads off 蝦皮/樂天/local marketplaces.
+function manualPriceFields(value: string): Partial<CollectionItem> {
+  return {
+    marketPrice: Number(value),
+    marketPriceCurrency: 'TWD',
+    marketPriceSource: 'manual',
+    marketPriceUpdatedAt: new Date().toISOString(),
+    marketPriceCondition: undefined,
+  };
+}
+
 function formToItem(f: FormState): Omit<CollectionItem, 'id' | 'createdAt'> {
   // Box names are optional: if left blank, fall back to the chosen set's label
   // (Chinese preferred) so the row still has a readable name.
@@ -907,6 +969,7 @@ function itemToForm(item: CollectionItem): FormState {
     quantity:      item.quantity,
     acquiredDate:  item.acquiredDate ?? '',
     currentValue:  item.currentValue != null ? String(item.currentValue) : '',
+    manualPrice:   item.marketPriceSource === 'manual' && item.marketPrice != null ? String(item.marketPrice) : '',
     notes:         item.notes ?? '',
     imageUrl:      item.imageUrl ?? '',
     edition:       item.edition ?? '',
@@ -1180,8 +1243,11 @@ export function Collection() {
     displayType(i.itemType) === 'box' ? boxSnkrdunkId(SET_CODE_BY_NAME[i.setName] ?? '', i.edition) : undefined;
 
   // Items we can auto-price: every single (ja -> Huca, zh-tw -> kapaipai) plus
-  // boxes that have a curated Snkrdunk id (ja -> Snkrdunk).
-  const priceable = items.filter(i => i.itemType === 'single' || boxIdOf(i) != null);
+  // boxes that have a curated Snkrdunk id (ja -> Snkrdunk). Manual overrides are
+  // excluded so "更新價格" never clobbers a price the user set by hand.
+  const priceable = items.filter(
+    i => (i.itemType === 'single' || boxIdOf(i) != null) && i.marketPriceSource !== 'manual',
+  );
 
   const handleRefreshPrices = async () => {
     if (refreshing || priceable.length === 0) return;
@@ -1284,7 +1350,12 @@ export function Collection() {
       // a separate "更新價格" tap. Also refresh the FX rate so the TWD total is
       // consistent with the just-fetched price.
       fetchFxJpyToTwd().then(setFxRate).catch(() => {});
-      await addItem(await withMarketPrice(formToItem(f)));
+      const base = formToItem(f);
+      // A manual market price wins over (and skips) the auto-fetch.
+      const toAdd = f.manualPrice !== ''
+        ? { ...base, ...manualPriceFields(f.manualPrice) }
+        : await withMarketPrice(base);
+      await addItem(toAdd);
       setShowAddForm(false);
     } catch (err) {
       console.error(err);
@@ -1297,7 +1368,22 @@ export function Collection() {
   const handleUpdate = async (id: string, f: FormState) => {
     setSubmitting(true);
     try {
-      await updateItem(id, formToItem(f));
+      const base = formToItem(f);
+      const prev = items.find(i => i.id === id);
+      let updates: Omit<CollectionItem, 'id' | 'createdAt'> = base;
+      if (f.manualPrice !== '') {
+        // User set/kept a manual override → store it, stamped 'manual'.
+        updates = { ...base, ...manualPriceFields(f.manualPrice) };
+      } else if (prev?.marketPriceSource === 'manual') {
+        // Manual override was cleared → revert to auto: re-fetch, or wipe the
+        // stale manual price so the row re-prices on the next refresh.
+        const repriced = await withMarketPrice(base);
+        updates = repriced.marketPrice != null
+          ? repriced
+          : { ...base, marketPrice: undefined, marketPriceCurrency: undefined,
+              marketPriceSource: undefined, marketPriceUpdatedAt: undefined, marketPriceCondition: undefined };
+      }
+      await updateItem(id, updates);
       setEditingId(null);
     } catch (err) {
       console.error(err);
@@ -1654,7 +1740,7 @@ export function Collection() {
                     <div className="flex items-baseline justify-between gap-1">
                       <span
                         className="text-base font-black text-slate-100"
-                        title={item.marketPriceSource ? `市場價來源：${item.marketPriceSource}` : undefined}
+                        title={item.marketPriceSource ? `市場價來源：${item.marketPriceSource === 'manual' ? '手動輸入' : item.marketPriceSource}` : undefined}
                       >
                         {estTwd != null ? `NT$${estTwd.toLocaleString()}` : '—'}
                         {estTwd != null && est?.currency === 'JPY' && est.amount != null && (
@@ -1688,7 +1774,7 @@ export function Collection() {
                     {item.marketPrice != null && (item.marketPriceSource || item.marketPriceUpdatedAt || item.marketPriceCondition) && (
                       <p className="mt-0.5 text-[10px] text-slate-400 truncate">
                         {[
-                          item.marketPriceSource,
+                          item.marketPriceSource === 'manual' ? '手動輸入' : item.marketPriceSource,
                           relativeTime(item.marketPriceUpdatedAt),
                           item.marketPriceCondition
                             ? (!item.isGraded && isGradedCondition(item.marketPriceCondition)

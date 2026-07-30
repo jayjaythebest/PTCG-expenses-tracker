@@ -25,6 +25,7 @@ interface ItemRow {
   item_type: string | null;
   market_price: number | null;
   market_price_currency: string | null;
+  market_price_source: string | null;
   current_value: number | null;
   quantity: number | null;
   is_graded: boolean | null;
@@ -131,11 +132,13 @@ const REFRESH_CONCURRENCY = 5;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function refreshPrices(supabase: any, rows: ItemRow[]): Promise<{ refreshed: number }> {
   // Singles always; boxes only when they map to a curated Snkrdunk id (JA).
+  // Manual overrides are skipped so the cron never clobbers a hand-set price.
   const priceable = rows.filter(
     r =>
-      r.item_type === 'single' ||
-      (r.item_type === 'box' &&
-        boxSnkrdunkId(SET_CODE_BY_NAME[r.set_name ?? ''] ?? '', r.edition ?? 'ja') != null),
+      r.market_price_source !== 'manual' &&
+      (r.item_type === 'single' ||
+        (r.item_type === 'box' &&
+          boxSnkrdunkId(SET_CODE_BY_NAME[r.set_name ?? ''] ?? '', r.edition ?? 'ja') != null)),
   );
   let refreshed = 0;
   for (let i = 0; i < priceable.length; i += REFRESH_CONCURRENCY) {
@@ -164,7 +167,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const { data: items, error } = await supabase
     .from('collection_items')
-    .select('id, name, set_name, card_number, edition, item_type, market_price, market_price_currency, current_value, quantity, is_graded, grading_company, grade');
+    .select('id, name, set_name, card_number, edition, item_type, market_price, market_price_currency, market_price_source, current_value, quantity, is_graded, grading_company, grade');
 
   if (error) {
     return res.status(500).json({ error: error.message });
