@@ -9,6 +9,7 @@
 const HUCA_API = 'https://huca.tw/api/api.php';
 const KP_API = 'https://trade.kapaipai.tw/api';
 const TCGDEX_ZH_SETS = 'https://api.tcgdex.net/v2/zh-tw/sets';
+const TCGDEX_JA_SETS = 'https://api.tcgdex.net/v2/ja/sets';
 const SNKRDUNK_API = 'https://snkrdunk.com/v1/apparels';
 const UA = 'Mozilla/5.0 (compatible; PTCGTracker/1.0)';
 
@@ -72,6 +73,7 @@ export const EMPTY_PRICE: Omit<PriceResult, 'updatedAt'> = {
 
 // Source catalog caches (shared across lookups within a warm lambda).
 const TTL_MS = 12 * 60 * 60 * 1000;
+let jaSetNameToCodeCache: { at: number; map: Map<string, string[]> } | null = null;
 let kpPackListCache: { at: number; nameToId: Map<string, string>; idToId: Map<string, string> } | null = null;
 let tdZhSetsCache: { at: number; nameToId: Map<string, string> } | null = null;
 const kpPackDetailCache = new Map<string, { at: number; rows: KpCardRow[] }>();
@@ -153,6 +155,43 @@ export function extractNumber(num: string): string {
 }
 
 // -------- Huca (Japanese cards) --------------------------------------------
+
+// TCGdex ja set NAME -> set code(s). Huca uses the SAME set codes TCGdex does
+// (SV2D, M4, SV8a…). A collection item stores its set *name* (resolved from
+// TCGdex on scan), and that name frequently either isn't in the client's small
+// local product map — so the client sends an empty setCode — or maps to a
+// stale/wrong local code (e.g. クレイバースト is SV2D on Huca/TCGdex but sv1b
+// locally, 黒炎の支配者 is SV3 but sv2 locally). Resolving the code straight from
+// TCGdex by name is authoritative and fixes both, which is the main cause of
+// "many cards show no price". Cached per warm lambda.
+async function getJaSetNameToCode(): Promise<Map<string, string[]>> {
+  if (jaSetNameToCodeCache && Date.now() - jaSetNameToCodeCache.at < TTL_MS) {
+    return jaSetNameToCodeCache.map;
+  }
+  const list = await fetchJson<Array<{ id?: unknown; name?: unknown }>>(TCGDEX_JA_SETS);
+  const map = new Map<string, string[]>();
+  for (const s of list ?? []) {
+    const name = String(s?.name ?? '').trim();
+    const id = String(s?.id ?? '').trim();
+    if (!name || !id) continue;
+    const arr = map.get(name);
+    if (arr) arr.push(id);
+    else map.set(name, [id]);
+  }
+  if (map.size > 0) jaSetNameToCodeCache = { at: Date.now(), map };
+  return jaSetNameToCodeCache?.map ?? map;
+}
+
+// Authoritative Huca set code for a stored set name. Returns null when the name
+// is unknown OR ambiguous (a handful of TCGdex sets share a name) so the caller
+// falls back to the client-supplied code rather than guessing the wrong set.
+async function resolveHucaSetCode(setName: string): Promise<string | null> {
+  const name = (setName ?? '').trim();
+  if (!name) return null;
+  const map = await getJaSetNameToCode();
+  const ids = map.get(name);
+  return ids && ids.length === 1 ? ids[0] : null;
+}
 
 // Pick a usable price from a Huca row. Prefer the average, then the latest
 // transaction, then `sort_price` — which is frequently the ONLY populated field
@@ -298,36 +337,55 @@ async function resolveHucaResult(rows: HucaRow[], wantGrade: string | null): Pro
   return pickHucaRawResult(rows);
 }
 
-// Look a Japanese card up on Huca. Prefer an exact set+number query. Only fall
-// back to a name keyword search when there's no set code to query with, and even
-// then require the returned title to contain the card name — the name search
-// otherwise returns unrelated cards and mis-prices them.
+// Look a Japanese card up on Huca. Prefer an exact set+number query, resolving
+// the set code from the set NAME (TCGdex-authoritative) before trusting the
+// client-supplied code, then only fall back to a name keyword search when no set
+// code is available at all — and even then require the returned title to contain
+// the card name, since the name search otherwise mis-prices unrelated cards.
 async function lookupHuca(
   setCode: string,
+  setName: string,
   num: string,
   name: string,
   wantGrade: string | null = null,
 ): Promise<PriceResult | null> {
   const digits = extractNumber(num);
 
-  if (setCode && digits) {
-    const url = `${HUCA_API}?search=&set_code=${encodeURIComponent(setCode)}&card_number=${encodeURIComponent(digits)}&promo=0&accuracy=1&limit=10`;
-    const json = await fetchJson<{ data?: HucaRow[] }>(url);
-    const rows = json?.data ?? [];
-    const result = await resolveHucaResult(rows, wantGrade);
-    if (result) return result;
-  }
+  if (digits) {
+    // Try the authoritative code resolved from the set NAME (TCGdex ids == Huca
+    // codes) first, then the client-supplied code. This fixes cards whose stored
+    // setName isn't in the client's local product map (empty setCode) or maps to
+    // a stale/wrong code — the main "no price" cause. First code that returns a
+    // priced row wins; a valid set-code lookup for the real card number can't
+    // resolve to a different card.
+    const resolved = await resolveHucaSetCode(setName);
+    const seen = new Set<string>();
+    const candidates = [resolved, setCode.trim()].filter((c): c is string => !!c);
+    for (const code of candidates) {
+      const key = code.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const url = `${HUCA_API}?search=&set_code=${encodeURIComponent(code)}&card_number=${encodeURIComponent(digits)}&promo=0&accuracy=1&limit=10`;
+      const json = await fetchJson<{ data?: HucaRow[] }>(url);
+      const rows = json?.data ?? [];
+      const result = await resolveHucaResult(rows, wantGrade);
+      if (result) return result;
+    }
 
-  // Name-search fallback ONLY when we have no set code to query with.
-  if (!setCode && name) {
-    const url = `${HUCA_API}?search=${encodeURIComponent(name)}&promo=0&accuracy=1&limit=5`;
-    const json = await fetchJson<{ data?: HucaRow[] }>(url);
-    const rows = json?.data ?? [];
-    const needle = name.toLowerCase();
-    // Guard against unrelated matches: the title must mention the card name.
-    const related = rows.filter(r => (r.title ?? '').toLowerCase().includes(needle));
-    const result = await resolveHucaResult(related, wantGrade);
-    if (result) return result;
+    // Name-search fallback ONLY when we had no set code to query with at all
+    // (both the resolved and client codes were empty). It's kept narrow because
+    // a name keyword search readily returns a *different* same-named card and
+    // would mis-price it — a wrong price is worse than an honest "no price".
+    if (candidates.length === 0 && name) {
+      const url = `${HUCA_API}?search=${encodeURIComponent(name)}&promo=0&accuracy=1&limit=5`;
+      const json = await fetchJson<{ data?: HucaRow[] }>(url);
+      const rows = json?.data ?? [];
+      const needle = name.toLowerCase();
+      // Guard against unrelated matches: the title must mention the card name.
+      const related = rows.filter(r => (r.title ?? '').toLowerCase().includes(needle));
+      const result = await resolveHucaResult(related, wantGrade);
+      if (result) return result;
+    }
   }
 
   return null;
@@ -493,5 +551,5 @@ export async function resolveCardPrice(q: PriceQuery): Promise<PriceResult | nul
   if (edition === 'zh-tw') {
     return lookupKapaipai(q.setCode, q.setName, q.number, q.name);
   }
-  return lookupHuca(q.setCode, q.number, q.name, q.wantGrade ?? null);
+  return lookupHuca(q.setCode, q.setName, q.number, q.name, q.wantGrade ?? null);
 }
