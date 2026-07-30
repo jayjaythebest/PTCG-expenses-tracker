@@ -43,6 +43,16 @@ const GRADING_LABELS: Record<GradingCompany, string> = {
 
 const GRADE_OPTIONS = ['10', '9.5', '9', '8.5', '8', '7.5', '7', '6.5', '6', '5.5', '5', '4', '3', '2', '1'];
 
+// Map the AI-read slab company label (raw text like "PSA", "Beckett", "CGC") to
+// this app's grading enum. Anything recognized but unsupported → 'other'.
+function normalizeGradingCompany(raw?: string): GradingCompany | '' {
+  const s = (raw ?? '').trim().toLowerCase();
+  if (!s) return '';
+  if (s.includes('psa')) return 'psa';
+  if (s.includes('bgs') || s.includes('beckett')) return 'bgs';
+  return 'other';
+}
+
 const SERIES_OPTIONS = [...new Set(PTCG_PRODUCTS.map(p => p.series))];
 const SET_OPTIONS = PTCG_PRODUCTS.map(p => ({ value: p.name, series: p.series }));
 
@@ -427,6 +437,21 @@ function CollectionForm({
           imageUrl:   img || f.imageUrl,
         }));
         setScanResult('fallback');
+      }
+
+      // Graded slab: the label carries the grading company + grade + cert. Apply
+      // them on top of whichever branch resolved the card (matched/card/fallback)
+      // so a scan of a PSA/BGS/… holder auto-fills the 鑑定 fields the user would
+      // otherwise type by hand. A raw card leaves gradingCompany empty → no-op.
+      const gc = normalizeGradingCompany(scan.gradingCompany);
+      if (!scan.error && gc) {
+        setForm(f => ({
+          ...f,
+          isGraded: true,
+          gradingCompany: gc,
+          grade: scan.grade || f.grade,
+          gradingCert: scan.gradingCert || f.gradingCert,
+        }));
       }
     } catch (err) {
       console.error(err);

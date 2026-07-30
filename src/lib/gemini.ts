@@ -14,6 +14,11 @@ export interface CardScanResult {
   name: string;
   rarity: string;
   language: ScanLanguage | '';
+  // Graded-slab label, when the card is encased. Empty for raw cards.
+  // gradingCompany is the raw label text ("PSA"/"BGS"/…); the caller normalizes it.
+  gradingCompany?: string;
+  grade?: string;
+  gradingCert?: string;
   provider?: string; // which AI provider actually answered (debug/compare)
   model?: string;
   // 'ai_failed' when the provider chain errored / returned nothing readable
@@ -101,6 +106,9 @@ export async function recognizeCardFromPhoto(file: File): Promise<CardScanResult
       name: String(data.name ?? ''),
       rarity: String(data.rarity ?? ''),
       language: lang as ScanLanguage | '',
+      gradingCompany: typeof data.gradingCompany === 'string' ? data.gradingCompany : undefined,
+      grade: typeof data.grade === 'string' ? data.grade : undefined,
+      gradingCert: typeof data.gradingCert === 'string' ? data.gradingCert : undefined,
       provider: typeof data.provider === 'string' ? data.provider : undefined,
       model: typeof data.model === 'string' ? data.model : undefined,
       error: typeof data.error === 'string' ? data.error : undefined,
