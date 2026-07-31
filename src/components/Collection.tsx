@@ -8,7 +8,7 @@ import { cn } from '../lib/utils';
 import { recognizeCardFromPhoto } from '../lib/gemini';
 import { lookupCard, lookupTwCard, lookupSetImage, lookupTwCardImage, lookupJpCardImage, resolveJaSetCode, jpCardImageUrl, type ScanLanguage } from '../lib/tcgdex';
 import { fetchCardPrice, fetchFxJpyToTwd } from '../lib/pricing';
-import { Plus, Trash2, Pencil, X, Check, TrendingUp, TrendingDown, Package, CreditCard, Camera, Loader2, Sparkles, ImagePlus, ImageOff, RefreshCw, Search, ArrowUp, ArrowDown } from 'lucide-react';
+import { Plus, Trash2, Pencil, X, Check, TrendingUp, TrendingDown, Package, CreditCard, Camera, Loader2, Sparkles, ImagePlus, ImageOff, RefreshCw, Search, ArrowUp, ArrowDown, RotateCcw, ChevronDown } from 'lucide-react';
 
 const ITEM_TYPE_LABELS: Record<CollectionItemType, string> = {
   single: '單卡',
@@ -997,7 +997,10 @@ function GalleryImage({ item }: { item: CollectionItem }) {
   // An ordered list of candidate image URLs; the <img> advances to the next one
   // on load error, so a missing per-card scan degrades to the set logo (and
   // finally a placeholder) rather than a blank tile.
-  const [candidates, setCandidates] = useState<string[]>([]);
+  // Each candidate carries a `cover` flag: real card art fills the tile edge-to-
+  // edge (object-cover) so it looks crisp and large; set-logo / box fallbacks are
+  // letterboxed (object-contain) so their wide artwork isn't cropped.
+  const [candidates, setCandidates] = useState<{ url: string; cover: boolean }[]>([]);
   const [idx, setIdx] = useState(0);
 
   useEffect(() => {
@@ -1017,9 +1020,13 @@ function GalleryImage({ item }: { item: CollectionItem }) {
         : undefined;
     const num = collectorNo(item.cardNumber);
 
-    const build = async (): Promise<string[]> => {
-      const out: string[] = [];
-      const push = (u?: string | null) => { if (u && !out.includes(u)) out.push(u); };
+    const build = async (): Promise<{ url: string; cover: boolean }[]> => {
+      const out: { url: string; cover: boolean }[] = [];
+      // cover=true for real card art (fills the tile); cover=false for set-logo
+      // fallbacks and box art (letterboxed so nothing important is cropped).
+      const push = (u?: string | null, cover = true) => {
+        if (u && !out.some(c => c.url === u)) out.push({ url: u, cover });
+      };
 
       // The setName of a brand-new set (e.g. M4) isn't in local products, so fall
       // back to TCGdex's ja set-name → code map to recover its code.
@@ -1038,24 +1045,25 @@ function GalleryImage({ item }: { item: CollectionItem }) {
             push(jpCardImageUrl(sc, num)); // direct Limitless URL (dev / proxy-down fallback)
           }
         }
-        if (sc) push((await lookupSetImage(sc, lang))?.imageUrl); // set logo last
+        if (sc) push((await lookupSetImage(sc, lang))?.imageUrl, false); // set logo last (letterboxed)
         return out;
       }
 
-      // Boxes (incl. legacy 'pack'): prefer official set art, then stored logo.
-      if (sc) push((await lookupSetImage(sc, lang))?.imageUrl);
-      push(storedUsable);
+      // Boxes (incl. legacy 'pack'): prefer official set art, then stored logo —
+      // both letterboxed (box/logo art is wide and shouldn't be cropped).
+      if (sc) push((await lookupSetImage(sc, lang))?.imageUrl, false);
+      push(storedUsable, false);
       return out;
     };
 
     build()
       .then(list => { if (alive) setCandidates(list); })
-      .catch(() => { if (alive) setCandidates(storedUsable ? [storedUsable] : []); });
+      .catch(() => { if (alive) setCandidates(storedUsable ? [{ url: storedUsable, cover: false }] : []); });
     return () => { alive = false; };
   }, [item.imageUrl, item.setName, item.edition, item.itemType, item.cardNumber]);
 
-  const src = candidates[idx];
-  if (!src) {
+  const cand = candidates[idx];
+  if (!cand) {
     return (
       <div className="w-full h-full flex flex-col items-center justify-center gap-1 text-slate-600">
         <div className="scale-[2.2]"><ItemTypeIcon type={item.itemType} /></div>
@@ -1065,11 +1073,14 @@ function GalleryImage({ item }: { item: CollectionItem }) {
   }
   return (
     <img
-      src={src}
+      src={cand.url}
       alt={item.name}
       referrerPolicy="no-referrer"
       onError={() => setIdx(i => i + 1)}
-      className="w-full h-full object-contain p-2"
+      className={cn(
+        'w-full h-full',
+        cand.cover ? 'object-cover' : 'object-contain p-2',
+      )}
     />
   );
 }
@@ -1119,7 +1130,8 @@ function CollectionModal({
 }
 
 export function Collection() {
-  const { items, loading, addItem, updateItem, deleteItem } = useCollection();
+  const { items, deletedItems, loading, addItem, updateItem, deleteItem, restoreItem, purgeItem } = useCollection();
+  const [showGraveyard, setShowGraveyard] = useState(false);
   const [filterType, setFilterType] = useState<FilterType>('all');
   const [query, setQuery] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('value');
@@ -1393,10 +1405,31 @@ export function Collection() {
     }
   };
 
+  // Soft delete → the card moves to the 已刪除 graveyard, where it can be
+  // restored or permanently removed.
   const handleDelete = async (id: string) => {
-    if (!confirm('確定要刪除這筆收藏嗎？')) return;
+    if (!confirm('確定要刪除這筆收藏嗎？（可到「已刪除」區域還原）')) return;
     try {
       await deleteItem(id);
+    } catch (err) {
+      console.error(err);
+      alert('刪除失敗');
+    }
+  };
+
+  const handleRestore = async (id: string) => {
+    try {
+      await restoreItem(id);
+    } catch (err) {
+      console.error(err);
+      alert('還原失敗');
+    }
+  };
+
+  const handlePurge = async (id: string) => {
+    if (!confirm('永久刪除後無法復原，確定嗎？')) return;
+    try {
+      await purgeItem(id);
     } catch (err) {
       console.error(err);
       alert('刪除失敗');
@@ -1689,8 +1722,8 @@ export function Collection() {
                     </span>
                   )}
 
-                  {/* Actions (reveal on hover) */}
-                  <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {/* Actions (always visible so they work on touch/mobile too) */}
+                  <div className="absolute top-1.5 right-1.5 flex gap-1">
                     <button
                       onClick={() => { setEditingId(item.id); setShowAddForm(false); }}
                       className="p-1.5 rounded-lg bg-black/40 backdrop-blur text-slate-200 hover:text-poke-accent shadow-sm transition-colors"
@@ -1789,6 +1822,58 @@ export function Collection() {
               </motion.div>
             );
           })}
+        </div>
+      )}
+
+      {/* 已刪除 graveyard — soft-deleted cards, restorable or purgeable. */}
+      {deletedItems.length > 0 && (
+        <div className="pt-2">
+          <button
+            onClick={() => setShowGraveyard(v => !v)}
+            className="flex items-center gap-1.5 text-sm font-bold text-slate-400 hover:text-slate-200 transition-colors"
+          >
+            <Trash2 className="w-4 h-4" />
+            已刪除（{deletedItems.length}）
+            <ChevronDown className={cn('w-4 h-4 transition-transform', showGraveyard && 'rotate-180')} />
+          </button>
+
+          {showGraveyard && (
+            <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              {deletedItems.map(item => (
+                <div
+                  key={item.id}
+                  className="relative bg-surface/60 rounded-2xl border border-white/10 overflow-hidden flex flex-col opacity-75"
+                >
+                  <div className="relative aspect-[3/4] bg-white/5 border-b border-white/10 grayscale">
+                    <GalleryImage item={item} />
+                  </div>
+                  <div className="p-2.5 flex flex-col gap-2 flex-1">
+                    <p className="font-black text-slate-200 text-sm leading-tight line-clamp-2">{item.name}</p>
+                    {(item.setName || item.cardNumber) && (
+                      <p className="text-[11px] text-slate-500 truncate">
+                        {item.setName}{item.cardNumber ? ` · ${item.cardNumber}` : ''}
+                      </p>
+                    )}
+                    <div className="mt-auto flex gap-1.5">
+                      <button
+                        onClick={() => handleRestore(item.id)}
+                        className="flex-1 inline-flex items-center justify-center gap-1 py-1.5 rounded-lg bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25 text-[11px] font-bold transition-colors"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" /> 還原
+                      </button>
+                      <button
+                        onClick={() => handlePurge(item.id)}
+                        className="inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-500/10 text-red-300 hover:bg-red-500/20 text-[11px] font-bold transition-colors"
+                        title="永久刪除"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

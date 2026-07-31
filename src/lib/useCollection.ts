@@ -30,6 +30,7 @@ function mapRow(row: Record<string, unknown>): CollectionItem {
     gradingCompany:(row.grading_company as CollectionItem['gradingCompany']) ?? undefined,
     grade:         row.grade as string | undefined,
     gradingCert:   row.grading_cert as string | undefined,
+    deletedAt:     (row.deleted_at as string | null) ?? undefined,
     createdAt:     row.created_at as string,
   };
 }
@@ -37,7 +38,10 @@ function mapRow(row: Record<string, unknown>): CollectionItem {
 type CollectionInput = Omit<CollectionItem, 'id' | 'createdAt'>;
 
 export function useCollection() {
+  // Active cards (deleted_at null) shown in the gallery.
   const [items, setItems] = useState<CollectionItem[]>([]);
+  // Soft-deleted cards (deleted_at set) shown in the 已刪除 graveyard, restorable.
+  const [deletedItems, setDeletedItems] = useState<CollectionItem[]>([]);
   const [loading, setLoading] = useState(true);
   const channelName = useRef(`collection-${++channelCounter}`).current;
 
@@ -50,7 +54,9 @@ export function useCollection() {
     if (error) {
       console.error('Supabase error:', error);
     } else {
-      setItems((data ?? []).map(mapRow));
+      const rows = (data ?? []).map(mapRow);
+      setItems(rows.filter(r => !r.deletedAt));
+      setDeletedItems(rows.filter(r => r.deletedAt));
     }
     setLoading(false);
   }
@@ -124,10 +130,30 @@ export function useCollection() {
     if (error) throw error;
   };
 
+  // Soft delete: tombstone the row so it moves to the 已刪除 graveyard instead
+  // of being lost. Restorable via restoreItem; permanently removed via purgeItem.
   const deleteItem = async (id: string) => {
+    const { error } = await supabase
+      .from('collection_items')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) throw error;
+  };
+
+  // Bring a soft-deleted card back to the active gallery.
+  const restoreItem = async (id: string) => {
+    const { error } = await supabase
+      .from('collection_items')
+      .update({ deleted_at: null })
+      .eq('id', id);
+    if (error) throw error;
+  };
+
+  // Permanent hard delete (from the graveyard). This cannot be undone.
+  const purgeItem = async (id: string) => {
     const { error } = await supabase.from('collection_items').delete().eq('id', id);
     if (error) throw error;
   };
 
-  return { items, loading, addItem, updateItem, deleteItem };
+  return { items, deletedItems, loading, addItem, updateItem, deleteItem, restoreItem, purgeItem };
 }

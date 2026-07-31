@@ -45,6 +45,10 @@ export interface CollectionItem {
   marketPriceSource?: string;    // 'huca' | 'kapaipai' | …
   marketPriceUpdatedAt?: string; // ISO timestamp of the last successful fetch
   marketPriceCondition?: string; // normalised condition of the priced row: raw 'A'/'B'/… or graded 'PSA10'
+  // Soft-delete tombstone. Null/absent = active; an ISO timestamp = in the
+  // "已刪除" graveyard, hidden from the gallery but restorable. Lets a user undo
+  // an accidental delete instead of losing the row (and its price history).
+  deletedAt?: string;
   createdAt: string;
 }
 
