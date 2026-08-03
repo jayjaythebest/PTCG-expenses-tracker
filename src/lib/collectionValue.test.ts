@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { toTwd, estValue, totalCurrentTwd, totalPnlTwd, topMoversTwd } from './collectionValue';
-import { CollectionItem } from '../types';
+import {
+  toTwd, estValue, totalCurrentTwd, totalPnlTwd,
+  topMoversTwd, topMoversByHistory, moverBaselineDate,
+} from './collectionValue';
+import { CollectionItem, ItemPricePoint } from '../types';
 
 // Build a minimal CollectionItem for tests, overriding only what matters.
 function item(overrides: Partial<CollectionItem>): CollectionItem {
@@ -114,7 +117,7 @@ describe('topMoversTwd', () => {
     expect(topMoversTwd(items, 0.2, 3)).toEqual([]);
   });
 
-  it('compares a TWD-priced card against the JPY baseline correctly', () => {
+  it('compares a TWD-priced card against the JPY estimate correctly', () => {
     // 300 TWD market vs 1000 JPY (= 200 TWD) base → +50%.
     const [m] = topMoversTwd(
       [item({ marketPrice: 300, marketPriceCurrency: 'TWD', currentValue: 1000 })],
@@ -122,5 +125,91 @@ describe('topMoversTwd', () => {
     );
     expect(m.diff).toBe(100);
     expect(m.pct).toBeCloseTo(50);
+  });
+});
+
+// A fixed "now" keeps these deterministic; helpers below express dates relative
+// to it the way the real data does.
+const NOW = new Date('2026-08-10T12:00:00');
+
+function daysBefore(n: number): string {
+  const d = new Date(NOW.getTime() - n * 86_400_000);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function point(itemId: string, daysAgo: number, unitTwd: number): ItemPricePoint {
+  return { itemId, date: daysBefore(daysAgo), unitTwd, price: unitTwd * 5, currency: 'JPY' };
+}
+
+describe('moverBaselineDate', () => {
+  it('picks the newest day at least `days` back', () => {
+    const pts = [point('a', 20, 100), point('a', 9, 100), point('a', 3, 100)];
+    expect(moverBaselineDate(pts, 7, NOW)).toBe(daysBefore(9));
+  });
+
+  it('falls back to the oldest day when history is younger than the window', () => {
+    const pts = [point('a', 3, 100), point('a', 1, 100)];
+    expect(moverBaselineDate(pts, 7, NOW)).toBe(daysBefore(3));
+  });
+
+  it('returns null when only today has been recorded', () => {
+    expect(moverBaselineDate([point('a', 0, 100)], 7, NOW)).toBeNull();
+  });
+
+  it('returns null with no history at all', () => {
+    expect(moverBaselineDate([], 7, NOW)).toBeNull();
+  });
+});
+
+describe('topMoversByHistory', () => {
+  it('measures each card against its recorded value on one shared baseline day', () => {
+    const items = [
+      item({ id: 'a', marketPrice: 1500, marketPriceCurrency: 'JPY' }), // now 300 TWD
+      item({ id: 'b', marketPrice: 1000, marketPriceCurrency: 'JPY' }), // now 200 TWD
+    ];
+    const pts = [point('a', 8, 200), point('b', 8, 500)];
+    const w = topMoversByHistory(items, pts, 0.2, { now: NOW })!;
+
+    expect(w.baselineDate).toBe(daysBefore(8));
+    expect(w.days).toBe(8);
+    // a: 200 → 300 = +50%; b: 500 → 200 = −60%, so b leads on swing size.
+    expect(w.movers.map(m => m.id)).toEqual(['b', 'a']);
+    expect(w.movers[0].pct).toBeCloseTo(-60);
+    expect(w.movers[1].diff).toBe(100);
+  });
+
+  it('ignores cards with no row on the baseline day (bought after we started watching)', () => {
+    const items = [
+      item({ id: 'old', marketPrice: 1500, marketPriceCurrency: 'JPY' }),
+      item({ id: 'new', marketPrice: 5000, marketPriceCurrency: 'JPY' }),
+    ];
+    const pts = [point('old', 8, 200), point('new', 0, 1000)];
+    const w = topMoversByHistory(items, pts, 0.2, { now: NOW })!;
+    expect(w.movers.map(m => m.id)).toEqual(['old']);
+  });
+
+  it('scales money by quantity but leaves the percentage per-card', () => {
+    const items = [item({ id: 'a', marketPrice: 1500, marketPriceCurrency: 'JPY', quantity: 4 })];
+    const w = topMoversByHistory(items, [point('a', 8, 200)], 0.2, { now: NOW })!;
+    expect(w.movers[0].diff).toBe(400); // (300 − 200) × 4
+    expect(w.movers[0].pct).toBeCloseTo(50);
+  });
+
+  it('returns null when history is too young to compare', () => {
+    const items = [item({ id: 'a', marketPrice: 1500, marketPriceCurrency: 'JPY' })];
+    expect(topMoversByHistory(items, [point('a', 0, 200)], 0.2, { now: NOW })).toBeNull();
+    expect(topMoversByHistory(items, [], 0.2, { now: NOW })).toBeNull();
+  });
+
+  it('omits cards whose price has not budged', () => {
+    const items = [item({ id: 'a', marketPrice: 1000, marketPriceCurrency: 'JPY' })];
+    const w = topMoversByHistory(items, [point('a', 8, 200)], 0.2, { now: NOW })!;
+    expect(w.movers).toEqual([]);
+  });
+
+  it('uses the manual estimate as "now" when a card has no market price', () => {
+    const items = [item({ id: 'a', currentValue: 2000 })]; // 400 TWD now
+    const w = topMoversByHistory(items, [point('a', 8, 200)], 0.2, { now: NOW })!;
+    expect(w.movers[0].pct).toBeCloseTo(100);
   });
 });

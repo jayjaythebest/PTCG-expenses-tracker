@@ -61,6 +61,16 @@ export interface CollectionValueSnapshot {
   itemCount: number; // total quantity of cards that day
 }
 
+// One card's recorded value on one day. `unitTwd` is per copy (quantity is NOT
+// baked in) so that buying a second copy of a card never reads as a price rise.
+export interface ItemPricePoint {
+  itemId: string;
+  date: string;    // ISO 'YYYY-MM-DD'
+  unitTwd: number; // that day's per-card value in TWD
+  price: number;   // the untouched source figure…
+  currency: string; // …in this currency ('JPY' | 'TWD')
+}
+
 export interface UserProfile {
   uid: string;
   email: string;

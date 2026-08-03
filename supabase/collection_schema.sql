@@ -105,3 +105,36 @@ create table if not exists public.collection_value_snapshots (
 alter table public.collection_value_snapshots enable row level security;
 
 -- Policies live in auth_lockdown.sql — run that file after this one.
+
+-- ============================================================
+-- Per-card daily price history.
+-- collection_value_snapshots above only stores the collection TOTAL, which mixes
+-- two different things: prices moving, and the user buying more cards. This
+-- table keeps one row per card per day so we can answer "which cards moved, and
+-- by how much" and chart price-only change. Written by the daily cron
+-- (/api/snapshot-collection) and by the client on load — both upsert on
+-- (item_id, snapshot_date), so writes are idempotent. Safe to run repeatedly.
+--
+-- `unit_twd` is the per-card TWD value (NOT multiplied by quantity) so that
+-- buying a second copy never looks like a price rise. `price` + `currency` keep
+-- the untouched source figure, which lets a later FX-neutral comparison exist.
+-- ============================================================
+create table if not exists public.collection_price_history (
+  item_id       uuid        not null references public.collection_items(id) on delete cascade,
+  snapshot_date date        not null,
+  price         numeric     not null,
+  currency      text        not null default 'JPY',
+  unit_twd      numeric     not null,
+  quantity      integer     not null default 1,
+  source        text,
+  created_at    timestamptz not null default now(),
+  primary key (item_id, snapshot_date)
+);
+
+-- The home screen reads a recent window across all cards, so date leads.
+create index if not exists collection_price_history_date_idx
+  on public.collection_price_history (snapshot_date desc);
+
+alter table public.collection_price_history enable row level security;
+
+-- Policies live in auth_lockdown.sql — run that file after this one.

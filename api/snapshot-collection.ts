@@ -5,12 +5,15 @@ import { supabaseUrl, serviceRoleKey } from './_lib/env.js';
 import { PTCG_PRODUCTS } from '../src/data/ptcg-products.js';
 import { boxSnkrdunkId } from '../src/data/ptcg-boxes.js';
 
-// Daily cron. Two jobs, in order:
+// Daily cron. Three jobs, in order:
 //   1. Refresh every single card's live market price from its source (Huca for
 //      Japanese cards, kapaipai for zh-tw) and persist it back to the row — so
 //      prices update automatically each day, not only when the user taps
 //      「更新價格」in the app.
-//   2. Record ONE snapshot of the whole collection's current market value (TWD)
+//   2. Record EACH card's price for today in collection_price_history, so
+//      "which cards moved this week" is answerable. The collection total alone
+//      can't answer it: the total also moves when cards are bought or sold.
+//   3. Record ONE snapshot of the whole collection's current market value (TWD)
 //      so the home screen can show a stock-ticker-style week-over-week change
 //      and trend line — even on days the user never opens the app. Keyed by
 //      date, so it's idempotent with the client-side upsert-on-load.
@@ -59,16 +62,20 @@ async function jpyToTwd(): Promise<number> {
   return FALLBACK_JPY_TO_TWD;
 }
 
-// A card's current value in TWD (quantity-aware): market price wins (its own
+// A single card's value in TWD, per copy: market price wins (in its own
 // currency), else the manual estimate (JPY). Mirrors src/lib/collectionValue.ts.
-function valueTwd(row: ItemRow, rate: number): number {
-  const qty = row.quantity ?? 1;
+function unitTwd(row: ItemRow, rate: number): number {
   if (row.market_price != null) {
     const twd = row.market_price_currency === 'TWD' ? row.market_price : row.market_price * rate;
-    return Math.round(twd) * qty;
+    return Math.round(twd);
   }
-  if (row.current_value != null) return Math.round(row.current_value * rate) * qty;
+  if (row.current_value != null) return Math.round(row.current_value * rate);
   return 0;
+}
+
+// Quantity-aware value of a holding, for the collection total.
+function valueTwd(row: ItemRow, rate: number): number {
+  return unitTwd(row, rate) * (row.quantity ?? 1);
 }
 
 // Re-fetch and persist each single card's live market price. Mutates the passed
@@ -150,6 +157,44 @@ async function refreshPrices(supabase: any, rows: ItemRow[]): Promise<{ refreshe
   return { refreshed };
 }
 
+// Persist today's per-card prices so "which cards moved" is answerable later.
+// Deliberately non-fatal: a missing table (the migration hasn't been run yet) or
+// a write error must not lose the collection-total snapshot below, which is the
+// job's primary output. Returns a short reason when it didn't write.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function recordPriceHistory(
+  supabase: any,
+  rows: ItemRow[],
+  rate: number,
+  date: string,
+): Promise<{ written: number; error?: string }> {
+  // Only cards we can actually price — a 0 would poison a future baseline.
+  const payload = rows
+    .map(r => ({ r, unit: unitTwd(r, rate) }))
+    .filter(({ unit }) => unit > 0)
+    .map(({ r, unit }) => ({
+      item_id: r.id,
+      snapshot_date: date,
+      price: r.market_price ?? r.current_value ?? 0,
+      currency: r.market_price != null ? (r.market_price_currency ?? 'JPY') : 'JPY',
+      unit_twd: unit,
+      quantity: r.quantity ?? 1,
+      source: r.market_price != null ? (r.market_price_source ?? null) : 'estimate',
+    }));
+
+  if (!payload.length) return { written: 0 };
+
+  const { error } = await supabase
+    .from('collection_price_history')
+    .upsert(payload, { onConflict: 'item_id,snapshot_date' });
+
+  if (error) {
+    console.error('[snapshot-collection] price history write failed:', error.message);
+    return { written: 0, error: error.message };
+  }
+  return { written: payload.length };
+}
+
 function todayIso(): string {
   // Taiwan calendar day (UTC+8), so the snapshot date matches the user's day.
   const tw = new Date(Date.now() + 8 * 60 * 60 * 1000);
@@ -169,9 +214,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
   const supabase = createClient(url, key);
 
+  // Soft-deleted cards (deleted_at set) sit in the app's 已刪除 graveyard and are
+  // excluded from the totals the UI shows — so exclude them here too, or the
+  // cron's snapshot would disagree with the app and the trend line would step.
   const { data: items, error } = await supabase
     .from('collection_items')
-    .select('id, name, set_name, card_number, edition, item_type, market_price, market_price_currency, market_price_source, current_value, quantity, is_graded, grading_company, grade');
+    .select('id, name, set_name, card_number, edition, item_type, market_price, market_price_currency, market_price_source, current_value, quantity, is_graded, grading_company, grade')
+    .is('deleted_at', null);
 
   if (error) {
     return res.status(500).json({ error: error.message });
@@ -182,8 +231,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // 1) Refresh live prices (mutates rows in place).
   const { refreshed } = await refreshPrices(supabase, rows);
 
-  // 2) Snapshot today's total from the freshened prices.
+  // 2) Record each card's price for today (per-card history).
   const rate = await jpyToTwd();
+  const history = await recordPriceHistory(supabase, rows, rate, todayIso());
+
+  // 3) Snapshot today's total from the freshened prices.
   const totalTwd = rows.reduce((sum, r) => sum + valueTwd(r, rate), 0);
   const itemCount = rows.reduce((sum, r) => sum + (r.quantity ?? 1), 0);
 
@@ -204,5 +256,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     refreshed,
     totalTwd: Math.round(totalTwd),
     itemCount,
+    historyRows: history.written,
+    ...(history.error ? { historyError: history.error } : {}),
   });
 }

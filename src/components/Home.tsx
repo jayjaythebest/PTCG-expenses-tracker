@@ -3,7 +3,11 @@ import { useExpenses } from '../lib/useExpenses';
 import { useCollection } from '../lib/useCollection';
 import { useValueSnapshots } from '../lib/useValueSnapshots';
 import { useFxRateWithMeta } from '../lib/useFxRate';
-import { totalCurrentTwd, totalItemCount, totalPnlTwd, topMoversTwd, type ValueMover } from '../lib/collectionValue';
+import {
+  totalCurrentTwd, totalItemCount, totalPnlTwd,
+  topMoversTwd, topMoversByHistory, type ValueMover,
+} from '../lib/collectionValue';
+import { usePriceHistory } from '../lib/usePriceHistory';
 import { inMonth } from '../lib/utils';
 import { Expense } from '../types';
 import {
@@ -70,6 +74,7 @@ export function Home({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
   const { expenses } = useExpenses();
   const { items, loading: colLoading } = useCollection();
   const { snapshots, recordToday } = useValueSnapshots();
+  const { points: pricePoints, recordToday: recordPrices } = usePriceHistory();
   const { rate: fxRate, updatedAt: fxUpdatedAt } = useFxRateWithMeta();
 
   const now = new Date();
@@ -80,13 +85,29 @@ export function Home({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
   const liveTotalTwd = useMemo(() => totalCurrentTwd(items, fxRate), [items, fxRate]);
   const itemCount = useMemo(() => totalItemCount(items), [items]);
   const pnl = useMemo(() => totalPnlTwd(items, fxRate), [items, fxRate]);
-  const movers = useMemo(() => topMoversTwd(items, fxRate, 3), [items, fxRate]);
+  // Prefer real recorded history ("這張卡近 N 日漲跌"). Until the history table
+  // has a day older than today to compare against, fall back to the static
+  // 現估價 baseline so the card still says something useful — the subtitle makes
+  // clear which of the two is on screen.
+  const moverWindow = useMemo(
+    () => topMoversByHistory(items, pricePoints, fxRate, { days: 7, limit: 3 }),
+    [items, pricePoints, fxRate],
+  );
+  const estimateMovers = useMemo(() => topMoversTwd(items, fxRate, 3), [items, fxRate]);
+  const movers = moverWindow && moverWindow.movers.length > 0 ? moverWindow.movers : estimateMovers;
+  const moversFromHistory = Boolean(moverWindow && moverWindow.movers.length > 0);
 
   // Record/refresh today's snapshot once the live value is known, so history
   // accrues even between daily cron runs and reflects newly added cards.
   useEffect(() => {
     if (!colLoading && liveTotalTwd > 0) recordToday(liveTotalTwd, itemCount);
   }, [colLoading, liveTotalTwd, itemCount, recordToday]);
+
+  // Same idea per card, so tomorrow's comparison has a baseline even if the
+  // daily cron never ran.
+  useEffect(() => {
+    if (!colLoading && items.length > 0) recordPrices(items, fxRate);
+  }, [colLoading, items, fxRate, recordPrices]);
 
   // ---- Change vs. an earlier snapshot ----
   // Prefer a true 7-day baseline; when history is younger, fall back to the
@@ -210,7 +231,11 @@ export function Home({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
               看收藏庫 <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>
-          <p className="text-xs text-slate-400 mt-0.5">市價相對你的現估價，漲跌幅最大的項目</p>
+          <p className="text-xs text-slate-400 mt-0.5">
+            {moversFromHistory
+              ? `近 ${moverWindow?.days} 日市價漲跌幅最大的項目`
+              : '市價相對你的現估價（每日價格記錄累積中）'}
+          </p>
 
           <ol className="mt-3 space-y-2">
             {movers.map((m, idx) => (

@@ -4,7 +4,7 @@
 // A card's "current value" is the auto-fetched market price when we have one
 // (in its own currency), otherwise the user's manual estimate (JPY). Everything
 // is normalised to TWD for cross-currency totals using the JPY->TWD rate.
-import { CollectionItem } from '../types';
+import { CollectionItem, ItemPricePoint } from '../types';
 
 // JPY -> TWD (rounded to whole TWD).
 export function twdOf(jpy: number, rate: number): number {
@@ -95,7 +95,96 @@ export function topMoversTwd(items: CollectionItem[], rate: number, limit = 3): 
       pct: (unitDiff / unitBase) * 100,
     });
   }
+  return rankMovers(movers, limit);
+}
+
+// Shared ranking: biggest swing first, money breaking percentage ties.
+function rankMovers(movers: ValueMover[], limit: number): ValueMover[] {
   return movers
     .sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct) || Math.abs(b.diff) - Math.abs(a.diff))
     .slice(0, limit);
+}
+
+function isoDay(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// Picks ONE baseline day for the whole comparison: the most recent recorded day
+// at least `days` back, else the oldest day on record so the feature isn't blank
+// for a week after the history table starts filling. Returns null when the only
+// history we have is today's — nothing has had time to move yet.
+//
+// A single shared baseline (rather than per-card) is what makes the headline
+// honest: every card in the list is measured over the same window, and a card
+// bought after that day simply doesn't appear, which is correct — it hasn't
+// moved, we just started watching it.
+export function moverBaselineDate(
+  points: ItemPricePoint[],
+  days = 7,
+  now: Date = new Date(),
+): string | null {
+  if (!points.length) return null;
+  const today = isoDay(now);
+  const dates = [...new Set(points.map(p => p.date))].filter(d => d < today).sort();
+  if (!dates.length) return null;
+  const cutoff = isoDay(new Date(now.getTime() - days * 24 * 60 * 60 * 1000));
+  return [...dates].reverse().find(d => d <= cutoff) ?? dates[0];
+}
+
+export interface MoverWindow {
+  baselineDate: string;
+  days: number;         // elapsed days the numbers cover
+  movers: ValueMover[];
+}
+
+// The biggest movers measured against recorded history — the real "這張卡漲跌了
+// 多少", as opposed to topMoversTwd's comparison against a static estimate.
+// Returns null when history is too young to compare, so callers can fall back.
+export function topMoversByHistory(
+  items: CollectionItem[],
+  points: ItemPricePoint[],
+  rate: number,
+  { days = 7, limit = 3, now = new Date() }: { days?: number; limit?: number; now?: Date } = {},
+): MoverWindow | null {
+  const baselineDate = moverBaselineDate(points, days, now);
+  if (!baselineDate) return null;
+
+  // Each card's recorded value on the baseline day.
+  const baseByItem = new Map<string, number>();
+  for (const p of points) {
+    if (p.date === baselineDate) baseByItem.set(p.itemId, p.unitTwd);
+  }
+
+  const movers: ValueMover[] = [];
+  for (const i of items) {
+    const unitBase = baseByItem.get(i.id);
+    if (unitBase == null || unitBase <= 0) continue; // not held / not priced then
+    const est = estValue(i);
+    if (!est) continue;
+    const unitNow = toTwd(est.amount, est.currency, rate);
+    const unitDiff = unitNow - unitBase;
+    if (unitDiff === 0) continue;
+    movers.push({
+      id: i.id,
+      name: i.name,
+      setName: i.setName,
+      imageUrl: i.imageUrl,
+      quantity: i.quantity,
+      diff: unitDiff * i.quantity,
+      base: unitBase * i.quantity,
+      pct: (unitDiff / unitBase) * 100,
+    });
+  }
+
+  // Calendar days between the baseline day and today, NOT elapsed hours — the UI
+  // renders this as "近 N 日", and a baseline 8 days ago read at noon must not
+  // round up to 9.
+  const elapsed = Math.max(
+    1,
+    Math.round(
+      (new Date(`${isoDay(now)}T00:00:00`).getTime() - new Date(`${baselineDate}T00:00:00`).getTime())
+        / 86_400_000,
+    ),
+  );
+  return { baselineDate, days: elapsed, movers: rankMovers(movers, limit) };
 }
