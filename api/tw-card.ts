@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { requireUser } from './_lib/auth.js';
 
 // Resolves full Traditional-Chinese CARD DATA (name + collector number + precise
 // artwork) from the official Pokémon TCG Asia site (asia.pokemon-card.com/tw).
@@ -237,6 +238,8 @@ function setCodeCandidates(raw: string): string[] {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (!(await requireUser(req, res))) return;
+
   const setRaw = String(req.query.set ?? '').trim();
   const numberRaw = String(req.query.number ?? '').trim();
   const nameRaw = String(req.query.name ?? '').trim();

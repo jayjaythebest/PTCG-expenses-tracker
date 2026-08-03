@@ -1,4 +1,5 @@
 import type { ScanLanguage } from './tcgdex';
+import { apiFetch } from './apiFetch';
 
 // Thin client wrappers over the serverless AI endpoints (api/scan-card,
 // api/detect-series, api/summary). The AI provider keys live ONLY on the server
@@ -82,7 +83,7 @@ async function fileToScaledBase64(
 export async function recognizeCardFromPhoto(file: File): Promise<CardScanResult> {
   try {
     const { base64, mimeType } = await fileToScaledBase64(file);
-    const res = await fetch('/api/scan-card', {
+    const res = await apiFetch('/api/scan-card', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ imageBase64: base64, mimeType }),
@@ -135,7 +136,7 @@ export async function generateWeeklySummary(expenses: WeeklySummaryExpense[]): P
   if (expenses.length === 0) {
     return '本週沒有任何支出或收入記錄，繼續保持荷包扎實！';
   }
-  const res = await fetch('/api/summary', {
+  const res = await apiFetch('/api/summary', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ expenses }),
@@ -147,7 +148,7 @@ export async function generateWeeklySummary(expenses: WeeklySummaryExpense[]): P
 
 export async function detectPtcgSeries(title: string): Promise<string> {
   try {
-    const res = await fetch('/api/detect-series', {
+    const res = await apiFetch('/api/detect-series', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title }),

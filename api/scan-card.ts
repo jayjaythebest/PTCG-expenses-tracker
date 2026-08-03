@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { Type } from '@google/genai';
 import { visionJson, enabledProviders, type VisionAttempt } from './_lib/ai.js';
 import { getKnownSetCodes } from './_lib/setcodes.js';
+import { requireUser } from './_lib/auth.js';
 
 // Vision OCR of a Pokémon card. The client posts a (downscaled) base64 image;
 // we read only the reliably-printed identifiers and return them. Authoritative
@@ -53,6 +54,8 @@ const scanSchema = {
 };
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (!(await requireUser(req, res))) return;
+
   if (req.method !== 'POST') {
     return res.status(405).json({ ...EMPTY, error: 'method not allowed' });
   }

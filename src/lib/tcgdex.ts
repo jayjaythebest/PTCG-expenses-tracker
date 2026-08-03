@@ -1,5 +1,6 @@
 import { PTCG_PRODUCTS } from '../data/ptcg-products';
 import type { CardEdition } from '../types';
+import { apiFetch } from './apiFetch';
 
 // Authoritative card data resolved from the free TCGdex API (multilingual).
 // Docs: https://tcgdex.dev — endpoint: /v2/{lang}/sets/{setCode}/{localId}
@@ -294,7 +295,7 @@ async function fetchTwOfficialImage(code: string, number?: number): Promise<stri
   try {
     const qs = new URLSearchParams({ set: code });
     if (number && Number.isFinite(number)) qs.set('number', String(number));
-    const res = await fetch(`/api/tw-card-image?${qs.toString()}`);
+    const res = await apiFetch(`/api/tw-card-image?${qs.toString()}`);
     if (!res.ok) return null;
     const data = await res.json();
     return typeof data?.imageUrl === 'string' && data.imageUrl ? data.imageUrl : null;
@@ -335,7 +336,7 @@ export async function lookupTwCard(
   let card: TwCardData | null = null;
   try {
     const nameParam = nm ? `&name=${encodeURIComponent(nm)}` : '';
-    const res = await fetch(`/api/tw-card?set=${encodeURIComponent(code)}&number=${n}${nameParam}`);
+    const res = await apiFetch(`/api/tw-card?set=${encodeURIComponent(code)}&number=${n}${nameParam}`);
     if (res.ok) {
       const data = await res.json();
       const c = data?.card;
@@ -385,7 +386,7 @@ export async function lookupJpCardImage(setCode: string, cardNumber: number | st
   if (cached !== undefined) return cached;
   let url: string | null = null;
   try {
-    const res = await fetch(`/api/jp-card-image?set=${encodeURIComponent(code)}&number=${n}`);
+    const res = await apiFetch(`/api/jp-card-image?set=${encodeURIComponent(code)}&number=${n}`);
     if (res.ok) {
       const data = await res.json();
       url = typeof data?.imageUrl === 'string' && data.imageUrl ? data.imageUrl : null;

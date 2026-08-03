@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { resolveCardPrice, buildWantGrade, EMPTY_PRICE, type PriceResult } from './_lib/pricing.js';
+import { requireUser } from './_lib/auth.js';
 
 // Resolves a card's market price from a free source, keyed by set code + number
 // (+ edition). Japanese cards use Huca (huca.tw), which exposes a clean JSON API
@@ -25,6 +26,8 @@ const TTL_MS = 12 * 60 * 60 * 1000;
 const cache = new Map<string, { at: number; result: PriceResult }>();
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (!(await requireUser(req, res))) return;
+
   const src = req.method === 'POST' ? (req.body ?? {}) : req.query;
   const setCode = String(src.setCode ?? '').trim();
   const setName = String(src.setName ?? '').trim();

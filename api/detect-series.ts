@@ -1,10 +1,13 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { textCompletion } from './_lib/ai.js';
+import { requireUser } from './_lib/auth.js';
 
 // Classify an expense title into a PTCG series/generation code. Server-side so
 // the AI key never ships to the browser. Runs the provider fallback chain.
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (!(await requireUser(req, res))) return;
+
   if (req.method !== 'POST') {
     return res.status(405).json({ series: '不明', error: 'method not allowed' });
   }

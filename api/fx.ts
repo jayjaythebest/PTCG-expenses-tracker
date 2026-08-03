@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { requireUser } from './_lib/auth.js';
 
 // Currency conversion rate for the collection's value display. Market prices are
 // stored in their source's native currency (JPY from Huca) but shown in TWD, so
@@ -15,7 +16,9 @@ const FALLBACK_JPY_TO_TWD = 0.2; // rough long-run rate; only used if fetch fail
 const TTL_MS = 12 * 60 * 60 * 1000;
 let cache: { at: number; jpyToTwd: number; source: string } | null = null;
 
-export default async function handler(_req: VercelRequest, res: VercelResponse) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (!(await requireUser(req, res))) return;
+
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'public, max-age=3600, s-maxage=43200');
 

@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { textCompletion } from './_lib/ai.js';
+import { requireUser } from './_lib/auth.js';
 
 // On-demand weekly spending summary for the Dashboard. Server-side so the AI
 // key never ships to the browser. Runs the provider fallback chain.
@@ -14,6 +15,8 @@ interface SummaryExpense {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (!(await requireUser(req, res))) return;
+
   if (req.method !== 'POST') {
     return res.status(405).json({ summary: '', error: 'method not allowed' });
   }

@@ -25,6 +25,7 @@ src/
     supabase.ts           # Supabase client (current source of truth)
     useExpenses.ts        # Data hook
     AuthContext.tsx       # Supabase Auth session -> UserProfile
+    apiFetch.ts           # fetch wrapper that attaches the session JWT to /api calls
     utils.ts              # clsx/tw-merge helpers
   types.ts
 supabase/
@@ -39,7 +40,9 @@ The app is private. `App.tsx` renders `Login` until there is a Supabase session,
 
 Granting someone access takes two steps, both in the dashboard: create the user under Authentication → Users, then add their email to `allowed_users`. No SQL or policy edits.
 
-The cron endpoints (`api/weekly-summary.ts`, `api/snapshot-collection.ts`) use the service-role key, which bypasses RLS — tightening policies never breaks them.
+The cron endpoints (`api/weekly-summary.ts`, `api/snapshot-collection.ts`) use the service-role key, which bypasses RLS — tightening policies never breaks them. They authenticate with a `CRON_SECRET` bearer check, because Vercel Cron has no Supabase session.
+
+Every other endpoint under `api/` spends paid AI quota or hits a rate-limited scraping source, and Vercel serves it to anyone who knows the deployment URL. So each one starts with `requireUser` from `api/_lib/auth.ts`, which verifies the caller's Supabase access token and otherwise answers 401. The 401 is sent with `Cache-Control: no-store` — these routes answer successes with `public, s-maxage=…`, and a cached 401 would lock signed-in users out for the whole TTL, so keep the `requireUser` call **above** the `setHeader` lines.
 
 ## Setup
 Required env vars (see `.env.example`):
@@ -63,6 +66,7 @@ npm run dev     # vite on :3000, host 0.0.0.0
 
 ### Deploy gotchas (bake these in)
 - Vercel project env vars **must** include `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`. Missing either → Supabase client throws and the app shows a blank screen. Verify via `vercel env ls` before merging any change that touches env handling.
+- `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` are now required by **every** endpoint under `api/`, not just the crons — the JWT gate verifies tokens with them. Missing either → every AI/pricing/image call 401s while the app itself still loads fine.
 - `GEMINI_API_KEY` is read at build time by Vite (`define`). Changing the key requires a **redeploy**, not just a config update.
 - Image upload limit is **5 MB** (raised from earlier default). If changing, update both the client-side validation and the Supabase Storage policy.
 
@@ -71,6 +75,7 @@ npm run dev     # vite on :3000, host 0.0.0.0
 - Do **not** commit `.env` or any Supabase service-role key. Only the anon key goes in the client.
 - Do **not** write an RLS policy with `using (true)` or one granted `to public`/`to anon`. The anon key ships in the browser bundle, so such a policy hands the table to anyone who opens the site. Guard every policy with `to authenticated` + `public.is_allowed_user()`.
 - Do **not** bypass the 5MB upload cap without also updating the Supabase Storage bucket policy — silent failures will follow.
+- Do **not** call an `/api/` endpoint from the client with bare `fetch` — use `apiFetch` (`src/lib/apiFetch.ts`) so the Supabase JWT is attached, or the call comes back 401.
 - Do **not** assume an expense row has a photo. The "add photo later" feature means `photo_path` may be null at any time.
 - Do **not** manually run `vercel --prod` unless the user explicitly asks; deploys go through `main`.
 - Do **not** edit generated files in `dist/`.

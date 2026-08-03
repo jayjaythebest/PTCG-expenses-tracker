@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { requireUser } from './_lib/auth.js';
 
 // Resolves precise official-style Japanese card artwork by set code + collector
 // number. Two complementary free sources, tried in order:
@@ -49,6 +50,8 @@ async function limitlessImage(set: string, num: number): Promise<string | null> 
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (!(await requireUser(req, res))) return;
+
   const set = String(req.query.set ?? '').trim();
   const numRaw = String(req.query.number ?? '').trim();
   // Accept messy input ("114/083") → collector number before the slash.

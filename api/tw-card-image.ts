@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { requireUser } from './_lib/auth.js';
 
 // Resolves precise official Traditional-Chinese card / product artwork from the
 // official Pokémon TCG Asia site (asia.pokemon-card.com/tw). That site serves no
@@ -124,6 +125,8 @@ function setCodeCandidates(raw: string): string[] {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (!(await requireUser(req, res))) return;
+
   const set = String(req.query.set ?? '').trim();
   const numberRaw = String(req.query.number ?? '').trim();
   const number = numberRaw ? Number(numberRaw.match(/\d+/)?.[0]) : NaN;

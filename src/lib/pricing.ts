@@ -3,6 +3,8 @@
 // (JPY for Huca / Japanese cards); the UI converts to TWD for display using the
 // JPY->TWD rate from /api/fx.
 
+import { apiFetch } from './apiFetch';
+
 export interface CardPrice {
   price: number | null;
   currency: string | null;
@@ -29,7 +31,7 @@ export async function fetchCardPrice(params: {
   snkrdunkId?: number;
 }): Promise<CardPrice | null> {
   try {
-    const res = await fetch('/api/card-price', {
+    const res = await apiFetch('/api/card-price', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params),
@@ -45,7 +47,7 @@ const FALLBACK_JPY_TO_TWD = 0.2;
 
 export async function fetchFxJpyToTwd(): Promise<number> {
   try {
-    const res = await fetch('/api/fx');
+    const res = await apiFetch('/api/fx');
     if (!res.ok) return FALLBACK_JPY_TO_TWD;
     const data = await res.json();
     return typeof data.jpyToTwd === 'number' && data.jpyToTwd > 0 ? data.jpyToTwd : FALLBACK_JPY_TO_TWD;
