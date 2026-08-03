@@ -33,11 +33,9 @@ create table public.collection_items (
 
 alter table public.collection_items enable row level security;
 
-create policy "Allow all operations on collection_items"
-  on public.collection_items
-  for all
-  using (true)
-  with check (true);
+-- Policies live in auth_lockdown.sql — run that file after this one.
+-- Never put an `using (true)` policy back here: it opens the table to anyone
+-- holding the anon key, which ships in the browser bundle.
 
 -- ============================================================
 -- Migration: add `edition` column to an existing table.
@@ -106,10 +104,4 @@ create table if not exists public.collection_value_snapshots (
 
 alter table public.collection_value_snapshots enable row level security;
 
-drop policy if exists "Allow all operations on collection_value_snapshots"
-  on public.collection_value_snapshots;
-create policy "Allow all operations on collection_value_snapshots"
-  on public.collection_value_snapshots
-  for all
-  using (true)
-  with check (true);
+-- Policies live in auth_lockdown.sql — run that file after this one.

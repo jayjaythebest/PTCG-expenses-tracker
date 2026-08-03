@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabase';
+import { useAuth } from './AuthContext';
 import { Expense, ExpenseStatus, PaymentStatus } from '../types';
 
 let channelCounter = 0;
@@ -26,6 +27,7 @@ function mapRow(row: Record<string, unknown>): Expense {
 }
 
 export function useExpenses() {
+  const { profile } = useAuth();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
   const channelName = useRef(`expenses-${++channelCounter}`).current;
@@ -93,8 +95,8 @@ export function useExpenses() {
       series_tag:         expense.seriesTag ?? null,
       image_url:          imageUrl ?? null,
       status:             'Approved',
-      submitted_by:       'public-user',
-      submitted_by_name:  '使用者',
+      submitted_by:       profile?.uid ?? 'public-user',
+      submitted_by_name:  profile?.displayName ?? '使用者',
     });
 
     if (error) throw error;

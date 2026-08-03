@@ -25,30 +25,21 @@ create table public.expenses (
 );
 
 -- 2. ROW LEVEL SECURITY
---    Currently open (no auth). Tighten later when you add login.
+--    Write policies live in auth_lockdown.sql — run that file after this one.
+--    Until then RLS is on with no policies, i.e. no browser access at all.
+--    Never put an `using (true)` policy back here: it opens the table to
+--    anyone holding the anon key, which ships in the browser bundle.
 alter table public.expenses enable row level security;
-
-create policy "Allow all operations"
-  on public.expenses
-  for all
-  using (true)
-  with check (true);
 
 -- 3. STORAGE BUCKET FOR RECEIPTS / CARD PHOTOS
 insert into storage.buckets (id, name, public)
   values ('receipts', 'receipts', true)
   on conflict do nothing;
 
+-- Reads stay public: the app renders photos through getPublicUrl().
+-- Upload/delete policies are in auth_lockdown.sql.
 create policy "Public read receipts"
   on storage.objects for select
-  using (bucket_id = 'receipts');
-
-create policy "Public upload receipts"
-  on storage.objects for insert
-  with check (bucket_id = 'receipts');
-
-create policy "Public delete receipts"
-  on storage.objects for delete
   using (bucket_id = 'receipts');
 
 -- ============================================================

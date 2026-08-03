@@ -5,7 +5,8 @@ import { ExpenseList } from './components/ExpenseList';
 import { Dashboard } from './components/Dashboard';
 import { Collection } from './components/Collection';
 import { Home } from './components/Home';
-import { Zap, Home as HomeIcon, ClipboardList, BarChart2, Star } from 'lucide-react';
+import { Login } from './components/Login';
+import { Zap, Home as HomeIcon, ClipboardList, BarChart2, Star, LogOut } from 'lucide-react';
 import { cn } from './lib/utils';
 
 type Tab = 'home' | 'record' | 'analysis' | 'collection';
@@ -18,7 +19,7 @@ const TABS: { id: Tab; label: string; icon: typeof HomeIcon }[] = [
 ];
 
 function AppContent() {
-  const { loading } = useAuth();
+  const { profile, loading, signOut } = useAuth();
   const [tab, setTab] = useState<Tab>('home');
 
   if (loading) {
@@ -27,6 +28,10 @@ function AppContent() {
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-poke-accent"></div>
       </div>
     );
+  }
+
+  if (!profile) {
+    return <Login />;
   }
 
   return (
@@ -38,7 +43,18 @@ function AppContent() {
             <div className="w-8 h-8 bg-poke-blue rounded-full flex items-center justify-center shadow-sm">
               <Zap className="w-5 h-5 text-white fill-white" />
             </div>
-            <span className="font-black text-xl text-slate-100 tracking-tight">寶可夢支出追蹤</span>
+            <span className="font-black text-xl text-slate-100 tracking-tight">J Vault</span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <span className="text-sm text-slate-400 hidden sm:inline">{profile.displayName}</span>
+            <button
+              onClick={signOut}
+              title="登出"
+              className="p-2 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-white/5 transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
           </div>
         </div>
 

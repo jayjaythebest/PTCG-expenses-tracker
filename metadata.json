@@ -1,5 +1,5 @@
 {
-  "name": "寶可夢支出追蹤",
+  "name": "J Vault",
   "description": "日本留學寶可夢支出追蹤工具，記錄卡片、卡盒及賽事相關支出。",
   "requestFramePermissions": [
     "camera"

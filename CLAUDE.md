@@ -1,7 +1,7 @@
 # PTCG Expenses Tracker
 
 ## Project overview
-A personal Pokémon TCG (Pokémon Trading Card Game) expense tracker — log card purchases with prices, categories, and receipt photos, and let a Gemini-powered assistant summarize spending.
+"J Vault" (the name shown in the UI; the repo and DB still say PTCG) — a personal Pokémon TCG (Pokémon Trading Card Game) expense tracker — log card purchases with prices, categories, and receipt photos, and let a Gemini-powered assistant summarize spending.
 
 ## Tech stack
 - React 19 + Vite 6 + TypeScript
@@ -20,18 +20,26 @@ src/
     Dashboard.tsx         # Summary view
     ExpenseForm.tsx       # Create / edit expense (incl. photo upload)
     ExpenseList.tsx       # List + filter
+    Login.tsx             # Email/password sign-in — the whole app sits behind it
   lib/
     supabase.ts           # Supabase client (current source of truth)
     useExpenses.ts        # Data hook
-    AuthContext.tsx       # Auth state
-    firebase.ts           # LEGACY — kept from pre-migration; do not add to
+    AuthContext.tsx       # Supabase Auth session -> UserProfile
     utils.ts              # clsx/tw-merge helpers
   types.ts
 supabase/
   schema.sql              # DB schema — keep in sync with Supabase project
+  auth_lockdown.sql       # RLS + storage policies + allowed_users list
 ```
 
 Receipts are stored in Supabase Storage; rows in the expenses table reference the storage path. The "add photo later" flow means an expense row can exist without a photo and be patched afterward — never assume the photo field is present.
+
+## Auth & access control
+The app is private. `App.tsx` renders `Login` until there is a Supabase session, and every table is guarded by RLS policies that require `authenticated` **and** an email listed in `public.allowed_users`. Public signup is turned off in the Supabase dashboard, so accounts are created by hand.
+
+Granting someone access takes two steps, both in the dashboard: create the user under Authentication → Users, then add their email to `allowed_users`. No SQL or policy edits.
+
+The cron endpoints (`api/weekly-summary.ts`, `api/snapshot-collection.ts`) use the service-role key, which bypasses RLS — tightening policies never breaks them.
 
 ## Setup
 Required env vars (see `.env.example`):
@@ -59,8 +67,9 @@ npm run dev     # vite on :3000, host 0.0.0.0
 - Image upload limit is **5 MB** (raised from earlier default). If changing, update both the client-side validation and the Supabase Storage policy.
 
 ## Do NOT
-- Do **not** reintroduce Firebase. The project was migrated off Firebase → Supabase; `src/lib/firebase.ts` is legacy and should only be deleted, not extended.
+- Do **not** reintroduce Firebase. The project was migrated off Firebase → Supabase and the last Firebase config files have been deleted.
 - Do **not** commit `.env` or any Supabase service-role key. Only the anon key goes in the client.
+- Do **not** write an RLS policy with `using (true)` or one granted `to public`/`to anon`. The anon key ships in the browser bundle, so such a policy hands the table to anyone who opens the site. Guard every policy with `to authenticated` + `public.is_allowed_user()`.
 - Do **not** bypass the 5MB upload cap without also updating the Supabase Storage bucket policy — silent failures will follow.
 - Do **not** assume an expense row has a photo. The "add photo later" feature means `photo_path` may be null at any time.
 - Do **not** manually run `vercel --prod` unless the user explicitly asks; deploys go through `main`.
