@@ -80,7 +80,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
    【繁體中文版 已知代號 (zh-tw)】：
    ${codes['zh-tw'].join(', ')}
    若卡面代號不在清單中，就照卡面實際印刷的字樣回傳；若看不到明確代號，setCode 回傳空字串。
-4. name：卡片名稱，使用卡片本身的語言（日文版回日文如 リザードン ex、メガゲッコウガex，繁中版回繁體中文如 噴火龍 ex），看不清楚就回空字串。
+4. name：卡片名稱，**必須照抄卡面「最上方」實際印刷的文字**，用卡片本身的語言，嚴禁翻譯或轉寫成別種語言。
+   - 繁體中文版：回繁體中文字（如 噴火龍 ex、起源帕路奇亞VSTAR）。**絕對不可**回日文假名（如把繁中卡寫成 オリジンパルキアVSTAR 就是錯的）。
+   - 日文版：回日文假名/漢字（如 リザードン ex、メガゲッコウガex）。
+   - 若 language 判為 zh-tw，name 就一定要是中文字；若 language 判為 ja，name 才會是日文。兩者要一致。看不清楚就回空字串。
 5. rarity：稀有度，從這些選一個最接近的（看不出來就回空字串）：UR、MUR、SAR、AR、SR、HR、CSR、SER、RR、R、U、C、ACE SPEC、Promo。
    參考：UR/MUR=全金卡(整張金色反光，字壓印在金箔上)、SAR=全圖特殊插畫(卡號常超出總數)、AR=全圖插畫、SR=金框特殊加工、HR=彩虹金、RR=一般 ex/V、R=閃卡、U/C=一般非閃卡。卡面右下若印有 UR / MUR / SAR 等英文縮寫，請優先採用。
 

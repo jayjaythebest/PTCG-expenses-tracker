@@ -388,10 +388,14 @@ function CollectionForm({
           edition:    'zh-tw',
         }));
         setScanResult('matched');
-      } else if (card) {
-        // The edition must reflect the ACTUAL card (what the AI read), not
-        // whichever endpoint happened to resolve — otherwise a zh-tw card whose
-        // data TCGdex only has in its ja catalog gets mislabeled Japanese.
+      } else if (card && !(isZhTw && card.edition !== 'zh-tw')) {
+        // Only trust the TCGdex catalog record when it's NOT a Japanese record
+        // standing in for a Chinese card. A zh-tw scan whose only TCGdex hit is
+        // the ja catalog (the TW proxy failed to resolve the misread set/number)
+        // must NOT adopt the Japanese name/set/art here — that produced the
+        // "繁體中文版 but shows オリジンパルキアVSTAR / VMAXクライマックス" bug on
+        // reflective graded slabs. Such cards fall through to the fallback branch
+        // below, which keeps the AI's own Chinese read + resolves zh-tw artwork.
         const edition = (scan.language || card.edition) as CardEdition;
         // Pick artwork in the card's OWN language. For zh-tw, the official TW
         // proxy has precise per-card art (TCGdex often lacks zh-tw images). For
