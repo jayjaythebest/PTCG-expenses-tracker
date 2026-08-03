@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 import { Resend } from 'resend';
 import { textCompletion } from './_lib/ai.js';
+import { supabaseUrl, serviceRoleKey } from './_lib/env.js';
 
 interface ExpenseRow {
   title: string;
@@ -17,10 +18,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const supabase = createClient(
-    process.env.SUPABASE_URL as string,
-    process.env.SUPABASE_SERVICE_ROLE_KEY as string,
-  );
+  const url = supabaseUrl();
+  const key = serviceRoleKey();
+  if (!url || !key) {
+    console.error('[weekly-summary] missing SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY');
+    return res.status(503).json({ error: 'Supabase not configured' });
+  }
+  const supabase = createClient(url, key);
 
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 

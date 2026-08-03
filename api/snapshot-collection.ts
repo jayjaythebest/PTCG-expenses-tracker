@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 import { resolveCardPrice, buildWantGrade } from './_lib/pricing.js';
+import { supabaseUrl, serviceRoleKey } from './_lib/env.js';
 import { PTCG_PRODUCTS } from '../src/data/ptcg-products.js';
 import { boxSnkrdunkId } from '../src/data/ptcg-boxes.js';
 
@@ -160,10 +161,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const supabase = createClient(
-    process.env.SUPABASE_URL as string,
-    process.env.SUPABASE_SERVICE_ROLE_KEY as string,
-  );
+  const url = supabaseUrl();
+  const key = serviceRoleKey();
+  if (!url || !key) {
+    console.error('[snapshot-collection] missing SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY');
+    return res.status(503).json({ error: 'Supabase not configured' });
+  }
+  const supabase = createClient(url, key);
 
   const { data: items, error } = await supabase
     .from('collection_items')

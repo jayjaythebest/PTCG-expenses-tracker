@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { supabaseUrl, tokenVerifyKey } from './env.js';
 
 // Shared JWT gate for the /api endpoints that spend paid AI quota or hammer a
 // rate-limited upstream source. Vercel serves these routes to anyone who knows
@@ -11,22 +12,10 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 // The cron endpoints (weekly-summary, snapshot-collection) do NOT use this —
 // they carry CRON_SECRET instead, since Vercel Cron has no Supabase session.
 
-// Verifying a token only needs *a* valid project key — auth.getUser(token) asks
-// Supabase to validate the JWT, so the public anon key is enough. We therefore
-// fall back to the VITE_* vars that the frontend build already requires, which
-// means the gate keeps working on deployments that never got the server-only
-// SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY vars.
-const SUPABASE_URL = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? '';
-const SUPABASE_KEY =
-  process.env.SUPABASE_SERVICE_ROLE_KEY ??
-  process.env.SUPABASE_ANON_KEY ??
-  process.env.VITE_SUPABASE_ANON_KEY ??
-  '';
-
 let admin: SupabaseClient | null = null;
 
-function adminClient(): SupabaseClient {
-  admin ??= createClient(SUPABASE_URL, SUPABASE_KEY, {
+function adminClient(url: string, key: string): SupabaseClient {
+  admin ??= createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
   return admin;
@@ -66,13 +55,15 @@ function reject(res: VercelResponse): false {
 // has no Supabase config) — the caller must return immediately without writing
 // to `res`.
 export async function requireUser(req: VercelRequest, res: VercelResponse): Promise<boolean> {
-  if (!SUPABASE_URL || !SUPABASE_KEY) return misconfigured(res);
+  const url = supabaseUrl();
+  const key = tokenVerifyKey();
+  if (!url || !key) return misconfigured(res);
 
   const token = bearerToken(req);
   if (!token) return reject(res);
 
   try {
-    const { data, error } = await adminClient().auth.getUser(token);
+    const { data, error } = await adminClient(url, key).auth.getUser(token);
     if (error || !data.user) return reject(res);
     return true;
   } catch {
