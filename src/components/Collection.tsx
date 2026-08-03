@@ -426,7 +426,14 @@ function CollectionForm({
         // unreadable) — nothing was read. Tell the user it's a service issue,
         // not that the card is unknown, so they don't assume the card is invalid.
         const provs = scan.providers ?? [];
-        if (scan.reason === 'endpoint_missing') {
+        if (scan.reason === 'unauthorized') {
+          // 401 from the JWT gate: the session token is missing/expired, so the
+          // fix is re-logging in — waiting and retrying will never help.
+          setScanHint('登入已過期，請重新登入後再掃描');
+        } else if (scan.reason === 'auth_unconfigured') {
+          // 503: the gate itself has no Supabase credentials on the server.
+          setScanHint('伺服器缺少 Supabase 設定（SUPABASE_URL / KEY），請在 Vercel 補上後重新部署');
+        } else if (scan.reason === 'endpoint_missing') {
           // 404: the /api/scan-card function isn't deployed on this host.
           setScanHint('找不到掃描服務（/api/scan-card 未部署）；請確認已部署最新版本到 Vercel');
         } else if (scan.reason === 'endpoint_error' || scan.reason === 'network') {

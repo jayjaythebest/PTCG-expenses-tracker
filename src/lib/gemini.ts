@@ -28,7 +28,8 @@ export interface CardScanResult {
   error?: string;
   // Diagnostics for the failure banner: which providers are configured on the
   // server, and why the chain failed ('quota' | 'no_provider' | 'unreadable' |
-  // 'endpoint_missing' | 'endpoint_error' | 'network').
+  // 'endpoint_missing' | 'endpoint_error' | 'network' | 'unauthorized' |
+  // 'auth_unconfigured').
   providers?: string[];
   reason?: string;
   // Per-provider failure lines (e.g. "gemini:error API key not valid",
@@ -80,6 +81,13 @@ async function fileToScaledBase64(
   }
 }
 
+function httpFailureReason(status: number): string {
+  if (status === 401) return 'unauthorized';
+  if (status === 503) return 'auth_unconfigured';
+  if (status === 404) return 'endpoint_missing';
+  return 'endpoint_error';
+}
+
 export async function recognizeCardFromPhoto(file: File): Promise<CardScanResult> {
   try {
     const { base64, mimeType } = await fileToScaledBase64(file);
@@ -89,15 +97,14 @@ export async function recognizeCardFromPhoto(file: File): Promise<CardScanResult
       body: JSON.stringify({ imageBase64: base64, mimeType }),
     });
     // Non-OK means the serverless endpoint itself failed — NOT that the AI
-    // providers are misconfigured. 404 = function not deployed; 5xx = it crashed
-    // (e.g. bad import) or timed out. Flag this distinctly so the UI doesn't
-    // wrongly blame "no AI keys" (which is a res.ok=200 + reason:'no_provider').
+    // providers are misconfigured. 401 = the JWT gate rejected us (session
+    // expired); 503 = the gate has no Supabase config on the server; 404 =
+    // function not deployed; other 5xx = it crashed (e.g. bad import) or timed
+    // out. Flag these distinctly so the UI doesn't wrongly blame "no AI keys"
+    // (which is a res.ok=200 + reason:'no_provider') or tell the user to wait
+    // when the real fix is re-logging in / adding an env var.
     if (!res.ok) {
-      return {
-        ...EMPTY_SCAN,
-        error: 'ai_failed',
-        reason: res.status === 404 ? 'endpoint_missing' : 'endpoint_error',
-      };
+      return { ...EMPTY_SCAN, error: 'ai_failed', reason: httpFailureReason(res.status) };
     }
     const data = await res.json();
     const lang = data.language === 'ja' || data.language === 'zh-tw' ? data.language : '';

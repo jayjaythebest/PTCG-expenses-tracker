@@ -66,7 +66,7 @@ npm run dev     # vite on :3000, host 0.0.0.0
 
 ### Deploy gotchas (bake these in)
 - Vercel project env vars **must** include `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`. Missing either → Supabase client throws and the app shows a blank screen. Verify via `vercel env ls` before merging any change that touches env handling.
-- `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` are now required by **every** endpoint under `api/`, not just the crons — the JWT gate verifies tokens with them. Missing either → every AI/pricing/image call 401s while the app itself still loads fine.
+- `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` are required by the **cron** endpoints (they need RLS bypass). The JWT gate on the other endpoints falls back to `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY`, because `auth.getUser(token)` validates a token with any project key — so the gate works without the server-only vars. If all four are missing, `requireUser` answers **503 `Auth not configured`**, never 401. Handy check: `curl -H 'Authorization: Bearer x' <deployment>/api/fx` → 401 means the config is healthy, 503 means it isn't.
 - `GEMINI_API_KEY` is read at build time by Vite (`define`). Changing the key requires a **redeploy**, not just a config update.
 - Image upload limit is **5 MB** (raised from earlier default). If changing, update both the client-side validation and the Supabase Storage policy.
 

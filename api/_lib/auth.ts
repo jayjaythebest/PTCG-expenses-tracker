@@ -6,25 +6,50 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 // the deployment URL, so each one verifies the caller's Supabase access token
 // (issued by the app's email/password login) before doing any work.
 //
-//   if (!(await requireUser(req, res))) return;   // 401 already sent
+//   if (!(await requireUser(req, res))) return;   // 401/503 already sent
 //
 // The cron endpoints (weekly-summary, snapshot-collection) do NOT use this —
 // they carry CRON_SECRET instead, since Vercel Cron has no Supabase session.
 
+// Verifying a token only needs *a* valid project key — auth.getUser(token) asks
+// Supabase to validate the JWT, so the public anon key is enough. We therefore
+// fall back to the VITE_* vars that the frontend build already requires, which
+// means the gate keeps working on deployments that never got the server-only
+// SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY vars.
+const SUPABASE_URL = process.env.SUPABASE_URL ?? process.env.VITE_SUPABASE_URL ?? '';
+const SUPABASE_KEY =
+  process.env.SUPABASE_SERVICE_ROLE_KEY ??
+  process.env.SUPABASE_ANON_KEY ??
+  process.env.VITE_SUPABASE_ANON_KEY ??
+  '';
+
 let admin: SupabaseClient | null = null;
 
 function adminClient(): SupabaseClient {
-  admin ??= createClient(
-    process.env.SUPABASE_URL as string,
-    process.env.SUPABASE_SERVICE_ROLE_KEY as string,
-    { auth: { persistSession: false, autoRefreshToken: false } },
-  );
+  admin ??= createClient(SUPABASE_URL, SUPABASE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
   return admin;
 }
 
 function bearerToken(req: VercelRequest): string {
   const [scheme, token] = (req.headers.authorization ?? '').split(' ');
   return scheme?.toLowerCase() === 'bearer' ? (token ?? '').trim() : '';
+}
+
+// A missing URL/key is a *server misconfiguration*, not a bad caller. Answering
+// 401 here (which is what an unguarded createClient throw used to produce) locks
+// every signed-in user out and looks identical to an expired token, so the real
+// cause stays invisible. 503 makes it obvious from the outside — curl the route
+// with a junk bearer token: 401 means the config is healthy, 503 means it isn't.
+function misconfigured(res: VercelResponse): false {
+  console.error(
+    '[auth] missing Supabase config: set SUPABASE_URL (or VITE_SUPABASE_URL) and ' +
+      'SUPABASE_SERVICE_ROLE_KEY (or VITE_SUPABASE_ANON_KEY)',
+  );
+  res.setHeader('Cache-Control', 'no-store');
+  res.status(503).json({ error: 'Auth not configured' });
+  return false;
 }
 
 function reject(res: VercelResponse): false {
@@ -37,9 +62,12 @@ function reject(res: VercelResponse): false {
 }
 
 // Verifies the `Authorization: Bearer <supabase access token>` header. Returns
-// false and sends a 401 when the token is missing, expired, or not ours — the
-// caller must return immediately without writing to `res`.
+// false after sending 401 (token missing, expired, or not ours) or 503 (server
+// has no Supabase config) — the caller must return immediately without writing
+// to `res`.
 export async function requireUser(req: VercelRequest, res: VercelResponse): Promise<boolean> {
+  if (!SUPABASE_URL || !SUPABASE_KEY) return misconfigured(res);
+
   const token = bearerToken(req);
   if (!token) return reject(res);
 
