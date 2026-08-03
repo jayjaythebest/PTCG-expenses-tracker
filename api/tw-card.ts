@@ -86,6 +86,24 @@ function collectorNum(cn: string): number {
   return Number.parseInt((cn.split('/')[0] ?? '').replace(/\D/g, ''), 10);
 }
 
+// Loose name comparison so a number-only match can be sanity-checked against the
+// scanned card name. Whitespace-insensitive, case-insensitive. Returns true when
+// we have no name to check (don't block), on exact/substring match, or when the
+// names share a ≥2-char leading run (same Pokémon, minor OCR/format drift). A
+// clear mismatch (e.g. scanned "N的索羅亞克ex" vs resolved "旋轉洛托姆") returns
+// false, so the resolver rejects a same-number-different-card collision and falls
+// back to the distinctive name search instead of showing a confidently wrong card.
+export function nameMatches(want: string, got: string): boolean {
+  const norm = (s: string) => s.replace(/\s+/g, '').toLowerCase();
+  const x = norm(want);
+  const y = norm(got);
+  if (!x || !y) return true; // nothing to check against → don't block
+  if (x === y || x.includes(y) || y.includes(x)) return true;
+  let i = 0;
+  while (i < x.length && i < y.length && x[i] === y[i]) i++;
+  return i >= 2;
+}
+
 // Detail data for one id, cached, with a single retry (the detail read is the
 // per-probe cost of the binary search, so a transient miss shouldn't abort it).
 async function detailById(id: number, setCode: string): Promise<TwCardData | null> {
@@ -103,6 +121,7 @@ async function findByCollectorNumber(
   set: string,
   setCode: string,
   target: number,
+  wantName = '',
 ): Promise<TwCardData | null> {
   const ids = await getAllDetailIds(set);
   if (ids.length === 0) return null;
@@ -114,7 +133,12 @@ async function findByCollectorNumber(
     const d = await detailById(ids[mid], setCode);
     const n = d ? collectorNum(d.collectorNumber) : NaN;
     if (!Number.isFinite(n)) return null; // list not readable → don't guess
-    if (n === target) return d;
+    if (n === target) {
+      // Guard against a same-number-different-card collision: if the scanned name
+      // clearly doesn't match this card, reject so the caller falls back to the
+      // name search (which pins the real card across all expansions).
+      return d && nameMatches(wantName, d.name) ? d : null;
+    }
     if (n < target) lo = mid + 1;
     else hi = mid - 1;
   }
@@ -235,9 +259,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (cached) return res.status(200).json({ card: cached });
         continue;
       }
-      const card = await findByCollectorNumber(set, set, number);
-      cardDataCache.set(cacheKey, card);
-      if (card) return res.status(200).json({ card });
+      const card = await findByCollectorNumber(set, set, number, nameRaw);
+      // Cache ONLY positive hits: a null here may be a name-mismatch rejection
+      // that the name-search below (or a future, better scan) can still resolve,
+      // so don't poison the key with a permanent miss.
+      if (card) {
+        cardDataCache.set(cacheKey, card);
+        return res.status(200).json({ card });
+      }
     }
 
     // 2) Set code didn't resolve (often an OCR-misread code on secret rares) —
