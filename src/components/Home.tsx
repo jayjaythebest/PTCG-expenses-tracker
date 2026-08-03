@@ -3,12 +3,12 @@ import { useExpenses } from '../lib/useExpenses';
 import { useCollection } from '../lib/useCollection';
 import { useValueSnapshots } from '../lib/useValueSnapshots';
 import { useFxRateWithMeta } from '../lib/useFxRate';
-import { totalCurrentTwd, totalItemCount, totalPnlTwd } from '../lib/collectionValue';
+import { totalCurrentTwd, totalItemCount, totalPnlTwd, topMoversTwd, type ValueMover } from '../lib/collectionValue';
 import { inMonth } from '../lib/utils';
 import { Expense } from '../types';
 import {
   TrendingUp, TrendingDown, Wallet, Clock, Sparkles,
-  ClipboardList, BarChart2, Star, ChevronRight, Layers,
+  ClipboardList, BarChart2, Star, ChevronRight, Layers, ArrowUpDown,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -80,6 +80,7 @@ export function Home({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
   const liveTotalTwd = useMemo(() => totalCurrentTwd(items, fxRate), [items, fxRate]);
   const itemCount = useMemo(() => totalItemCount(items), [items]);
   const pnl = useMemo(() => totalPnlTwd(items, fxRate), [items, fxRate]);
+  const movers = useMemo(() => topMoversTwd(items, fxRate, 3), [items, fxRate]);
 
   // Record/refresh today's snapshot once the live value is known, so history
   // accrues even between daily cron runs and reflects newly added cards.
@@ -195,6 +196,30 @@ export function Home({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
         </p>
       </button>
 
+      {/* Biggest value movers — only worth a card once something has actually moved */}
+      {movers.length > 0 && (
+        <div className="poke-card p-5">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-black text-slate-100 flex items-center gap-1.5">
+              <ArrowUpDown className="w-4 h-4 text-poke-accent" /> 價值變動 TOP {movers.length}
+            </h2>
+            <button
+              onClick={() => onNavigate('collection')}
+              className="text-xs font-bold text-poke-accent flex items-center gap-0.5 hover:opacity-80"
+            >
+              看收藏庫 <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <p className="text-xs text-slate-400 mt-0.5">市價相對你的現估價，漲跌幅最大的項目</p>
+
+          <ol className="mt-3 space-y-2">
+            {movers.map((m, idx) => (
+              <MoverRow key={m.id} mover={m} rank={idx + 1} />
+            ))}
+          </ol>
+        </div>
+      )}
+
       {/* This-month expense summary */}
       <div className="poke-card p-5">
         <div className="flex items-center justify-between">
@@ -254,6 +279,49 @@ export function Home({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
         </div>
       )}
     </div>
+  );
+}
+
+// One row of the 價值變動 TOP 3 list. Shows the percentage swing (what the list
+// is ranked by) as the headline, with the money amount underneath — the percent
+// alone would make a ¥50 card look as important as a ¥5,000 one.
+function MoverRow({ mover, rank }: { mover: ValueMover; rank: number }) {
+  const up = mover.diff >= 0;
+  const sign = up ? '+' : '−';
+  return (
+    <li className="flex items-center gap-3 rounded-xl bg-white/5 border border-white/10 p-2.5">
+      <span className="shrink-0 w-5 text-center text-xs font-black text-slate-500">{rank}</span>
+
+      {mover.imageUrl ? (
+        <img
+          src={mover.imageUrl}
+          alt=""
+          loading="lazy"
+          className="shrink-0 w-8 h-11 rounded object-cover bg-white/5"
+        />
+      ) : (
+        <span className="shrink-0 w-8 h-11 rounded bg-white/5 border border-white/10 flex items-center justify-center">
+          <Layers className="w-3.5 h-3.5 text-slate-500" />
+        </span>
+      )}
+
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-bold text-slate-100 truncate">{mover.name}</p>
+        <p className="text-[11px] text-slate-400 truncate">
+          {mover.setName || '未知系列'}
+          {mover.quantity > 1 ? ` · ${mover.quantity} 張` : ''}
+        </p>
+      </div>
+
+      <div className="shrink-0 text-right">
+        <p className={cn('text-sm font-black', up ? 'text-emerald-400' : 'text-red-400')}>
+          {sign}{Math.abs(mover.pct).toFixed(1)}%
+        </p>
+        <p className="text-[11px] font-bold text-slate-400">
+          {sign}{nt(Math.abs(mover.diff))}
+        </p>
+      </div>
+    </li>
   );
 }
 

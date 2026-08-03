@@ -54,3 +54,48 @@ export function totalPnlTwd(items: CollectionItem[], rate: number): { diff: numb
   }
   return { diff, base, pct: base > 0 ? (diff / base) * 100 : 0 };
 }
+
+// One card's contribution to the P&L above, kept alongside enough identity to
+// render a row on the home screen.
+export interface ValueMover {
+  id: string;
+  name: string;
+  setName: string;
+  imageUrl?: string;
+  quantity: number;
+  diff: number; // TWD, quantity-aware (can be negative)
+  base: number; // TWD baseline it's measured against, quantity-aware
+  pct: number;  // change vs. that baseline, in percent
+}
+
+// The biggest movers in the collection — same eligibility and math as
+// totalPnlTwd (market price vs. the user's 現估價), just kept per card so the
+// home screen can list them. Ranked by |pct| because "變化幅度" means the size
+// of the swing, not the size of the card; ties break on money so a 10% move on
+// an expensive card outranks 10% on a cheap one. Gains and losses are mixed
+// together — a card that dropped 40% is exactly as newsworthy as one that rose.
+export function topMoversTwd(items: CollectionItem[], rate: number, limit = 3): ValueMover[] {
+  const movers: ValueMover[] = [];
+  for (const i of items) {
+    if (i.marketPrice == null || i.currentValue == null) continue;
+    const market = toTwd(i.marketPrice, i.marketPriceCurrency === 'TWD' ? 'TWD' : 'JPY', rate);
+    const unitBase = toTwd(i.currentValue, 'JPY', rate);
+    if (unitBase <= 0) continue;
+    const unitDiff = market - unitBase;
+    // An unmoved card is not a mover; listing 0% entries would push real ones out.
+    if (unitDiff === 0) continue;
+    movers.push({
+      id: i.id,
+      name: i.name,
+      setName: i.setName,
+      imageUrl: i.imageUrl,
+      quantity: i.quantity,
+      diff: unitDiff * i.quantity,
+      base: unitBase * i.quantity,
+      pct: (unitDiff / unitBase) * 100,
+    });
+  }
+  return movers
+    .sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct) || Math.abs(b.diff) - Math.abs(a.diff))
+    .slice(0, limit);
+}
