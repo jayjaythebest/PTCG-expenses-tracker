@@ -89,6 +89,19 @@ alter table public.collection_items
   add column if not exists acquired_date date;
 
 -- ============================================================
+-- Migration: add `deleted_at` — the soft-delete tombstone. Null = active; a
+-- timestamp = in the "已刪除" graveyard, hidden from the gallery but restorable,
+-- so an accidental delete doesn't lose the row or its price history. The client
+-- and the daily cron both filter on it. Safe to run repeatedly.
+-- ============================================================
+alter table public.collection_items
+  add column if not exists deleted_at timestamptz;
+
+-- The gallery always asks for active rows only.
+create index if not exists collection_items_active_idx
+  on public.collection_items (deleted_at);
+
+-- ============================================================
 -- Daily collection-value snapshots (stock-ticker style).
 -- One row per calendar day; the home screen compares the latest value against
 -- ~7 days ago and draws a recent trend line. Written by the daily Vercel cron
