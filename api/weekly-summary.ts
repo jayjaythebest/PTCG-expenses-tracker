@@ -63,7 +63,7 @@ ${lines}
   const { error: sendError } = await resend.emails.send({
     from: process.env.RESEND_FROM_EMAIL ?? 'onboarding@resend.dev',
     to: 'jj940170@gmail.com',
-    subject: `PTCG 支出週報 — ${new Date().toISOString().slice(0, 10)}`,
+    subject: `PTCG Vault 週報 — ${new Date().toISOString().slice(0, 10)}`,
     text: summary,
   });
 
