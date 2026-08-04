@@ -4,10 +4,12 @@ import { useCollection } from '../lib/useCollection';
 import { CollectionItem, CollectionItemType, CollectionCondition, CardEdition, GradingCompany } from '../types';
 import { PTCG_PRODUCTS, SERIES_ZH, type PtcgProduct } from '../data/ptcg-products';
 import { boxSnkrdunkId } from '../data/ptcg-boxes';
+import { COLLECTION_OWNERS, PRIMARY_OWNER, ownerOf } from '../data/collectionOwners';
 import { cn } from '../lib/utils';
 import { recognizeCardFromPhoto } from '../lib/gemini';
 import { lookupCard, lookupTwCard, lookupSetImage, lookupTwCardImage, lookupJpCardImage, resolveJaSetCode, jpCardImageUrl, type ScanLanguage } from '../lib/tcgdex';
 import { fetchCardPrice, fetchFxJpyToTwd } from '../lib/pricing';
+import { scanCardNumber } from '../lib/cardNumber';
 import { Plus, Trash2, Pencil, X, Check, TrendingUp, TrendingDown, Package, CreditCard, Camera, Loader2, Sparkles, ImagePlus, ImageOff, RefreshCw, Search, ArrowUp, ArrowDown, RotateCcw, ChevronDown } from 'lucide-react';
 
 const ITEM_TYPE_LABELS: Record<CollectionItemType, string> = {
@@ -377,16 +379,19 @@ function CollectionForm({
         // Authoritative zh-tw record from the official TW site: Chinese name +
         // precise per-card art. The site carries no rarity letter, so keep the
         // rarity the AI read off the card. Treat as a confident match.
-        setForm(f => ({
-          ...f,
-          name:       twCard.name    || scan.name || f.name,
-          setName:    prod?.name     || f.setName,
-          series:     prod?.series   || f.series,
-          rarity:     scan.rarity    || f.rarity,
-          cardNumber: scan.localId   || twCard.localId || f.cardNumber,
-          imageUrl:   twCard.imageUrl || f.imageUrl,
-          edition:    'zh-tw',
-        }));
+        setForm(f => {
+          const setName = prod?.name || f.setName;
+          return {
+            ...f,
+            name:       twCard.name    || scan.name || f.name,
+            setName,
+            series:     prod?.series   || f.series,
+            rarity:     scan.rarity    || f.rarity,
+            cardNumber: scanCardNumber(scan.localId, scan.setCode, setName) || twCard.localId || f.cardNumber,
+            imageUrl:   twCard.imageUrl || f.imageUrl,
+            edition:    'zh-tw',
+          };
+        });
         setScanResult('matched');
       } else if (card && !(isZhTw && card.edition !== 'zh-tw')) {
         // Only trust the TCGdex catalog record when it's NOT a Japanese record
@@ -410,16 +415,19 @@ function CollectionForm({
           const jp = await lookupJpCardImage(scan.setCode, scan.localId);
           if (jp) img = jp;
         }
-        setForm(f => ({
-          ...f,
-          name:       card.name,
-          setName:    card.setName || prod?.name   || f.setName,
-          series:     card.series  || prod?.series || f.series,
-          rarity:     card.rarity  || scan.rarity || f.rarity,
-          cardNumber: scan.localId || f.cardNumber,
-          imageUrl:   img || f.imageUrl,
-          edition,
-        }));
+        setForm(f => {
+          const setName = card.setName || prod?.name || f.setName;
+          return {
+            ...f,
+            name:       card.name,
+            setName,
+            series:     card.series  || prod?.series || f.series,
+            rarity:     card.rarity  || scan.rarity || f.rarity,
+            cardNumber: scanCardNumber(scan.localId, scan.setCode, setName) || f.cardNumber,
+            imageUrl:   img || f.imageUrl,
+            edition,
+          };
+        });
         setScanResult('matched');
       } else if (scan.error) {
         // The AI chain couldn't run (quota exhausted / providers down / photo
@@ -472,16 +480,19 @@ function CollectionForm({
             img = (await lookupJpCardImage(scan.setCode, scan.localId)) || '';
           }
         }
-        setForm(f => ({
-          ...f,
-          name:       scan.name    || f.name,
-          setName:    prod?.name   || f.setName,
-          series:     prod?.series || f.series,
-          cardNumber: scan.localId || f.cardNumber,
-          rarity:     scan.rarity  || f.rarity,
-          edition:    isZhTw ? 'zh-tw' : (scan.language || f.edition),
-          imageUrl:   img || f.imageUrl,
-        }));
+        setForm(f => {
+          const setName = prod?.name || f.setName;
+          return {
+            ...f,
+            name:       scan.name    || f.name,
+            setName,
+            series:     prod?.series || f.series,
+            cardNumber: scanCardNumber(scan.localId, scan.setCode, setName) || f.cardNumber,
+            rarity:     scan.rarity  || f.rarity,
+            edition:    isZhTw ? 'zh-tw' : (scan.language || f.edition),
+            imageUrl:   img || f.imageUrl,
+          };
+        });
         // Show WHAT was read, not just that the catalog missed. Secret rares are
         // the usual cause (TCGdex's zh-tw data stops at the official set total,
         // so a UR numbered past it can't match) — and without these identifiers
@@ -1370,7 +1381,11 @@ function CardDetailModal({
 }
 
 export function Collection() {
-  const { items, deletedItems, loading, addItem, updateItem, deleteItem, restoreItem, purgeItem } = useCollection();
+  const { items: allItems, deletedItems: allDeletedItems, loading, addItem, updateItem, deleteItem, restoreItem, purgeItem } = useCollection();
+  // Whose collection is on screen. The account is shared, so this is a view
+  // filter and nothing more — it decides which cards are listed, which total is
+  // shown, and which tab a newly added card is filed under.
+  const [owner, setOwner] = useState<string>(PRIMARY_OWNER);
   const [showGraveyard, setShowGraveyard] = useState(false);
   const [filterType, setFilterType] = useState<FilterType>('all');
   const [query, setQuery] = useState('');
@@ -1397,6 +1412,13 @@ export function Collection() {
   useEffect(() => {
     fetchFxJpyToTwd().then(setFxRate).catch(() => {});
   }, []);
+
+  // Everything below this line works off ONE owner's cards. Two collections
+  // living in one table must never be summed together — the hero總值, 收藏件數,
+  // 損益 and the bulk price refresh all read these lists, so filtering once here
+  // is what keeps a friend's cards out of the account holder's numbers.
+  const items = useMemo(() => allItems.filter(i => ownerOf(i) === owner), [allItems, owner]);
+  const deletedItems = useMemo(() => allDeletedItems.filter(i => ownerOf(i) === owner), [allDeletedItems, owner]);
 
   const editingItem = editingId ? (items.find(i => i.id === editingId) ?? null) : null;
   // Looked up from `items` (not held as a snapshot) so the modal re-renders with
@@ -1649,7 +1671,9 @@ export function Collection() {
       const toAdd = f.manualPrice !== ''
         ? { ...base, ...manualPriceFields(f.manualPrice) }
         : await withMarketPrice(base);
-      await addItem(toAdd);
+      // File it under the tab the user is looking at — that tab is the only
+      // place they'll go looking for it afterwards.
+      await addItem({ ...toAdd, owner });
       setShowAddForm(false);
     } catch (err) {
       console.error(err);
@@ -1731,8 +1755,54 @@ export function Collection() {
     );
   }
 
+  // Switching tabs is switching to a different person's collection, so anything
+  // referring to a card in the old one has to go: an open modal would vanish
+  // mid-view, and the refresh banner would report the previous tab's counts.
+  const handleSwitchOwner = (next: string) => {
+    if (next === owner) return;
+    setOwner(next);
+    setDetailId(null);
+    setEditingId(null);
+    setShowAddForm(false);
+    setShowGraveyard(false);
+    setPriceMsg(null);
+    setRefreshDone(null);
+    setRefreshErrors([]);
+  };
+
   return (
     <div className="space-y-4">
+      {/* Owner tabs — one shared account, several collectors. Always rendered,
+          including for an empty tab, or there'd be no way back out of one. */}
+      {COLLECTION_OWNERS.length > 1 && (
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+          {COLLECTION_OWNERS.map(o => {
+            const active = o.id === owner;
+            const count = allItems.reduce((s, i) => ownerOf(i) === o.id ? s + i.quantity : s, 0);
+            return (
+              <button
+                key={o.id}
+                onClick={() => handleSwitchOwner(o.id)}
+                className={cn(
+                  'flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-colors border',
+                  active
+                    ? 'bg-poke-blue text-white border-poke-blue'
+                    : 'bg-white/5 text-slate-400 border-white/10 hover:text-slate-200 hover:border-white/20',
+                )}
+              >
+                {o.label}
+                <span className={cn(
+                  'text-[11px] font-black px-1.5 py-0.5 rounded-full',
+                  active ? 'bg-white/20 text-white' : 'bg-white/5 text-slate-500',
+                )}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* Portfolio hero */}
       {hasPrices && (
         <motion.div
@@ -1957,11 +2027,23 @@ export function Collection() {
         <div className="text-center p-12 bg-surface rounded-2xl border-2 border-dashed border-white/10">
           <p className="text-slate-400 text-sm">
             {items.length === 0
-              ? '尚無收藏紀錄，點右上角「新增」開始記錄吧！'
+              ? '這裡還沒有收藏紀錄，點下面的「新增」開始記錄吧！'
               : filtersActive
                 ? '找不到符合條件的收藏'
                 : '尚無收藏紀錄'}
           </p>
+          {/* The toolbar (and with it the only other 新增 button) is hidden when
+              the tab has no cards — so without this one, a brand-new owner's tab
+              would be a dead end with no way to add the first card. */}
+          {items.length === 0 && (
+            <button
+              onClick={() => { setEditingId(null); setShowAddForm(true); }}
+              className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-bold bg-poke-blue text-white hover:bg-poke-dark-blue transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              新增
+            </button>
+          )}
         </div>
       )}
 
