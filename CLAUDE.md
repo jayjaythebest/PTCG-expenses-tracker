@@ -60,6 +60,7 @@ npm run dev     # vite on :3000, host 0.0.0.0
 ## Dev / Build / Deploy
 - **Dev:** `npm run dev` (port 3000)
 - **Typecheck / lint:** `npm run lint` (runs `tsc --noEmit`)
+- **Verify the set catalog:** `npm run verify:sets` (network; not part of `npm test`)
 - **Build:** `npm run build` → `dist/`
 - **Preview build:** `npm run preview`
 - **Deploy:** Pushing to `main` auto-deploys via Vercel — there is no manual deploy step.
@@ -80,6 +81,8 @@ npm run dev     # vite on :3000, host 0.0.0.0
 - Do **not** assume an expense row has a photo. The "add photo later" feature means `photo_path` may be null at any time.
 - Do **not** manually run `vercel --prod` unless the user explicitly asks; deploys go through `main`.
 - Do **not** edit generated files in `dist/`.
+- Do **not** hand-edit `src/data/ptcg-products.ts` without running `npm run verify:sets`. A set's `code` must be the code printed on the card and `name` must match the TCGdex ja name *exactly*, because `api/_lib/pricing.ts` resolves the Huca set code by looking the stored set **name** up in TCGdex — a one-character difference doesn't error, it just makes those cards show no price. Set names/codes had silently rotted this way (`s12a` labelled VMAXクライマックス when S12a is VSTARユニバース).
+- Do **not** split the catalog into separate ja / zh-tw tables. A set's code is language-independent — all 61 codes shared between the two TCGdex catalogs have identical card counts, i.e. the same set. Only the *name* differs, which is what `nameZh` is for. zh-tw does add ~37 deck/gift-box-only codes and prints a trailing `F` on MEGA sets (`M5F` vs `M5`); those are extra rows and a normalisation rule, not a reason to fork the table (which would double the surface for transcription drift and let the two disagree).
 
 ## Conventions
 - Components in `src/components/`, PascalCase filenames.

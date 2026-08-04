@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "verify:sets": "node scripts/verify-sets.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
