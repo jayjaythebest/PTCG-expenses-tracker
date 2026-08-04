@@ -49,6 +49,13 @@ export const PTCG_PRODUCTS: PtcgProduct[] = [
   { code: 'sv3a', name: 'レイジングサーフ',         series: 'スカーレット＆バイオレット', nameZh: '激狂駭浪' },
   { code: 'sv4K', name: '古代の咆哮',               series: 'スカーレット＆バイオレット', nameZh: '古代咆哮' },
   { code: 'sv4M', name: '未来の一閃',               series: 'スカーレット＆バイオレット', nameZh: '未來閃光' },
+  // TCGdex's ja record for SV4a is wrong — it repeats SV3a's name
+  // 「レイジングサーフ」. The card counts prove which is which (SV3a 62 official =
+  // Raging Surf, SV4a 190 official = Shiny Treasure ex), and zh-tw/kapaipai both
+  // say 閃色寶藏ex. We store the TRUE ja name; see JA_NAME_OVERRIDES in
+  // scripts/verify-sets.mjs. Pricing is unaffected: 「レイジングサーフ」 resolves to
+  // two ids so it's ambiguous either way, and lookupHuca falls back to `code`.
+  { code: 'sv4a', name: 'シャイニートレジャーex',     series: 'スカーレット＆バイオレット', nameZh: '閃色寶藏ex' },
   // ── スカーレット＆バイオレット 2024 ─────────────────────────
   { code: 'sv5K', name: 'ワイルドフォース',         series: 'スカーレット＆バイオレット', nameZh: '狂野之力' },
   { code: 'sv5M', name: 'サイバージャッジ',         series: 'スカーレット＆バイオレット', nameZh: '異度審判' },
@@ -63,6 +70,11 @@ export const PTCG_PRODUCTS: PtcgProduct[] = [
   { code: 'sv9',  name: 'バトルパートナーズ',       series: 'スカーレット＆バイオレット', nameZh: '對戰搭檔' },
   { code: 'sv9a', name: '熱風のアリーナ',           series: 'スカーレット＆バイオレット', nameZh: '熱風競技場' },
   { code: 'sv10', name: 'ロケット団の栄光',         series: 'スカーレット＆バイオレット', nameZh: '火箭隊的榮耀' },
+  // TCGdex has no zh-tw record for these two yet, but kapaipai (the actual
+  // zh-tw price source) ships packs SV11B/SV11W under these names, so nameZh is
+  // verified against kapaipai instead — see ZH_NAME_SOURCES in verify-sets.mjs.
+  { code: 'sv11B', name: 'ブラックボルト',          series: 'スカーレット＆バイオレット', nameZh: '漆黑伏特' },
+  { code: 'sv11W', name: 'ホワイトフレア',          series: 'スカーレット＆バイオレット', nameZh: '純白閃焰' },
   // ── ソード＆シールド 人気セット ─────────────────────────────
   // These DO have Traditional-Chinese releases (asia.pokemon-card.com/tw), so a
   // scanned 繁中 card of these sets is legitimate — don't assume ja.
