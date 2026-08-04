@@ -209,6 +209,36 @@ export function pickHucaPrice(row: HucaRow): number | null {
   return null;
 }
 
+// Rarity/edition tokens Huca appends after the card name in a listing title.
+const HUCA_TITLE_TOKENS = new Set([
+  'UR', 'MUR', 'SAR', 'AR', 'SR', 'HR', 'CSR', 'SER', 'CHR', 'RR', 'RRR', 'R', 'U', 'C',
+  'ACE', 'SPEC', 'P', 'PROMO', 'K', 'S',
+]);
+
+// The card name out of a Huca listing title. Titles are shaped
+// 「イーブイex SAR [SV8a 223/187](ハイクラスパック「テラスタルフェスex」)」 — name,
+// then optional rarity tokens, then a bracketed set/number and set label.
+export function hucaTitleCardName(title: string): string {
+  const head = (title ?? '').split('[')[0].trim();
+  const parts = head.split(/\s+/).filter(Boolean);
+  while (parts.length > 1 && HUCA_TITLE_TOKENS.has(parts[parts.length - 1].toUpperCase())) parts.pop();
+  return parts.join(' ');
+}
+
+// Does a Huca listing title name THIS card? Used to guard the name-keyword
+// fallback, which is the only lookup path with no set code to pin it down.
+//
+// A substring test is not enough and actively harmful: searching 「イーブイ」
+// returns 「イーブイex SAR [SV8a 223/187]」, whose title contains 「イーブイ」, so a
+// plain SV-P promo worth a few hundred yen would be priced off a ~13,000 JPY
+// SAR. Require the title's name portion to match exactly instead — an honest
+// "no price" beats a confidently wrong one.
+export function hucaTitleMatchesName(title: string, name: string): boolean {
+  const want = nameKey(name);
+  if (!want) return false;
+  return nameKey(hucaTitleCardName(title)) === want;
+}
+
 // Classify a Huca `latest_condition` string as raw (ungraded) or graded, and
 // normalise it to a stable label. Raw grades are single letters A/B/C/D. Graded
 // slabs look like "PSA10", "PSA 10", "BGS 9.5", "CGC-9" etc. — we normalise to a
@@ -380,9 +410,9 @@ async function lookupHuca(
       const url = `${HUCA_API}?search=${encodeURIComponent(name)}&promo=0&accuracy=1&limit=5`;
       const json = await fetchJson<{ data?: HucaRow[] }>(url);
       const rows = json?.data ?? [];
-      const needle = name.toLowerCase();
-      // Guard against unrelated matches: the title must mention the card name.
-      const related = rows.filter(r => (r.title ?? '').toLowerCase().includes(needle));
+      // Guard against unrelated matches: the title's name portion must BE this
+      // card's name, not merely contain it (see hucaTitleMatchesName).
+      const related = rows.filter(r => hucaTitleMatchesName(r.title ?? '', name));
       const result = await resolveHucaResult(related, wantGrade);
       if (result) return result;
     }
