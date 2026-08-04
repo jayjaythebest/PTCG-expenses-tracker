@@ -8,6 +8,7 @@ import {
   topMoversTwd, topMoversByHistory, type ValueMover,
 } from '../lib/collectionValue';
 import { usePriceHistory } from '../lib/usePriceHistory';
+import { PRIMARY_OWNER, ownerOf } from '../data/collectionOwners';
 import { inMonth } from '../lib/utils';
 import { Expense } from '../types';
 import {
@@ -72,7 +73,7 @@ function isExpense(e: Expense): boolean {
 
 export function Home({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
   const { expenses } = useExpenses();
-  const { items, loading: colLoading } = useCollection();
+  const { items: allItems, loading: colLoading } = useCollection();
   const { snapshots, recordToday } = useValueSnapshots();
   const { points: pricePoints, recordToday: recordPrices } = usePriceHistory();
   const { rate: fxRate, updatedAt: fxUpdatedAt } = useFxRateWithMeta();
@@ -82,6 +83,17 @@ export function Home({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
   const dateLabel = `${now.getFullYear()} 年 ${now.getMonth() + 1} 月 ${now.getDate()} 日 · 週${WEEKDAYS[now.getDay()]}`;
 
   // ---- Collection value (TWD) ----
+  // The account is shared with other collectors, who file cards under their own
+  // tab in the collection view. This screen is the account holder's summary —
+  // his value, his P&L, his movers — so everything below works off HIS cards
+  // only. Folding a friend's cards in here would silently restate his net worth,
+  // and worse, the snapshot written at the bottom of this block is the history
+  // the value chart is drawn from.
+  const items = useMemo(
+    () => allItems.filter(i => ownerOf(i) === PRIMARY_OWNER),
+    [allItems],
+  );
+
   const liveTotalTwd = useMemo(() => totalCurrentTwd(items, fxRate), [items, fxRate]);
   const itemCount = useMemo(() => totalItemCount(items), [items]);
   const pnl = useMemo(() => totalPnlTwd(items, fxRate), [items, fxRate]);

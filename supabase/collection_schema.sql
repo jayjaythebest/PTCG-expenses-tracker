@@ -102,6 +102,29 @@ create index if not exists collection_items_active_idx
   on public.collection_items (deleted_at);
 
 -- ============================================================
+-- Migration: add `owner` — whose cards these are.
+--
+-- One Supabase account is shared by more than one collector: a friend signs in
+-- with the same credentials and files their cards under their own tab in the
+-- collection view. This column keeps those collections, and every total derived
+-- from them, from being added together.
+--
+-- It is NOT an auth boundary and must never be used as one. RLS still grants
+-- every allowed user full access to every row, so anyone signed in can read and
+-- edit any owner's cards. Separating for real would mean separate accounts.
+--
+-- The default backfills existing rows to the account holder, which is correct —
+-- they were all his before this column existed. Ids must match COLLECTION_OWNERS
+-- in src/data/collectionOwners.ts. Safe to run repeatedly.
+-- ============================================================
+alter table public.collection_items
+  add column if not exists owner text not null default 'jay';
+
+-- The gallery filters to a single owner's active cards on every render.
+create index if not exists collection_items_owner_idx
+  on public.collection_items (owner, deleted_at);
+
+-- ============================================================
 -- Daily collection-value snapshots (stock-ticker style).
 -- One row per calendar day; the home screen compares the latest value against
 -- ~7 days ago and draws a recent trend line. Written by the daily Vercel cron

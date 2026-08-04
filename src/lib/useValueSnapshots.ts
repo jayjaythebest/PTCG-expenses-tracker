@@ -7,6 +7,13 @@ import { CollectionValueSnapshot } from '../types';
 // by date, so upserting today is idempotent — the daily cron and the client can
 // both write without creating duplicates. Together they give the home screen a
 // week-over-week value change plus a recent trend line.
+//
+// One row per day, keyed by date ALONE — there is nowhere to record whose
+// collection a row describes. The account is shared by several collectors
+// (src/data/collectionOwners.ts), so callers must pass PRIMARY_OWNER's totals
+// only. Feeding this the combined total of every tab would silently restate the
+// account holder's net worth, and because the series is history, past days
+// couldn't be recomputed to fix it.
 
 function mapRow(row: Record<string, unknown>): CollectionValueSnapshot {
   return {

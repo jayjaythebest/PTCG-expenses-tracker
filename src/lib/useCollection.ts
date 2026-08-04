@@ -31,6 +31,9 @@ function mapRow(row: Record<string, unknown>): CollectionItem {
     grade:         row.grade as string | undefined,
     gradingCert:   row.grading_cert as string | undefined,
     deletedAt:     (row.deleted_at as string | null) ?? undefined,
+    // Null on rows written before the owner column existed; ownerOf() maps
+    // those to the account holder, so don't coerce to a default here.
+    owner:         (row.owner as string | null) ?? undefined,
     createdAt:     row.created_at as string,
   };
 }
@@ -97,6 +100,10 @@ export function useCollection() {
       grading_company: item.gradingCompany ?? null,
       grade:           item.grade ?? null,
       grading_cert:    item.gradingCert ?? null,
+      // Which tab the card was added under. Falls back to the DB default rather
+      // than being forced here, so a caller that doesn't know about owners
+      // still files cards under the account holder.
+      ...(item.owner ? { owner: item.owner } : {}),
     });
     if (error) throw error;
   };
@@ -125,6 +132,9 @@ export function useCollection() {
     if ('gradingCompany' in updates)         dbUpdates.grading_company = updates.gradingCompany ?? null;
     if ('grade' in updates)                  dbUpdates.grade = updates.grade ?? null;
     if ('gradingCert' in updates)            dbUpdates.grading_cert = updates.gradingCert ?? null;
+    // Never write null: owner is NOT NULL, and a card filed under nobody would
+    // vanish from every tab.
+    if (updates.owner)                       dbUpdates.owner = updates.owner;
 
     const { error } = await supabase.from('collection_items').update(dbUpdates).eq('id', id);
     if (error) throw error;

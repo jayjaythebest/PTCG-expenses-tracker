@@ -49,6 +49,12 @@ export interface CollectionItem {
   // "已刪除" graveyard, hidden from the gallery but restorable. Lets a user undo
   // an accidental delete instead of losing the row (and its price history).
   deletedAt?: string;
+  // Whose card this is — a COLLECTION_OWNERS id (src/data/collectionOwners.ts).
+  // The account is shared, so this only keeps collections and their totals
+  // apart; it grants nothing and restricts nothing. Absent on rows written
+  // before the column existed, which belong to PRIMARY_OWNER — read it through
+  // ownerOf() rather than directly, so those rows aren't dropped.
+  owner?: string;
   createdAt: string;
 }
 

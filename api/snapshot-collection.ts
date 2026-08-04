@@ -4,6 +4,7 @@ import { resolveCardPrice, buildWantGrade } from './_lib/pricing.js';
 import { supabaseUrl, serviceRoleKey } from './_lib/env.js';
 import { PTCG_PRODUCTS } from '../src/data/ptcg-products.js';
 import { boxSnkrdunkId } from '../src/data/ptcg-boxes.js';
+import { PRIMARY_OWNER, ownerOf } from '../src/data/collectionOwners.js';
 
 // Daily cron. Three jobs, in order:
 //   1. Refresh every single card's live market price from its source (Huca for
@@ -17,6 +18,12 @@ import { boxSnkrdunkId } from '../src/data/ptcg-boxes.js';
 //      so the home screen can show a stock-ticker-style week-over-week change
 //      and trend line — even on days the user never opens the app. Keyed by
 //      date, so it's idempotent with the client-side upsert-on-load.
+//
+// Steps 1 and 2 cover EVERY owner's cards (see src/data/collectionOwners.ts) —
+// the account is shared, and every tab wants fresh prices and its own history,
+// which per-card rows can express. Step 3 covers PRIMARY_OWNER only, because its
+// table is keyed by date alone: there is exactly one row per day with no room to
+// say whose collection it describes. See the filter at the bottom.
 //
 //   Cron: /api/snapshot-collection (see vercel.json)
 
@@ -35,6 +42,7 @@ interface ItemRow {
   is_graded: boolean | null;
   grading_company: string | null;
   grade: string | null;
+  owner: string | null;
 }
 
 const HUCA_FX = 'https://huca.tw/api/fx_rates.php';
@@ -219,7 +227,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // cron's snapshot would disagree with the app and the trend line would step.
   const { data: items, error } = await supabase
     .from('collection_items')
-    .select('id, name, set_name, card_number, edition, item_type, market_price, market_price_currency, market_price_source, current_value, quantity, is_graded, grading_company, grade')
+    .select('id, name, set_name, card_number, edition, item_type, market_price, market_price_currency, market_price_source, current_value, quantity, is_graded, grading_company, grade, owner')
     .is('deleted_at', null);
 
   if (error) {
@@ -235,9 +243,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const rate = await jpyToTwd();
   const history = await recordPriceHistory(supabase, rows, rate, todayIso());
 
-  // 3) Snapshot today's total from the freshened prices.
-  const totalTwd = rows.reduce((sum, r) => sum + valueTwd(r, rate), 0);
-  const itemCount = rows.reduce((sum, r) => sum + (r.quantity ?? 1), 0);
+  // 3) Snapshot today's total from the freshened prices — the ACCOUNT HOLDER's
+  // cards only. collection_value_snapshots has one row per day keyed by date
+  // alone, and the home screen's value chart is drawn from it, so that row has
+  // to mean one specific person's collection. Folding a friend's cards in would
+  // restate his net worth, and since the history is a running series that can't
+  // be recomputed for past days, the damage wouldn't be undoable.
+  const ownRows = rows.filter(r => ownerOf({ owner: r.owner ?? undefined }) === PRIMARY_OWNER);
+  const totalTwd = ownRows.reduce((sum, r) => sum + valueTwd(r, rate), 0);
+  const itemCount = ownRows.reduce((sum, r) => sum + (r.quantity ?? 1), 0);
 
   const { error: upsertError } = await supabase
     .from('collection_value_snapshots')
