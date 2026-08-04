@@ -16,6 +16,19 @@ export const SERIES_ZH: Record<string, string> = {
   'ソード＆シールド': '劍＆盾',
 };
 
+// IMPORTANT: `code` must be the code PRINTED on the card (SV2D, S12a, M4…),
+// and `name` must match the TCGdex set name EXACTLY.
+//
+// Both are load-bearing, not cosmetic:
+//   * api/_lib/pricing.ts resolves the Huca set code by looking the stored set
+//     NAME up in TCGdex. A name that differs by even one character (「スター
+//     バース」vs「スターバース」, 「古代の鼓動」vs「古代の咆哮」) fails to resolve
+//     and the card silently shows no price.
+//   * `code` is the fallback when that lookup is ambiguous, and it drives
+//     artwork fetches and the scan branches' setName resolution.
+//
+// Verify any addition against https://api.tcgdex.net/v2/ja/sets (and
+// /v2/zh-tw/sets for nameZh) rather than typing from memory.
 export const PTCG_PRODUCTS: PtcgProduct[] = [
   // ── ポケモンカードゲーム MEGA (2025〜) ──────────────────────
   { code: 'm1L',  name: 'メガブレイブ',            series: 'ポケモンカードゲーム MEGA', nameZh: '超級勇氣' },
@@ -26,25 +39,22 @@ export const PTCG_PRODUCTS: PtcgProduct[] = [
   { code: 'm4',   name: 'ニンジャスピナー',         series: 'ポケモンカードゲーム MEGA', nameZh: '忍者飛旋' },
   { code: 'm5',   name: 'アビスアイ',               series: 'ポケモンカードゲーム MEGA', nameZh: '深淵之瞳' },
   // ── スカーレット＆バイオレット 2023 ─────────────────────────
-  // nameZh values below are the official TW names verified against retail /
-  // asia.pokemon-card.com/tw. Sets whose official TW name isn't yet confirmed
-  // are left without nameZh so the UI falls back to the Japanese name.
-  { code: 'sv1',  name: 'スカーレット',             series: 'スカーレット＆バイオレット', nameZh: '朱' },
-  { code: 'sv1',  name: 'バイオレット',             series: 'スカーレット＆バイオレット', nameZh: '紫' },
+  { code: 'sv1S', name: 'スカーレットex',           series: 'スカーレット＆バイオレット', nameZh: '朱ex' },
+  { code: 'sv1V', name: 'バイオレットex',           series: 'スカーレット＆バイオレット', nameZh: '紫ex' },
   { code: 'sv1a', name: 'トリプレットビート',       series: 'スカーレット＆バイオレット', nameZh: '三連音爆' },
-  { code: 'sv1b', name: 'スノーハザード',           series: 'スカーレット＆バイオレット' },
-  { code: 'sv1b', name: 'クレイバースト',           series: 'スカーレット＆バイオレット' },
-  { code: 'sv2a', name: 'ポケモンカード151',        series: 'スカーレット＆バイオレット', nameZh: '151' },
-  { code: 'sv2',  name: '黒炎の支配者',             series: 'スカーレット＆バイオレット', nameZh: '黯焰支配者' },
-  { code: 'sv3',  name: 'レイジングサーフ',         series: 'スカーレット＆バイオレット', nameZh: '激狂駭浪' },
-  { code: 'sv4K', name: '古代の鼓動',               series: 'スカーレット＆バイオレット', nameZh: '古代咆哮' },
+  { code: 'sv2P', name: 'スノーハザード',           series: 'スカーレット＆バイオレット', nameZh: '冰雪險境' },
+  { code: 'sv2D', name: 'クレイバースト',           series: 'スカーレット＆バイオレット', nameZh: '碟旋暴擊' },
+  { code: 'sv2a', name: 'ポケモンカード151',        series: 'スカーレット＆バイオレット', nameZh: '寶可夢卡牌151' },
+  { code: 'sv3',  name: '黒炎の支配者',             series: 'スカーレット＆バイオレット', nameZh: '黯焰支配者' },
+  { code: 'sv3a', name: 'レイジングサーフ',         series: 'スカーレット＆バイオレット', nameZh: '激狂駭浪' },
+  { code: 'sv4K', name: '古代の咆哮',               series: 'スカーレット＆バイオレット', nameZh: '古代咆哮' },
   { code: 'sv4M', name: '未来の一閃',               series: 'スカーレット＆バイオレット', nameZh: '未來閃光' },
   // ── スカーレット＆バイオレット 2024 ─────────────────────────
   { code: 'sv5K', name: 'ワイルドフォース',         series: 'スカーレット＆バイオレット', nameZh: '狂野之力' },
   { code: 'sv5M', name: 'サイバージャッジ',         series: 'スカーレット＆バイオレット', nameZh: '異度審判' },
   { code: 'sv5a', name: 'クリムゾンヘイズ',         series: 'スカーレット＆バイオレット', nameZh: '緋紅薄霧' },
-  { code: 'sv6',  name: 'ナイトワンダラー',         series: 'スカーレット＆バイオレット', nameZh: '黑夜漫遊者' },
-  { code: 'sv6a', name: 'テラスタルフェスティバル', series: 'スカーレット＆バイオレット' },
+  { code: 'sv6',  name: '変幻の仮面',               series: 'スカーレット＆バイオレット', nameZh: '變幻假面' },
+  { code: 'sv6a', name: 'ナイトワンダラー',         series: 'スカーレット＆バイオレット', nameZh: '黑夜漫遊者' },
   { code: 'sv7',  name: 'ステラミラクル',           series: 'スカーレット＆バイオレット', nameZh: '星晶奇跡' },
   { code: 'sv7a', name: '楽園ドラゴーナ',           series: 'スカーレット＆バイオレット', nameZh: '樂園騰龍' },
   { code: 'sv8',  name: '超電ブレイカー',           series: 'スカーレット＆バイオレット', nameZh: '超電突圍' },
@@ -54,12 +64,19 @@ export const PTCG_PRODUCTS: PtcgProduct[] = [
   { code: 'sv9a', name: '熱風のアリーナ',           series: 'スカーレット＆バイオレット', nameZh: '熱風競技場' },
   { code: 'sv10', name: 'ロケット団の栄光',         series: 'スカーレット＆バイオレット', nameZh: '火箭隊的榮耀' },
   // ── ソード＆シールド 人気セット ─────────────────────────────
-  // These predate the TW Traditional-Chinese launch (Oct 2023) and were never
-  // released in 繁中, so there is no official Chinese name — JA is shown.
-  { code: 's12a', name: 'VMAXクライマックス',       series: 'ソード＆シールド' },
-  { code: 's12',  name: 'スター バース',            series: 'ソード＆シールド' },
-  { code: 's11a', name: 'パラダイムトリガー',       series: 'ソード＆シールド' },
-  { code: 's10a', name: 'ダークファンタズマ',       series: 'ソード＆シールド' },
-  { code: 's10b', name: 'ポケモンGO',               series: 'ソード＆シールド' },
-  { code: 's9a',  name: 'バトルリージョン',         series: 'ソード＆シールド' },
+  // These DO have Traditional-Chinese releases (asia.pokemon-card.com/tw), so a
+  // scanned 繁中 card of these sets is legitimate — don't assume ja.
+  { code: 's8b',  name: 'VMAXクライマックス',       series: 'ソード＆シールド', nameZh: 'VMAX絕群壓軸' },
+  { code: 's9',   name: 'スターバース',             series: 'ソード＆シールド', nameZh: '星星誕生' },
+  { code: 's9a',  name: 'バトルリージョン',         series: 'ソード＆シールド', nameZh: '對戰地區' },
+  { code: 's10D', name: 'タイムゲイザー',           series: 'ソード＆シールド', nameZh: '時間觀察者' },
+  { code: 's10P', name: 'スペースジャグラー',       series: 'ソード＆シールド', nameZh: '空間魔術師' },
+  { code: 's10a', name: 'ダークファンタズマ',       series: 'ソード＆シールド', nameZh: '黑暗亡靈' },
+  { code: 's10b', name: 'Pokémon GO',               series: 'ソード＆シールド', nameZh: 'Pokémon GO' },
+  // TCGdex's zh-tw record for S11 is corrupted (it reports 「三連音爆」, the name
+  // it also gives a dozen unrelated sets), so nameZh is left off rather than wrong.
+  { code: 's11',  name: 'ロストアビス',             series: 'ソード＆シールド' },
+  { code: 's11a', name: '白熱のアルカナ',           series: 'ソード＆シールド', nameZh: '白熱奧祕' },
+  { code: 's12',  name: 'パラダイムトリガー',       series: 'ソード＆シールド', nameZh: '思維激盪' },
+  { code: 's12a', name: 'VSTARユニバース',          series: 'ソード＆シールド', nameZh: '天地萬物VSTAR' },
 ];

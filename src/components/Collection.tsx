@@ -482,6 +482,15 @@ function CollectionForm({
           edition:    isZhTw ? 'zh-tw' : (scan.language || f.edition),
           imageUrl:   img || f.imageUrl,
         }));
+        // Show WHAT was read, not just that the catalog missed. Secret rares are
+        // the usual cause (TCGdex's zh-tw data stops at the official set total,
+        // so a UR numbered past it can't match) — and without these identifiers
+        // on screen there's no way to tell that apart from a genuine misread.
+        setScanHint(
+          `辨識為 ${scan.setCode || '?'} #${scan.localId || '?'}（${isZhTw ? '繁中' : scan.language || 'ja'}）`
+          + '；卡片資料庫查無此編號，請確認系列與卡號'
+          + (img ? '' : '。找不到對應卡圖，請手動貼上圖片網址'),
+        );
         setScanResult('fallback');
       }
 
@@ -602,9 +611,18 @@ function CollectionForm({
                     <span className="ml-1 font-medium text-slate-400">· {scanProvider}</span>
                   )}
                 </p>
-                {scanResult === 'error' && (
+                {/* Both non-matched states need this. A "查無此卡" that shows no
+                    identifiers gives the user nothing to correct and nothing to
+                    report, and leaves retry unreachable even though a reflective
+                    slab often reads fine on a second shot. */}
+                {scanResult !== 'matched' && (
                   <>
-                    {scanHint && <p className="mt-0.5 text-[11px] font-medium text-red-300/80">{scanHint}</p>}
+                    {scanHint && (
+                      <p className={cn(
+                        'mt-0.5 text-[11px] font-medium',
+                        scanResult === 'error' ? 'text-red-300/80' : 'text-amber-300/80',
+                      )}>{scanHint}</p>
+                    )}
                     {scanDebug && (
                       <div className="mt-1 space-y-0.5">
                         {scanDebug.map((line, i) => (
@@ -615,7 +633,12 @@ function CollectionForm({
                     <button
                       type="button"
                       onClick={() => { if (lastFileRef.current) runScan(lastFileRef.current); }}
-                      className="mt-1.5 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold text-red-300 bg-white/5 border border-red-500/30 hover:bg-red-500/10 transition-colors"
+                      className={cn(
+                        'mt-1.5 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-white/5 border transition-colors',
+                        scanResult === 'error'
+                          ? 'text-red-300 border-red-500/30 hover:bg-red-500/10'
+                          : 'text-amber-300 border-amber-500/30 hover:bg-amber-500/10',
+                      )}
                     >
                       <RefreshCw className="w-3 h-3" /> 重試
                     </button>

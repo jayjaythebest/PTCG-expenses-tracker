@@ -141,16 +141,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const candidates = setCodeCandidates(set);
+    // A caller that supplied a collector number wants THAT card. A caller that
+    // didn't (boxes, packs, "自動取得系列圖") just wants something representative
+    // of the set. The two must not share fallbacks — see below.
+    const wantsSpecificCard = Number.isFinite(number) && number > 0;
 
     // 1) Precise single card, when a collector number is given. Binary-search the
     // ascending list for the real collector number (handles duplicates + secrets).
-    if (Number.isFinite(number) && number > 0) {
+    if (wantsSpecificCard) {
       for (const code of candidates) {
         const id = await findImageIdByNumber(code, number);
         if (id) {
           return res.status(200).json({ imageUrl: cardImageUrl(id), kind: 'card' });
         }
       }
+      // Couldn't confirm that exact card — answer "no image" rather than some
+      // OTHER card's art. Substituting here is how a UR オリジンパルキアVSTAR
+      // (S12a/259, a secret rare the TW site doesn't list) came back as 派拉斯,
+      // S12a's card 001: silently wrong, and the caller saved it as the card's
+      // picture. A missing thumbnail is recoverable; a confidently wrong one
+      // gets stored and trusted.
+      return res.status(200).json({ imageUrl: null, reason: 'card_not_found' });
     }
 
     // 2) Product / pack image (boxes, packs, or singles with no number).
@@ -162,15 +173,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    // 3) Fall back to the expansion's first card as a representative image.
+    // 3) Fall back to the expansion's first card as a representative image. Only
+    // reachable when no specific card was requested, so it can't misrepresent one.
     for (const code of candidates) {
       const ids = await getAllCardIds(code);
       if (ids[0]) {
-        return res.status(200).json({ imageUrl: cardImageUrl(ids[0]), kind: 'card' });
+        return res.status(200).json({ imageUrl: cardImageUrl(ids[0]), kind: 'representative' });
       }
     }
 
-    return res.status(200).json({ imageUrl: null });
+    return res.status(200).json({ imageUrl: null, reason: 'set_not_found' });
   } catch {
     return res.status(200).json({ imageUrl: null });
   }
