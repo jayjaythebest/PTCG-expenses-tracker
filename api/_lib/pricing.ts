@@ -154,6 +154,27 @@ export function extractNumber(num: string): string {
   return (num ?? '').trim();
 }
 
+// The set code hiding in the collector number, for cards whose set is not in
+// any catalog — promos, tournament prizes, campaign cards.
+//
+// On a normal card the denominator is the set size ("223/187"). On a promo it
+// is the SET CODE instead ("198/SV-P", "133/M-P"), because a promo set has no
+// fixed size. So the card itself carries the one fact the catalog can't supply,
+// and Huca files promos under exactly these codes (SV-P: 227 cards, M-P: 58).
+//
+// Returns null for a numeric denominator, i.e. a normal card, which must keep
+// resolving its code from the set name.
+export function promoSetCodeFromNumber(num: string): string | null {
+  const parts = (num ?? '').split('/');
+  if (parts.length < 2) return null;
+  const tail = parts[parts.length - 1].trim();
+  // All digits => it's a set size, not a code.
+  if (!tail || /^\d+$/.test(tail)) return null;
+  // Guard against junk: real codes look like SV-P, M-P, BW-P, S-P, PMCG-P.
+  if (!/^[A-Za-z0-9-]{1,8}$/.test(tail)) return null;
+  return tail.toUpperCase();
+}
+
 // -------- Huca (Japanese cards) --------------------------------------------
 
 // TCGdex ja set NAME -> set code(s). Huca uses the SAME set codes TCGdex does
@@ -207,6 +228,39 @@ export function pickHucaPrice(row: HucaRow): number | null {
     return Math.round(row.sort_price as number);
   }
   return null;
+}
+
+// Rarity/edition tokens Huca appends after the card name in a listing title.
+const HUCA_TITLE_TOKENS = new Set([
+  'UR', 'MUR', 'SAR', 'AR', 'SR', 'HR', 'CSR', 'SER', 'CHR', 'RR', 'RRR', 'R', 'U', 'C',
+  'ACE', 'SPEC', 'P', 'PROMO', 'K', 'S',
+]);
+
+// The card name out of a Huca listing title. Titles are shaped
+// 「イーブイex SAR [SV8a 223/187](ハイクラスパック「テラスタルフェスex」)」 — name,
+// then optional rarity tokens, then a bracketed set/number and set label.
+export function hucaTitleCardName(title: string): string {
+  // Everything before the bracketed set/number, minus Huca's ":"-prefixed
+  // annotations — 「モトトカゲex: プロモ RR[SV-P 009]」, 「基本草エネルギー P:参加賞」,
+  // 「イーブイ: 旧裏/プロモ」. These describe the printing, not the card.
+  const head = (title ?? '').split('[')[0].split(/[:：]/)[0].trim();
+  const parts = head.split(/\s+/).filter(Boolean);
+  while (parts.length > 1 && HUCA_TITLE_TOKENS.has(parts[parts.length - 1].toUpperCase())) parts.pop();
+  return parts.join(' ');
+}
+
+// Does a Huca listing title name THIS card?
+//
+// This is only ever a SECOND check, applied on top of an exact set-code +
+// number match. It must not be used as the sole test of identity: on its own it
+// happily accepts every other set's printing of the same name — 「ピカチュウ UR
+// [BW1 056/053]」 passes as 「ピカチュウ」 — which is how a promo once got priced
+// at ¥765,000. Combined with set+number it is useful, because promo set codes
+// collide across languages (Huca's SVP is English, SV-P Japanese).
+export function hucaTitleMatchesName(title: string, name: string): boolean {
+  const want = nameKey(name);
+  if (!want) return false;
+  return nameKey(hucaTitleCardName(title)) === want;
 }
 
 // Classify a Huca `latest_condition` string as raw (ungraded) or graded, and
@@ -358,37 +412,44 @@ async function lookupHuca(
     // priced row wins; a valid set-code lookup for the real card number can't
     // resolve to a different card.
     const resolved = await resolveHucaSetCode(setName);
+    // Promos and special-issue cards have no catalog entry by nature, so the
+    // two lookups above yield nothing for them. Their set code is printed on
+    // the card itself, in the collector number — see promoSetCodeFromNumber.
+    const promoCode = promoSetCodeFromNumber(num);
     const seen = new Set<string>();
-    const candidates = [resolved, setCode.trim()].filter((c): c is string => !!c);
+    const candidates = [resolved, setCode.trim(), promoCode].filter((c): c is string => !!c);
     for (const code of candidates) {
       const key = code.toLowerCase();
       if (seen.has(key)) continue;
       seen.add(key);
       const url = `${HUCA_API}?search=&set_code=${encodeURIComponent(code)}&card_number=${encodeURIComponent(digits)}&promo=0&accuracy=1&limit=10`;
       const json = await fetchJson<{ data?: HucaRow[] }>(url);
-      const rows = json?.data ?? [];
+      let rows = json?.data ?? [];
+      // On the promo code we also check the name. Set+number is normally a
+      // unique key, but promo codes collide across languages — Huca files the
+      // English promos under SVP and the Japanese ones under SV-P, and asking
+      // for SVP 198 answers with ザシアンex, a different card entirely. The name
+      // is the other thing printed on the card, so use it to confirm the hit.
+      if (code === promoCode && name) {
+        rows = rows.filter(r => hucaTitleMatchesName(r.title ?? '', name));
+      }
       const result = await resolveHucaResult(rows, wantGrade);
       if (result) return result;
     }
 
-    // There used to be a name-keyword fallback here for when no set code could
-    // be resolved. It is gone on purpose, and should not come back.
+    // NO name-keyword fallback here, deliberately — do not add one back.
     //
-    // Reaching this point means neither the catalog nor TCGdex knows the card's
-    // set — i.e. we do not know which printing this is. A name search cannot
+    // Reaching this point means nothing identified the card's set: not the
+    // catalog, not TCGdex, not its own collector number. A name search cannot
     // recover that, because every common Pokémon name has dozens of printings
-    // at wildly different values, and Huca returns them ranked by relevance,
-    // not by likeness. Measured against the live API, a promo 「ピカチュウ
-    // 133/M-P」 was priced off 「ピカチュウ UR [BW1 056/053]」 at ¥765,000.
+    // at wildly different values, and Huca ranks by relevance, not likeness.
+    // Measured against the live API, a promo 「ピカチュウ 133/M-P」 was priced
+    // off 「ピカチュウ UR [BW1 056/053]」 at ¥765,000. Requiring an exact name
+    // match did not help: it still accepts every other set's printing of that
+    // same name.
     //
-    // Tightening the title match did not fix it and cannot: matching the name
-    // exactly still accepts every other set's printing of that same name. The
-    // missing information is the set, so the honest answer is no price — a
-    // blank shows up as "needs attention", whereas a wrong number silently
-    // inflates the collection total and nobody has reason to doubt it.
-    //
-    // The fix for such a card is to give it a set, not to guess: add the set to
-    // src/data/ptcg-products.ts so the set-code path can identify it.
+    // So the answer is no price. A blank reads as "needs attention"; a wrong
+    // number silently inflates the collection total with nothing to question.
   }
 
   return null;

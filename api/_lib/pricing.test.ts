@@ -8,6 +8,9 @@ import {
   normNum,
   nameKey,
   pickKpRowForNumber,
+  promoSetCodeFromNumber,
+  hucaTitleCardName,
+  hucaTitleMatchesName,
   type KpCardRow,
 } from './pricing';
 
@@ -26,6 +29,31 @@ describe('extractNumber', () => {
   });
   it('falls back to trimmed input when there are no digits', () => {
     expect(extractNumber(' PROMO ')).toBe('PROMO');
+  });
+});
+
+describe('promoSetCodeFromNumber', () => {
+  // Promos have no catalog entry, so the denominator of their collector number
+  // is the only place their set is recorded.
+  it('reads the set code off a promo number', () => {
+    expect(promoSetCodeFromNumber('198/SV-P')).toBe('SV-P');
+    expect(promoSetCodeFromNumber('133/M-P')).toBe('M-P');
+    expect(promoSetCodeFromNumber('213/BW-P')).toBe('BW-P');
+  });
+  it('upper-cases so a lower-case entry still resolves', () => {
+    expect(promoSetCodeFromNumber('198/sv-p')).toBe('SV-P');
+  });
+  it('returns null for a normal card, whose denominator is the set size', () => {
+    expect(promoSetCodeFromNumber('223/187')).toBeNull();
+    expect(promoSetCodeFromNumber('019/016')).toBeNull();
+  });
+  it('returns null when there is no denominator at all', () => {
+    expect(promoSetCodeFromNumber('054')).toBeNull();
+    expect(promoSetCodeFromNumber('')).toBeNull();
+  });
+  it('rejects junk rather than sending it as a set code', () => {
+    expect(promoSetCodeFromNumber('198/こんな長い日本語のごみ')).toBeNull();
+    expect(promoSetCodeFromNumber('198/ ')).toBeNull();
   });
 });
 
@@ -110,6 +138,52 @@ describe('normNum', () => {
   });
   it('upper-cases fully non-numeric ids', () => {
     expect(normNum('abc')).toBe('ABC');
+  });
+});
+
+describe('hucaTitleCardName', () => {
+  it('drops the bracketed set/number and a trailing rarity token', () => {
+    expect(hucaTitleCardName('イーブイex SAR [SV8a 223/187](ハイクラスパック「テラスタルフェスex」)'))
+      .toBe('イーブイex');
+  });
+  it('keeps a bare name untouched', () => {
+    expect(hucaTitleCardName('イーブイ [SVP 198]')).toBe('イーブイ');
+  });
+  it('strips a multi-word rarity like ACE SPEC', () => {
+    expect(hucaTitleCardName('マスターボール ACE SPEC [SV5a 086]')).toBe('マスターボール');
+  });
+  it('never strips the name itself, even when it looks like a token', () => {
+    expect(hucaTitleCardName('P [SVP 001]')).toBe('P');
+  });
+  // Promo titles carry a ":"-prefixed note about the printing. Left in, it made
+  // a real SV-P promo unmatchable and the card silently showed no price.
+  it('drops a colon-prefixed printing note', () => {
+    expect(hucaTitleCardName('モトトカゲex: プロモ RR[SV-P 009]')).toBe('モトトカゲex');
+    expect(hucaTitleCardName('基本草エネルギー P:参加賞 [M-P 035]')).toBe('基本草エネルギー');
+    expect(hucaTitleCardName('イーブイ: 旧裏/プロモ[neo-P No.133]')).toBe('イーブイ');
+  });
+});
+
+describe('hucaTitleMatchesName', () => {
+  // Only ever a second check on top of set-code + number. What it is actually
+  // for: promo codes collide across languages, so Huca's SVP 198 is ザシアンex
+  // (English) while the wanted card is a Japanese SV-P.
+  it('rejects a different card sharing the set and number', () => {
+    expect(hucaTitleMatchesName('ザシアンex P [SVP EN 198]【英語版】', 'イーブイ')).toBe(false);
+  });
+  it('accepts the same card with a rarity token', () => {
+    expect(hucaTitleMatchesName('ピカチュウ P [SV-P 291]', 'ピカチュウ')).toBe(true);
+  });
+  it('ignores whitespace differences', () => {
+    expect(hucaTitleMatchesName('超級噴火龍X ex [M2a 223]', '超級噴火龍Xex')).toBe(true);
+  });
+  it('rejects an empty wanted name rather than matching everything', () => {
+    expect(hucaTitleMatchesName('イーブイ [SVP 198]', '')).toBe(false);
+  });
+  // Documents WHY this must never be the only check: it cannot tell printings
+  // of the same name apart, which is exactly the ¥765,000 mispricing.
+  it('cannot distinguish printings, so it is not an identity test on its own', () => {
+    expect(hucaTitleMatchesName('ピカチュウ UR[BW1 056/053]', 'ピカチュウ')).toBe(true);
   });
 });
 

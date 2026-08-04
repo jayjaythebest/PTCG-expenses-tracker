@@ -863,9 +863,18 @@ function CollectionForm({
             <input
               value={form.cardNumber}
               onChange={e => set('cardNumber', e.target.value)}
-              placeholder="e.g. 199/165"
+              placeholder="e.g. 199/165、198/SV-P"
               className="w-full border border-white/10 bg-white/5 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-poke-accent"
             />
+            {/* Promos have no set to pick, so the code in the card number is the
+                only thing that can identify them — say so, or the user drops it
+                and the card silently never gets a price. */}
+            {form.setName === '其他' && (
+              <p className="mt-1 text-[11px] text-slate-500 leading-snug">
+                特典／促銷卡請照卡片左下角完整輸入（如 <span className="font-bold text-slate-400">198/SV-P</span>），
+                斜線後的代號是查價唯一的依據。
+              </p>
+            )}
           </div>
         </div>
       )}
