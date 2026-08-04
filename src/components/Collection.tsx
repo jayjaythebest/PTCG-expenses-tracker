@@ -1163,6 +1163,203 @@ function CollectionModal({
   );
 }
 
+function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
+  if (value == null || value === '') return null;
+  return (
+    <div className="flex items-baseline justify-between gap-3 py-1.5 border-b border-white/5 last:border-0">
+      <span className="text-[11px] font-bold text-slate-500 shrink-0">{label}</span>
+      <span className="text-[13px] font-bold text-slate-200 text-right break-all">{value}</span>
+    </div>
+  );
+}
+
+// Tapping a card in the gallery opens this: the artwork big enough to actually
+// look at, the details that don't fit on a tile, and the per-card actions.
+// 「更新價格」 here re-prices JUST this card — the bulk refresh walks every
+// priceable item one request at a time, which is a long wait when you only
+// care about the card you're looking at.
+function CardDetailModal({
+  item,
+  estTwd,
+  est,
+  diff,
+  diffPct,
+  onClose,
+  onEdit,
+  onDelete,
+  onReprice,
+  pricing,
+  priceMsg,
+}: {
+  item: CollectionItem;
+  estTwd: number | null;
+  est: { amount: number; currency: 'JPY' | 'TWD' } | null;
+  diff: number | null;
+  diffPct: number | null;
+  onClose: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  onReprice: () => void;
+  pricing: boolean;
+  priceMsg: { ok: boolean; text: string } | null;
+}) {
+  const graded = item.isGraded
+    ? `${item.gradingCompany ? GRADING_LABELS[item.gradingCompany] : '鑑定'}${item.grade ? ` ${item.grade}` : ''}`
+    : null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+      <motion.div
+        initial={{ opacity: 0, y: 40 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 40 }}
+        transition={{ duration: 0.2 }}
+        className="relative w-full sm:max-w-md bg-surface border border-white/10 rounded-t-2xl sm:rounded-2xl shadow-2xl max-h-[92vh] overflow-y-auto"
+      >
+        <div className="sticky top-0 bg-surface border-b border-white/10 px-5 py-4 flex items-center justify-between gap-2 z-10">
+          <h2 className="font-black text-lg text-slate-100 leading-tight line-clamp-2">{item.name}</h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors shrink-0">
+            <X className="w-5 h-5 text-slate-400" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {/* Enlarged artwork */}
+          <div className="relative mx-auto w-full max-w-[260px] aspect-[3/4] rounded-xl overflow-hidden bg-white/5 border border-white/10">
+            <GalleryImage item={item} />
+          </div>
+
+          <div className="flex items-center justify-center gap-1.5 flex-wrap">
+            <ItemTypeBadge type={item.itemType} />
+            {item.edition && (
+              <span className="text-[10px] font-bold text-sky-300 bg-sky-500/15 px-1.5 py-0.5 rounded-full">
+                {EDITION_LABELS[item.edition]}
+              </span>
+            )}
+            {item.rarity && (
+              <span className="text-[10px] font-bold text-violet-300 bg-violet-500/15 px-1.5 py-0.5 rounded-full">
+                {item.rarity}
+              </span>
+            )}
+            {graded && (
+              <span className="text-[10px] font-black text-amber-700 bg-gradient-to-r from-amber-100 to-yellow-100 border border-amber-300 px-1.5 py-0.5 rounded-full">
+                {graded}
+              </span>
+            )}
+          </div>
+
+          {/* Current value */}
+          <div className="rounded-xl bg-white/5 border border-white/10 px-4 py-3">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-[11px] font-bold text-slate-500">目前價值</span>
+              {diffPct != null && (
+                <span className={cn(
+                  'inline-flex items-center gap-0.5 text-[11px] font-black',
+                  diffPct >= 0 ? 'text-emerald-500' : 'text-red-400',
+                )}>
+                  {diffPct >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                  {diffPct >= 0 ? '+' : ''}{diffPct.toFixed(1)}%
+                  {diff != null && (
+                    <span className="ml-1 font-bold">
+                      ({diff >= 0 ? '+' : ''}NT${Math.round(diff).toLocaleString()})
+                    </span>
+                  )}
+                </span>
+              )}
+            </div>
+            <p className="mt-0.5 text-2xl font-black text-slate-100">
+              {estTwd != null ? `NT$${estTwd.toLocaleString()}` : '—'}
+              {estTwd != null && est?.currency === 'JPY' && (
+                <span className="ml-1 text-xs font-normal text-slate-400">
+                  (¥{Math.round(est.amount).toLocaleString()})
+                </span>
+              )}
+            </p>
+            {item.marketPrice != null && (
+              <p className="mt-1 text-[11px] text-slate-400">
+                {[
+                  item.marketPriceSource === 'manual' ? '手動輸入' : item.marketPriceSource,
+                  relativeTime(item.marketPriceUpdatedAt),
+                  item.marketPriceCondition
+                    ? (!item.isGraded && isGradedCondition(item.marketPriceCondition)
+                        ? `${item.marketPriceCondition} 參考`
+                        : item.marketPriceCondition)
+                    : null,
+                ].filter(Boolean).join(' · ')}
+              </p>
+            )}
+            {estTwd == null && (
+              <p className="mt-1 text-[11px] text-slate-500">
+                還沒有價格。按「更新價格」試著抓一次，抓不到就會維持空白。
+              </p>
+            )}
+          </div>
+
+          {/* Details */}
+          <div className="rounded-xl bg-white/5 border border-white/10 px-4 py-2">
+            <DetailRow label="系列" value={item.setName ? setLabel(item.setName) : null} />
+            <DetailRow label="卡號" value={item.cardNumber} />
+            <DetailRow label="數量" value={item.quantity > 1 ? `×${item.quantity}` : null} />
+            {!item.isGraded && (
+              <DetailRow label="卡況" value={item.condition ? CONDITION_LABELS[item.condition] : null} />
+            )}
+            <DetailRow label="鑑定編號" value={item.gradingCert} />
+            <DetailRow label="入手日" value={item.acquiredDate?.replace(/-/g, '/')} />
+            <DetailRow
+              label="當初估價"
+              value={item.currentValue != null ? `¥${Math.round(item.currentValue).toLocaleString()}` : null}
+            />
+            <DetailRow label="備註" value={item.notes} />
+          </div>
+        </div>
+
+        {/* Actions. Sticky: artwork + details is taller than the sheet on a
+            phone, and the whole point of opening a card is to act on it — the
+            buttons must not sit below the fold. */}
+        <div className="sticky bottom-0 bg-surface border-t border-white/10 px-5 py-3 space-y-2">
+            <button
+              onClick={onReprice}
+              disabled={pricing}
+              className={cn(
+                'w-full inline-flex items-center justify-center gap-2 py-2.5 rounded-xl font-black text-sm transition-colors',
+                pricing
+                  ? 'bg-poke-accent/10 text-poke-accent/70 cursor-wait'
+                  : 'bg-poke-accent/20 text-poke-accent hover:bg-poke-accent/30',
+              )}
+            >
+              {pricing
+                ? <><Loader2 className="w-4 h-4 animate-spin" /> 查詢中…</>
+                : <><RefreshCw className="w-4 h-4" /> 更新價格</>}
+            </button>
+            {priceMsg && (
+              <p className={cn(
+                'text-[11px] font-bold text-center',
+                priceMsg.ok ? 'text-emerald-400' : 'text-amber-400',
+              )}>
+                {priceMsg.text}
+              </p>
+            )}
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={onEdit}
+                className="inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-white/5 border border-white/10 text-slate-200 hover:bg-white/10 font-bold text-sm transition-colors"
+              >
+                <Pencil className="w-4 h-4" /> 編輯資訊
+              </button>
+              <button
+                onClick={onDelete}
+                className="inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-300 hover:bg-red-500/20 font-bold text-sm transition-colors"
+              >
+                <Trash2 className="w-4 h-4" /> 刪除卡片
+              </button>
+            </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 export function Collection() {
   const { items, deletedItems, loading, addItem, updateItem, deleteItem, restoreItem, purgeItem } = useCollection();
   const [showGraveyard, setShowGraveyard] = useState(false);
@@ -1177,6 +1374,10 @@ export function Collection() {
   const [fPrice, setFPrice] = useState<'all' | 'has' | 'none'>('all');
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(null);
+  // Per-card price refresh, driven from the detail modal.
+  const [pricingId, setPricingId] = useState<string | null>(null);
+  const [priceMsg, setPriceMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [fxRate, setFxRate] = useState(0.2); // JPY -> TWD, refined from /api/fx
   const [refreshing, setRefreshing] = useState(false);
@@ -1189,6 +1390,9 @@ export function Collection() {
   }, []);
 
   const editingItem = editingId ? (items.find(i => i.id === editingId) ?? null) : null;
+  // Looked up from `items` (not held as a snapshot) so the modal re-renders with
+  // the new price the moment a per-card refresh writes one.
+  const detailItem = detailId ? (items.find(i => i.id === detailId) ?? null) : null;
 
   // Live current value for a card, in its native currency: the auto-fetched
   // market price wins (its own currency), otherwise the estimate the user
@@ -1295,6 +1499,66 @@ export function Collection() {
     i => (i.itemType === 'single' || boxIdOf(i) != null) && i.marketPriceSource !== 'manual',
   );
 
+  // Fetch and store the live price for ONE item. Shared by the bulk 「更新價格」
+  // and the per-card button in the detail modal, so both route to the same
+  // source, pass the same grading intent, and — importantly — both LEAVE THE
+  // STORED PRICE ALONE when the lookup comes back empty. A blank/stale price is
+  // the honest outcome; overwriting with a guess is not.
+  const repriceOne = async (
+    item: CollectionItem,
+  ): Promise<{ ok: boolean; price?: number; currency?: string }> => {
+    const edition = item.edition ?? 'ja';
+    // ja: Huca resolves by set code (from our local map). zh-tw: kapaipai
+    // resolves by set name (no local zh-tw set-code map).
+    const setCode = SET_CODE_BY_NAME[item.setName] ?? '';
+    const p = await fetchCardPrice({
+      setCode,
+      setName: item.setName,
+      number: item.cardNumber,
+      name: item.name,
+      edition,
+      isGraded: item.isGraded,
+      gradingCompany: item.gradingCompany,
+      grade: item.grade,
+      itemType: displayType(item.itemType),
+      snkrdunkId: boxIdOf(item),
+    });
+    if (!p || p.price == null) return { ok: false };
+    const currency = p.currency ?? (edition === 'zh-tw' ? 'TWD' : 'JPY');
+    await updateItem(item.id, {
+      marketPrice: p.price,
+      marketPriceCurrency: currency,
+      marketPriceSource: p.source ?? (edition === 'zh-tw' ? 'kapaipai' : 'huca'),
+      marketPriceUpdatedAt: p.updatedAt,
+      marketPriceCondition: p.condition ?? undefined,
+    });
+    return { ok: true, price: p.price, currency };
+  };
+
+  // Re-price just the card open in the detail modal.
+  const handleRepriceOne = async (item: CollectionItem) => {
+    if (pricingId) return;
+    // The bulk refresh skips manual prices outright; here the user is asking for
+    // this specific card, so offer it — but say plainly what will be lost.
+    if (
+      item.marketPriceSource === 'manual'
+      && !confirm('這張卡目前是你手動輸入的價格。更新後會被市場價覆蓋，確定嗎？')
+    ) return;
+    setPricingId(item.id);
+    setPriceMsg(null);
+    try {
+      const r = await repriceOne(item);
+      setPriceMsg(r.ok
+        ? { ok: true, text: `已更新：${r.currency === 'TWD' ? 'NT$' : '¥'}${Math.round(r.price!).toLocaleString()}` }
+        : { ok: false, text: '查不到能確定是這張卡的價格，已保留原本的數值' });
+    } catch (err) {
+      console.error('price refresh failed for', item.name, err);
+      setPriceMsg({ ok: false, text: '更新失敗，請稍後再試' });
+    } finally {
+      setPricingId(null);
+    }
+  };
+
   const handleRefreshPrices = async () => {
     if (refreshing || priceable.length === 0) return;
     setRefreshing(true);
@@ -1307,35 +1571,10 @@ export function Collection() {
     let ok = 0;
     const failed: string[] = [];
     for (const item of priceable) {
-      const edition = item.edition ?? 'ja';
-      // ja: Huca resolves by set code (from our local map). zh-tw: kapaipai
-      // resolves by set name (no local zh-tw set-code map).
-      const setCode = SET_CODE_BY_NAME[item.setName] ?? '';
       try {
-        const p = await fetchCardPrice({
-          setCode,
-          setName: item.setName,
-          number: item.cardNumber,
-          name: item.name,
-          edition,
-          isGraded: item.isGraded,
-          gradingCompany: item.gradingCompany,
-          grade: item.grade,
-          itemType: displayType(item.itemType),
-          snkrdunkId: boxIdOf(item),
-        });
-        if (p && p.price != null) {
-          await updateItem(item.id, {
-            marketPrice: p.price,
-            marketPriceCurrency: p.currency ?? (edition === 'zh-tw' ? 'TWD' : 'JPY'),
-            marketPriceSource: p.source ?? (edition === 'zh-tw' ? 'kapaipai' : 'huca'),
-            marketPriceUpdatedAt: p.updatedAt,
-            marketPriceCondition: p.condition ?? undefined,
-          });
-          ok += 1;
-        } else {
-          failed.push(item.name);
-        }
+        const r = await repriceOne(item);
+        if (r.ok) ok += 1;
+        else failed.push(item.name);
       } catch (err) {
         console.error('price refresh failed for', item.name, err);
         failed.push(item.name);
@@ -1441,13 +1680,18 @@ export function Collection() {
 
   // Soft delete → the card moves to the 已刪除 graveyard, where it can be
   // restored or permanently removed.
-  const handleDelete = async (id: string) => {
-    if (!confirm('確定要刪除這筆收藏嗎？（可到「已刪除」區域還原）')) return;
+  // Returns whether the row was actually deleted, so a caller (the detail modal)
+  // can close itself without having to guess — cancelling the confirm must not
+  // dismiss the card the user is looking at.
+  const handleDelete = async (id: string): Promise<boolean> => {
+    if (!confirm('確定要刪除這筆收藏嗎？（可到「已刪除」區域還原）')) return false;
     try {
       await deleteItem(id);
+      return true;
     } catch (err) {
       console.error(err);
       alert('刪除失敗');
+      return false;
     }
   };
 
@@ -1736,11 +1980,21 @@ export function Collection() {
                 <div className="relative aspect-[3/4] bg-white/5 border-b border-white/10">
                   <GalleryImage item={item} />
 
+                  {/* Whole-artwork tap target -> detail view. Sits above the
+                      image but below the corner actions, and the decorations
+                      are pointer-events-none, so it can't swallow their clicks. */}
+                  <button
+                    type="button"
+                    onClick={() => { setDetailId(item.id); setPriceMsg(null); }}
+                    aria-label={`檢視 ${item.name}`}
+                    className="absolute inset-0 z-[1] cursor-zoom-in"
+                  />
+
                   {/* Bottom gradient for badge legibility */}
                   <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/45 to-transparent" />
 
                   {/* Top-left badges */}
-                  <div className="absolute top-1.5 left-1.5 flex flex-col items-start gap-1">
+                  <div className="pointer-events-none absolute top-1.5 left-1.5 z-[2] flex flex-col items-start gap-1">
                     <ItemTypeBadge type={item.itemType} />
                     {item.isGraded && (
                       <span className="text-[10px] font-black text-amber-700 bg-gradient-to-r from-amber-100 to-yellow-100 border border-amber-300 px-1.5 py-0.5 rounded-full shadow-sm">
@@ -1751,13 +2005,13 @@ export function Collection() {
 
                   {/* Quantity */}
                   {item.quantity > 1 && (
-                    <span className="absolute bottom-1.5 left-1.5 text-[10px] font-black text-white bg-slate-800/70 px-1.5 py-0.5 rounded-full">
+                    <span className="pointer-events-none absolute bottom-1.5 left-1.5 z-[2] text-[10px] font-black text-white bg-slate-800/70 px-1.5 py-0.5 rounded-full">
                       ×{item.quantity}
                     </span>
                   )}
 
                   {/* Actions (always visible so they work on touch/mobile too) */}
-                  <div className="absolute top-1.5 right-1.5 flex gap-1">
+                  <div className="absolute top-1.5 right-1.5 z-[2] flex gap-1">
                     <button
                       onClick={() => { setEditingId(item.id); setShowAddForm(false); }}
                       className="p-1.5 rounded-lg bg-black/40 backdrop-blur text-slate-200 hover:text-poke-accent shadow-sm transition-colors"
@@ -1929,6 +2183,31 @@ export function Collection() {
             onSubmit={f => handleUpdate(editingItem.id, f)}
             onClose={() => setEditingId(null)}
             submitting={submitting}
+          />
+        )}
+        {/* Card detail. Hidden while the edit form is open so the two modals
+            never stack, but detailId is kept so closing the form returns here. */}
+        {detailItem && !editingItem && (
+          <CardDetailModal
+            key={detailItem.id}
+            item={detailItem}
+            estTwd={(() => {
+              const e = estValue(detailItem);
+              return e ? toTwd(e.amount, e.currency, fxRate) : null;
+            })()}
+            est={estValue(detailItem)}
+            diff={pnlOf(detailItem)?.diff ?? null}
+            diffPct={pnlOf(detailItem)?.pct ?? null}
+            pricing={pricingId === detailItem.id}
+            priceMsg={priceMsg}
+            onReprice={() => handleRepriceOne(detailItem)}
+            onEdit={() => { setEditingId(detailItem.id); setShowAddForm(false); }}
+            onDelete={async () => {
+              // Only dismiss if the delete really happened — cancelling the
+              // confirm must leave the card open.
+              if (await handleDelete(detailItem.id)) setDetailId(null);
+            }}
+            onClose={() => { setDetailId(null); setPriceMsg(null); }}
           />
         )}
       </AnimatePresence>
