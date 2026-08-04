@@ -209,36 +209,6 @@ export function pickHucaPrice(row: HucaRow): number | null {
   return null;
 }
 
-// Rarity/edition tokens Huca appends after the card name in a listing title.
-const HUCA_TITLE_TOKENS = new Set([
-  'UR', 'MUR', 'SAR', 'AR', 'SR', 'HR', 'CSR', 'SER', 'CHR', 'RR', 'RRR', 'R', 'U', 'C',
-  'ACE', 'SPEC', 'P', 'PROMO', 'K', 'S',
-]);
-
-// The card name out of a Huca listing title. Titles are shaped
-// 「イーブイex SAR [SV8a 223/187](ハイクラスパック「テラスタルフェスex」)」 — name,
-// then optional rarity tokens, then a bracketed set/number and set label.
-export function hucaTitleCardName(title: string): string {
-  const head = (title ?? '').split('[')[0].trim();
-  const parts = head.split(/\s+/).filter(Boolean);
-  while (parts.length > 1 && HUCA_TITLE_TOKENS.has(parts[parts.length - 1].toUpperCase())) parts.pop();
-  return parts.join(' ');
-}
-
-// Does a Huca listing title name THIS card? Used to guard the name-keyword
-// fallback, which is the only lookup path with no set code to pin it down.
-//
-// A substring test is not enough and actively harmful: searching 「イーブイ」
-// returns 「イーブイex SAR [SV8a 223/187]」, whose title contains 「イーブイ」, so a
-// plain SV-P promo worth a few hundred yen would be priced off a ~13,000 JPY
-// SAR. Require the title's name portion to match exactly instead — an honest
-// "no price" beats a confidently wrong one.
-export function hucaTitleMatchesName(title: string, name: string): boolean {
-  const want = nameKey(name);
-  if (!want) return false;
-  return nameKey(hucaTitleCardName(title)) === want;
-}
-
 // Classify a Huca `latest_condition` string as raw (ungraded) or graded, and
 // normalise it to a stable label. Raw grades are single letters A/B/C/D. Graded
 // slabs look like "PSA10", "PSA 10", "BGS 9.5", "CGC-9" etc. — we normalise to a
@@ -367,11 +337,10 @@ async function resolveHucaResult(rows: HucaRow[], wantGrade: string | null): Pro
   return pickHucaRawResult(rows);
 }
 
-// Look a Japanese card up on Huca. Prefer an exact set+number query, resolving
-// the set code from the set NAME (TCGdex-authoritative) before trusting the
-// client-supplied code, then only fall back to a name keyword search when no set
-// code is available at all — and even then require the returned title to contain
-// the card name, since the name search otherwise mis-prices unrelated cards.
+// Look a Japanese card up on Huca, by set code + card number only. The code is
+// resolved from the set NAME (TCGdex-authoritative) before the client-supplied
+// code is trusted. When no set code can be resolved, the answer is no price —
+// see the note at the bottom of the function for why there is no name fallback.
 async function lookupHuca(
   setCode: string,
   setName: string,
@@ -402,20 +371,24 @@ async function lookupHuca(
       if (result) return result;
     }
 
-    // Name-search fallback ONLY when we had no set code to query with at all
-    // (both the resolved and client codes were empty). It's kept narrow because
-    // a name keyword search readily returns a *different* same-named card and
-    // would mis-price it — a wrong price is worse than an honest "no price".
-    if (candidates.length === 0 && name) {
-      const url = `${HUCA_API}?search=${encodeURIComponent(name)}&promo=0&accuracy=1&limit=5`;
-      const json = await fetchJson<{ data?: HucaRow[] }>(url);
-      const rows = json?.data ?? [];
-      // Guard against unrelated matches: the title's name portion must BE this
-      // card's name, not merely contain it (see hucaTitleMatchesName).
-      const related = rows.filter(r => hucaTitleMatchesName(r.title ?? '', name));
-      const result = await resolveHucaResult(related, wantGrade);
-      if (result) return result;
-    }
+    // There used to be a name-keyword fallback here for when no set code could
+    // be resolved. It is gone on purpose, and should not come back.
+    //
+    // Reaching this point means neither the catalog nor TCGdex knows the card's
+    // set — i.e. we do not know which printing this is. A name search cannot
+    // recover that, because every common Pokémon name has dozens of printings
+    // at wildly different values, and Huca returns them ranked by relevance,
+    // not by likeness. Measured against the live API, a promo 「ピカチュウ
+    // 133/M-P」 was priced off 「ピカチュウ UR [BW1 056/053]」 at ¥765,000.
+    //
+    // Tightening the title match did not fix it and cannot: matching the name
+    // exactly still accepts every other set's printing of that same name. The
+    // missing information is the set, so the honest answer is no price — a
+    // blank shows up as "needs attention", whereas a wrong number silently
+    // inflates the collection total and nobody has reason to doubt it.
+    //
+    // The fix for such a card is to give it a set, not to guess: add the set to
+    // src/data/ptcg-products.ts so the set-code path can identify it.
   }
 
   return null;

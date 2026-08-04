@@ -8,8 +8,6 @@ import {
   normNum,
   nameKey,
   pickKpRowForNumber,
-  hucaTitleCardName,
-  hucaTitleMatchesName,
   type KpCardRow,
 } from './pricing';
 
@@ -166,41 +164,5 @@ describe('pickKpRowForNumber', () => {
   it('returns null when the only match has no usable price', () => {
     const rows = [row({ averagePrice: 0, lowestPrice: 0 })];
     expect(pickKpRowForNumber(rows, 'M2a', normNum('223'), '超級噴火龍Xex')).toBeNull();
-  });
-});
-
-describe('hucaTitleCardName', () => {
-  it('drops the bracketed set/number and a trailing rarity token', () => {
-    expect(hucaTitleCardName('イーブイex SAR [SV8a 223/187](ハイクラスパック「テラスタルフェスex」)'))
-      .toBe('イーブイex');
-  });
-  it('keeps a bare name untouched', () => {
-    expect(hucaTitleCardName('イーブイ [SVP 198]')).toBe('イーブイ');
-  });
-  it('strips a multi-word rarity like ACE SPEC', () => {
-    expect(hucaTitleCardName('マスターボール ACE SPEC [SV5a 086]')).toBe('マスターボール');
-  });
-  it('never strips the name itself, even when it looks like a token', () => {
-    expect(hucaTitleCardName('P [SVP 001]')).toBe('P');
-  });
-});
-
-describe('hucaTitleMatchesName', () => {
-  // The bug this guards: the name-keyword fallback is the only lookup with no
-  // set code, and a substring test priced an SV-P promo off an SV8a SAR.
-  it('rejects a longer name that merely contains the wanted one', () => {
-    expect(hucaTitleMatchesName('イーブイex SAR [SV8a 223/187]', 'イーブイ')).toBe(false);
-  });
-  it('accepts the same card with a rarity token', () => {
-    expect(hucaTitleMatchesName('イーブイ P [SVP 198]', 'イーブイ')).toBe(true);
-  });
-  it('ignores whitespace differences', () => {
-    expect(hucaTitleMatchesName('超級噴火龍X ex [M2a 223]', '超級噴火龍Xex')).toBe(true);
-  });
-  it('rejects an unrelated card', () => {
-    expect(hucaTitleMatchesName('ピカチュウ [SVP 133]', 'イーブイ')).toBe(false);
-  });
-  it('rejects an empty wanted name rather than matching everything', () => {
-    expect(hucaTitleMatchesName('イーブイ [SVP 198]', '')).toBe(false);
   });
 });
