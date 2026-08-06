@@ -20,6 +20,7 @@ import { readFile } from 'node:fs/promises';
 const JA_SETS = 'https://api.tcgdex.net/v2/ja/sets';
 const TW_SETS = 'https://api.tcgdex.net/v2/zh-tw/sets';
 const KP_PACKS = 'https://trade.kapaipai.tw/api/card/getCardPackList?game=pkmtw';
+const HUCA_API = 'https://huca.tw/api/api.php';
 
 // TCGdex is authoritative *except* where it is provably wrong. Each entry says
 // what TCGdex currently reports, so this stays a real check: if TCGdex fixes
@@ -40,9 +41,38 @@ const JA_NAME_OVERRIDES = {
 // even though all of them have shipped in Traditional Chinese. kapaipai lists
 // every one of them.
 const ZH_VIA_KAPAIPAI = new Set([
-  'M1L', 'M1S', 'M2', 'M2A', 'M3', 'M4', 'M5',
+  'M1L', 'M1S', 'M2', 'M2A', 'M3', 'M4', 'M5', 'M6',
   'SV11B', 'SV11W',
 ]);
+
+// TCGdex also lags actual RELEASES, not just translations: M6 is on sale, Huca
+// prices it and kapaipai lists 116 of its cards, yet /v2/ja/sets/M6 is still a
+// 404. Codes listed here have their Japanese name verified against Huca instead
+// — whose card titles end in 拡張パック「<ja set name>」, and which is the source
+// api/_lib/pricing.ts actually asks for ja prices. So this checks the name
+// against the system that has to agree with it, rather than waiving the check.
+//
+// This is a TEMPORARY exemption by design: once TCGdex publishes the set the
+// loop below fails and tells us to drop the code from here, so the waiver can't
+// quietly become a permanent blind spot.
+const JA_VIA_HUCA = new Set(['M6']);
+
+// Pull a set's Japanese name out of any one of its Huca card titles, e.g.
+// 「ヘラクロス C [M6 001/076](拡張パック「ストームエメラルダ」)」 -> ストームエメラルダ.
+// Returns null when Huca doesn't know the set (or the request fails), which the
+// caller reports as a problem rather than silently passing.
+async function hucaJaSetName(id) {
+  const url = `${HUCA_API}?search=&set_code=${encodeURIComponent(id)}`
+    + '&card_number=1&promo=0&accuracy=1&limit=1';
+  try {
+    const json = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } }).then(r => r.json());
+    const title = json?.data?.[0]?.title;
+    if (!title) return null;
+    return title.match(/拡張パック「([^」]+)」/)?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
 
 async function main() {
   // The catalog is TypeScript, so read it as text and pull the object literals
@@ -100,7 +130,19 @@ async function main() {
 
     const realJa = jaById.get(id);
     const override = JA_NAME_OVERRIDES[id];
-    if (!realJa) {
+    if (JA_VIA_HUCA.has(id)) {
+      // Verified against Huca while TCGdex catches up — see JA_VIA_HUCA.
+      if (realJa) {
+        problems.push(
+          `${code}: TCGdex now has a ja record ('${realJa}') — drop it from JA_VIA_HUCA `
+          + 'and check the name against TCGdex',
+        );
+      } else {
+        const hucaJa = await hucaJaSetName(id);
+        if (!hucaJa) problems.push(`${code}: not in TCGdex, and Huca has no 拡張パック title for it either`);
+        else if (hucaJa !== name) problems.push(`${code}: name '${name}' but Huca says '${hucaJa}'`);
+      }
+    } else if (!realJa) {
       problems.push(`${code}: not a TCGdex ja set id`);
     } else if (override) {
       // Deliberate divergence. Re-check the premise rather than just skipping:

@@ -38,6 +38,14 @@ export const PTCG_PRODUCTS: PtcgProduct[] = [
   { code: 'm3',   name: 'ムニキスゼロ',             series: 'ポケモンカードゲーム MEGA', nameZh: '虛無歸零' },
   { code: 'm4',   name: 'ニンジャスピナー',         series: 'ポケモンカードゲーム MEGA', nameZh: '忍者飛旋' },
   { code: 'm5',   name: 'アビスアイ',               series: 'ポケモンカードゲーム MEGA', nameZh: '深淵之瞳' },
+  // TCGdex carries no record for M6 yet — /v2/ja/sets/M6 and /v2/zh-tw/sets/M6
+  // both 404 while Huca already prices the set and kapaipai lists 116 of its
+  // cards. The Japanese name here comes from Huca's card titles, whose suffix is
+  // 拡張パック「…」 — and Huca IS the ja price source, so that name is the one
+  // pricing needs to agree with. nameZh is checked against kapaipai's packName.
+  // See JA_VIA_HUCA in scripts/verify-sets.mjs; it nags us to switch back to
+  // TCGdex the moment TCGdex publishes the set.
+  { code: 'm6',   name: 'ストームエメラルダ',        series: 'ポケモンカードゲーム MEGA', nameZh: '綠寶石風暴' },
   // ── スカーレット＆バイオレット 2023 ─────────────────────────
   { code: 'sv1S', name: 'スカーレットex',           series: 'スカーレット＆バイオレット', nameZh: '朱ex' },
   { code: 'sv1V', name: 'バイオレットex',           series: 'スカーレット＆バイオレット', nameZh: '紫ex' },
