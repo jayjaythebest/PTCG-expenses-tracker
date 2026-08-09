@@ -11,6 +11,7 @@ import {
   promoSetCodeFromNumber,
   hucaTitleCardName,
   hucaTitleMatchesName,
+  parseHucaTitle,
   type KpCardRow,
 } from './pricing';
 
@@ -161,6 +162,46 @@ describe('hucaTitleCardName', () => {
     expect(hucaTitleCardName('モトトカゲex: プロモ RR[SV-P 009]')).toBe('モトトカゲex');
     expect(hucaTitleCardName('基本草エネルギー P:参加賞 [M-P 035]')).toBe('基本草エネルギー');
     expect(hucaTitleCardName('イーブイ: 旧裏/プロモ[neo-P No.133]')).toBe('イーブイ');
+  });
+});
+
+describe('parseHucaTitle', () => {
+  // Huca lists a set the day it ships, so this title is the only card table that
+  // can identify a brand-new set — the case where a scan used to snap the set
+  // code onto an older set and take the wrong name/art/price with it.
+  it('reads a brand-new set off the title', () => {
+    expect(parseHucaTitle('カイオーガ AR [M6 080/076](拡張パック「ストームエメラルダ」)')).toEqual({
+      setCode: 'M6',
+      collectorNumber: '080/076',
+      name: 'カイオーガ',
+      rarity: 'AR',
+      setName: 'ストームエメラルダ',
+    });
+  });
+  it('reads a set name that itself contains a rarity-ish suffix', () => {
+    expect(parseHucaTitle('イーブイex SAR [SV8a 223/187](ハイクラスパック「テラスタルフェスex」)')).toEqual({
+      setCode: 'SV8a',
+      collectorNumber: '223/187',
+      name: 'イーブイex',
+      rarity: 'SAR',
+      setName: 'テラスタルフェスex',
+    });
+  });
+  it('handles a promo: hyphenated code, no pack label, printing note dropped', () => {
+    expect(parseHucaTitle('モトトカゲex: プロモ RR[SV-P 009]')).toEqual({
+      setCode: 'SV-P',
+      collectorNumber: '009',
+      name: 'モトトカゲex',
+      rarity: 'RR',
+      setName: '',
+    });
+  });
+  it('keeps ACE SPEC together rather than reporting the trailing token', () => {
+    expect(parseHucaTitle('マスターボール ACE SPEC [SV5a 086/066]')?.rarity).toBe('ACE SPEC');
+  });
+  it('returns null when the title carries no bracketed set/number', () => {
+    expect(parseHucaTitle('カイオーガ AR ストームエメラルダ')).toBeNull();
+    expect(parseHucaTitle('')).toBeNull();
   });
 });
 

@@ -232,7 +232,7 @@ export function pickHucaPrice(row: HucaRow): number | null {
 
 // Rarity/edition tokens Huca appends after the card name in a listing title.
 const HUCA_TITLE_TOKENS = new Set([
-  'UR', 'MUR', 'SAR', 'AR', 'SR', 'HR', 'CSR', 'SER', 'CHR', 'RR', 'RRR', 'R', 'U', 'C',
+  'UR', 'MUR', 'MA', 'SAR', 'AR', 'SR', 'HR', 'CSR', 'SER', 'CHR', 'RR', 'RRR', 'R', 'U', 'C',
   'ACE', 'SPEC', 'P', 'PROMO', 'K', 'S',
 ]);
 
@@ -247,6 +247,104 @@ export function hucaTitleCardName(title: string): string {
   const parts = head.split(/\s+/).filter(Boolean);
   while (parts.length > 1 && HUCA_TITLE_TOKENS.has(parts[parts.length - 1].toUpperCase())) parts.pop();
   return parts.join(' ');
+}
+
+// Rarity letters, as they appear as a trailing token in a Huca title.
+// MA is the MEGA-series mark, a rarity in its own right — keep it distinct from
+// AR/SAR so a title that says MA doesn't come back as "no rarity".
+const HUCA_RARITIES = new Set(['UR', 'MUR', 'MA', 'SAR', 'AR', 'SR', 'HR', 'CSR', 'SER', 'CHR', 'RR', 'RRR', 'R', 'U', 'C']);
+
+// A card's identity as Huca prints it in a listing title.
+export interface HucaCardIdentity {
+  setCode: string;         // "M6"
+  collectorNumber: string; // "080/076" as printed
+  name: string;            // "カイオーガ"
+  rarity: string;          // "AR" ('' when the title carries no rarity token)
+  setName: string;         // "ストームエメラルダ"
+}
+
+// Pull a card's identity out of a Huca listing title. Titles are shaped
+// 「カイオーガ AR [M6 080/076](拡張パック「ストームエメラルダ」)」 — name, optional
+// rarity tokens, the bracketed set code + collector number, then the pack label.
+// Returns null when the bracketed set/number isn't there to be read.
+export function parseHucaTitle(title: string): HucaCardIdentity | null {
+  const t = (title ?? '').trim();
+  const m = t.match(/\[([A-Za-z0-9-]{1,10})\s+([0-9]+(?:\/[0-9A-Za-z-]+)?)\]/);
+  if (!m || m.index === undefined) return null;
+
+  const head = t.slice(0, m.index);
+  const tail = t.slice(m.index + m[0].length);
+  // Trailing tokens between the name and the bracket are rarity/edition markers.
+  const tokens: string[] = [];
+  const parts = head.split(/\s+/).filter(Boolean);
+  while (parts.length > 1 && HUCA_TITLE_TOKENS.has(parts[parts.length - 1].toUpperCase())) {
+    tokens.unshift((parts.pop() as string).toUpperCase());
+  }
+  const rarity = tokens.includes('ACE') && tokens.includes('SPEC')
+    ? 'ACE SPEC'
+    : tokens.find(x => HUCA_RARITIES.has(x)) ?? (tokens.some(x => x === 'P' || x === 'PROMO') ? 'Promo' : '');
+
+  return {
+    setCode: m[1],
+    collectorNumber: m[2],
+    name: hucaTitleCardName(t),
+    rarity,
+    // The pack label is 拡張パック「ストームエメラルダ」 / ハイクラスパック「テラスタル
+    // フェスex」 — the quoted part is the set name TCGdex and the catalog use.
+    setName: tail.match(/[「『]([^」』]+)[」』]/)?.[1]?.trim() ?? '',
+  };
+}
+
+// Confirm (or recover) the set a scanned Japanese card belongs to, using Huca as
+// the card table. TCGdex is the app's catalog everywhere else, but it publishes a
+// set weeks after release, so a scan of a brand-new set has nothing to check
+// itself against — and a set code the AI guessed wrong then propagates into the
+// stored set name, the artwork and the price. Huca lists a set the day it ships
+// (it is also the ja price source), so it can answer for the newest cards.
+//
+// Two passes, both anchored on the collector number:
+//   1. the scanned set code + number — a unique key on Huca — accepted only when
+//      the row's card name agrees with the scanned one (or nothing was scanned).
+//   2. the scanned NAME + number, when pass 1 finds nothing or names disagree:
+//      that means the code was misread, and the name is the other thing printed
+//      on the card. Requires every hit to agree on one set code, so a name that
+//      several sets print at the same number resolves to nothing rather than to a
+//      guess.
+export async function lookupJaCardIdentity(
+  setCode: string,
+  number: string,
+  name: string,
+): Promise<HucaCardIdentity | null> {
+  const digits = extractNumber(number);
+  if (!digits) return null;
+  const code = (setCode ?? '').trim();
+  const want = (name ?? '').trim();
+
+  const search = async (params: string) =>
+    (await fetchJson<{ data?: HucaRow[] }>(
+      `${HUCA_API}?${params}&card_number=${encodeURIComponent(digits)}&promo=0&accuracy=1&limit=20`,
+    ))?.data ?? [];
+
+  if (code) {
+    const rows = await search(`search=&set_code=${encodeURIComponent(code)}`);
+    for (const row of rows) {
+      const id = parseHucaTitle(row.title ?? '');
+      if (!id || id.setCode.toLowerCase() !== code.toLowerCase()) continue;
+      if (want && !hucaTitleMatchesName(row.title ?? '', want)) continue;
+      return id;
+    }
+  }
+
+  if (want) {
+    const hits = (await search(`search=${encodeURIComponent(want)}`))
+      .map(row => parseHucaTitle(row.title ?? ''))
+      .filter((id): id is HucaCardIdentity =>
+        !!id && nameKey(id.name) === nameKey(want) && normNum(id.collectorNumber) === normNum(digits));
+    const codes = new Set(hits.map(h => h.setCode.toLowerCase()));
+    if (hits.length > 0 && codes.size === 1) return hits[0];
+  }
+
+  return null;
 }
 
 // Does a Huca listing title name THIS card?

@@ -30,6 +30,7 @@ const RARITY_MAP: Record<string, string> = {
   'hyper rare': 'HR',
   'ace spec rare': 'ACE SPEC',
   // MEGA-series gold / secret rarities (TCGdex started returning these in 2026).
+  'mega art rare': 'MA',
   'mega hyper rare': 'MUR',
   'mega ultra rare': 'MUR',
   'ultra gold rare': 'UR',
@@ -46,6 +47,14 @@ function mapRarity(raw?: string): string {
 function findProductByCode(code: string) {
   const lc = code.toLowerCase();
   return PTCG_PRODUCTS.find(p => p.code.toLowerCase() === lc);
+}
+
+// Is this a set the local catalog already knows (zh-tw MEGA's trailing "F"
+// included)? Then a TCGdex miss means TCGdex hasn't published the set yet, not
+// that the scan misread the code.
+function isCatalogCode(code: string): boolean {
+  return !!findProductByCode(code)
+    || (/^M\d+[A-Z]*F$/i.test(code) && !!findProductByCode(code.replace(/F$/i, '')));
 }
 
 // ---- Japanese card artwork (via Limitless TCG CDN) ----
@@ -191,8 +200,11 @@ export async function lookupCard(
   if (direct) return direct;
 
   // Set code didn't resolve — trace by the distinctive scanned name + number.
+  // Not for a code the catalog knows, though: there the code is right and TCGdex
+  // is simply behind (it lists a set weeks after release), so a name trace would
+  // hand back an older set's card that happens to share the name and number.
   const nm = (name ?? '').trim();
-  if (nm) {
+  if (nm && !isCatalogCode(code)) {
     return (await lookupByName(nm, id, primary)) ?? (await lookupByName(nm, id, secondary));
   }
   return null;

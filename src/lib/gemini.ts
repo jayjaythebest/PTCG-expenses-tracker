@@ -15,6 +15,12 @@ export interface CardScanResult {
   name: string;
   rarity: string;
   language: ScanLanguage | '';
+  // Set NAME, filled only when the endpoint confirmed the card against a live
+  // card table — the app's catalog may not carry a set this new.
+  setName?: string;
+  // 'huca' when the ja identifiers were confirmed (or corrected) against Huca,
+  // which makes name/setCode/rarity authoritative even with no TCGdex record.
+  verified?: string;
   // Graded-slab label, when the card is encased. Empty for raw cards.
   // gradingCompany is the raw label text ("PSA"/"BGS"/…); the caller normalizes it.
   gradingCompany?: string;
@@ -114,6 +120,8 @@ export async function recognizeCardFromPhoto(file: File): Promise<CardScanResult
       name: String(data.name ?? ''),
       rarity: String(data.rarity ?? ''),
       language: lang as ScanLanguage | '',
+      setName: typeof data.setName === 'string' ? data.setName : undefined,
+      verified: typeof data.verified === 'string' && data.verified ? data.verified : undefined,
       gradingCompany: typeof data.gradingCompany === 'string' ? data.gradingCompany : undefined,
       grade: typeof data.grade === 'string' ? data.grade : undefined,
       gradingCert: typeof data.gradingCert === 'string' ? data.gradingCert : undefined,

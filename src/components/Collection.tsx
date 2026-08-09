@@ -29,7 +29,9 @@ const CONDITION_LABELS: Record<CollectionCondition, string> = {
   mp: 'MP',
 };
 
-const RARITY_OPTIONS = ['UR', 'MUR', 'SAR', 'AR', 'SR', 'HR', 'CSR', 'SER', 'RR', 'R', 'U', 'C', 'ACE SPEC', 'Promo', '其他'];
+// MA is its own rarity (the MEGA-series mark printed on the card), not a kind of
+// AR/SAR — collapsing it into either loses a distinction the cards actually make.
+const RARITY_OPTIONS = ['UR', 'MUR', 'MA', 'SAR', 'AR', 'SR', 'HR', 'CSR', 'SER', 'RR', 'R', 'U', 'C', 'ACE SPEC', 'Promo', '其他'];
 
 const EDITION_LABELS: Record<CardEdition, string> = {
   'ja': '日文版',
@@ -422,10 +424,36 @@ function CollectionForm({
             name:       card.name,
             setName,
             series:     card.series  || prod?.series || f.series,
-            rarity:     card.rarity  || scan.rarity || f.rarity,
+            // TCGdex answers '其他' for any rarity name it hasn't mapped yet
+            // (new MEGA marks such as MA arrive there late), so a read off the
+            // card itself beats it — it is the printing, not a guess.
+            rarity:     (card.rarity === '其他' ? scan.rarity : card.rarity) || scan.rarity || f.rarity,
             cardNumber: scanCardNumber(scan.localId, scan.setCode, setName) || f.cardNumber,
             imageUrl:   img || f.imageUrl,
             edition,
+          };
+        });
+        setScanResult('matched');
+      } else if (!scan.error && !isZhTw && scan.verified) {
+        // A Japanese card the scan endpoint confirmed against Huca's live card
+        // table. TCGdex has no record — its catalog trails a release by weeks —
+        // but the set code, name and rarity are authoritative, so this is a
+        // match, not a "card not found". Artwork still comes from the ja proxy.
+        const img = (await lookupJpCardImage(scan.setCode, scan.localId)) || '';
+        setForm(f => {
+          // Prefer the catalog's set name (what verify:sets checks and what
+          // pricing resolves against); Huca's own label covers a set so new the
+          // catalog hasn't listed it either.
+          const setName = prod?.name || scan.setName || f.setName;
+          return {
+            ...f,
+            name:       scan.name || f.name,
+            setName,
+            series:     prod?.series || f.series,
+            rarity:     scan.rarity || f.rarity,
+            cardNumber: scanCardNumber(scan.localId, scan.setCode, setName) || f.cardNumber,
+            imageUrl:   img || f.imageUrl,
+            edition:    'ja',
           };
         });
         setScanResult('matched');
@@ -499,7 +527,12 @@ function CollectionForm({
         // on screen there's no way to tell that apart from a genuine misread.
         setScanHint(
           `辨識為 ${scan.setCode || '?'} #${scan.localId || '?'}（${isZhTw ? '繁中' : scan.language || 'ja'}）`
-          + '；卡片資料庫查無此編號，請確認系列與卡號'
+          // A set the catalog knows means the code read fine and it's the card
+          // table that's behind (new sets take weeks to appear) — quite different
+          // from a code nothing recognises, which is usually a misread.
+          + (prod
+            ? '；卡片資料庫尚未收錄這個系列，已依卡面填入'
+            : '；卡片資料庫查無此編號，請確認系列與卡號')
           + (img ? '' : '。找不到對應卡圖，請手動貼上圖片網址'),
         );
         setScanResult('fallback');

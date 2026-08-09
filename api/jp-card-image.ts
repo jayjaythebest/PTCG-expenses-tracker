@@ -21,21 +21,28 @@ import { requireUser } from './_lib/auth.js';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36';
 const LIMITLESS_CDN = 'https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/tpc';
 
+// SNKRDUNK's productNumber pads the collector number to three digits
+// (`pkmn-tcg-M6-080`); an unpadded query answers 200 with an empty list, so this
+// source used to miss every card numbered under 100. Longer numbers are passed
+// through as-is.
 async function snkrdunkImage(set: string, num: number): Promise<string | null> {
-  try {
-    const pn = `pkmn-tcg-${set}-${num}`;
-    const res = await fetch(
-      `https://snkrdunk.com/v1/apparels?productNumber=${encodeURIComponent(pn)}`,
-      { headers: { 'User-Agent': UA, Accept: 'application/json' } },
-    );
-    if (!res.ok) return null;
-    const data = await res.json();
-    const apparels: Array<{ primaryMedia?: { imageUrl?: unknown } }> = Array.isArray(data?.apparels) ? data.apparels : [];
-    const url = apparels[0]?.primaryMedia?.imageUrl;
-    return typeof url === 'string' && url ? url : null;
-  } catch {
-    return null;
+  for (const n of new Set([String(num).padStart(3, '0'), String(num)])) {
+    try {
+      const pn = `pkmn-tcg-${set}-${n}`;
+      const res = await fetch(
+        `https://snkrdunk.com/v1/apparels?productNumber=${encodeURIComponent(pn)}`,
+        { headers: { 'User-Agent': UA, Accept: 'application/json' } },
+      );
+      if (!res.ok) continue;
+      const data = await res.json();
+      const apparels: Array<{ primaryMedia?: { imageUrl?: unknown } }> = Array.isArray(data?.apparels) ? data.apparels : [];
+      const url = apparels[0]?.primaryMedia?.imageUrl;
+      if (typeof url === 'string' && url) return url;
+    } catch {
+      // try the next spelling
+    }
   }
+  return null;
 }
 
 async function limitlessImage(set: string, num: number): Promise<string | null> {
