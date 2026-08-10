@@ -1,111 +1,31 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useCollection } from '../lib/useCollection';
-import { CollectionItem, CollectionItemType, CollectionCondition, CardEdition, GradingCompany } from '../types';
-import { PTCG_PRODUCTS, SERIES_ZH, type PtcgProduct } from '../data/ptcg-products';
+import { CollectionItem, CollectionItemType, CollectionCondition, CardEdition } from '../types';
 import { boxSnkrdunkId } from '../data/ptcg-boxes';
 import { COLLECTION_OWNERS, PRIMARY_OWNER, ownerOf } from '../data/collectionOwners';
-import { cn } from '../lib/utils';
-import { recognizeCardFromPhoto } from '../lib/gemini';
-import { lookupCard, lookupTwCard, lookupSetImage, lookupTwCardImage, lookupJpCardImage, resolveJaSetCode, jpCardImageUrl, type ScanLanguage } from '../lib/tcgdex';
+import { cn, relativeTime } from '../lib/utils';
+// Value math lives in one tested module (src/lib/collectionValue.ts) so the home
+// summary, this page and the daily snapshot can never drift apart on what a card
+// is worth.
+import { toTwd, estValue } from '../lib/collectionValue';
 import { fetchCardPrice, fetchFxJpyToTwd } from '../lib/pricing';
-import { scanCardNumber } from '../lib/cardNumber';
-import { findMergeCandidates, collectorKey } from '../lib/mergeCandidates';
-import { Plus, Trash2, Pencil, X, Check, TrendingUp, TrendingDown, Package, CreditCard, Camera, Loader2, Sparkles, ImagePlus, ImageOff, RefreshCw, Search, ArrowUp, ArrowDown, RotateCcw, ChevronDown } from 'lucide-react';
-
-const ITEM_TYPE_LABELS: Record<CollectionItemType, string> = {
-  single: '單卡',
-  box: '整盒',
-};
-
-// Legacy rows may still carry the retired 'pack' item type. Fold anything that
-// isn't a single card into 'box' for display so old data never breaks the UI.
-const displayType = (t: CollectionItemType | string): CollectionItemType =>
-  t === 'single' ? 'single' : 'box';
-
-const CONDITION_LABELS: Record<CollectionCondition, string> = {
-  mint: 'Mint',
-  nm: 'NM',
-  lp: 'LP',
-  mp: 'MP',
-};
-
-// MA is its own rarity (the MEGA-series mark printed on the card), not a kind of
-// AR/SAR — collapsing it into either loses a distinction the cards actually make.
-const RARITY_OPTIONS = ['UR', 'MUR', 'MA', 'SAR', 'AR', 'SR', 'HR', 'CSR', 'SER', 'RR', 'R', 'U', 'C', 'ACE SPEC', 'Promo', '其他'];
-
-const EDITION_LABELS: Record<CardEdition, string> = {
-  'ja': '日文版',
-  'zh-tw': '繁體中文版',
-  'en': '英文版',
-};
-
-const GRADING_LABELS: Record<GradingCompany, string> = {
-  psa: 'PSA',
-  bgs: 'BGS',
-  other: '其他',
-};
-
-const GRADE_OPTIONS = ['10', '9.5', '9', '8.5', '8', '7.5', '7', '6.5', '6', '5.5', '5', '4', '3', '2', '1'];
-
-// Map the AI-read slab company label (raw text like "PSA", "Beckett", "CGC") to
-// this app's grading enum. Anything recognized but unsupported → 'other'.
-function normalizeGradingCompany(raw?: string): GradingCompany | '' {
-  const s = (raw ?? '').trim().toLowerCase();
-  if (!s) return '';
-  if (s.includes('psa')) return 'psa';
-  if (s.includes('bgs') || s.includes('beckett')) return 'bgs';
-  return 'other';
-}
-
-const SERIES_OPTIONS = [...new Set(PTCG_PRODUCTS.map(p => p.series))];
-const SET_OPTIONS = PTCG_PRODUCTS.map(p => ({ value: p.name, series: p.series }));
-
-// Japanese set name -> official Traditional-Chinese label (falls back to the
-// Japanese name when a set has no TW release yet). Used to show Chinese in the
-// series/set dropdowns while the stored value stays the Japanese name.
-const SET_NAME_ZH: Record<string, string> = Object.fromEntries(
-  PTCG_PRODUCTS.filter(p => p.nameZh).map(p => [p.name, p.nameZh as string]),
-);
-const seriesLabel = (s: string): string => SERIES_ZH[s] ?? s;
-const setLabel = (name: string): string => SET_NAME_ZH[name] ?? name;
-
-// Set name (as shown in the form) → TCGdex set code, so we can auto-fetch a
-// representative image for boxes / packs / manually-typed items.
-const SET_CODE_BY_NAME: Record<string, string> = Object.fromEntries(
-  PTCG_PRODUCTS.map(p => [p.name, p.code]),
-);
-
-// Reverse of SET_CODE_BY_NAME: a scanned/printed set code → the catalog product,
-// so scan branches can persist a setName (the JP name existing rows store) even
-// when TCGdex has no entry for the card. Without a stored setName, price lookups
-// (kapaipai for zh-tw, Huca for ja) can't resolve which pack the card belongs to
-// and the row shows no price. zh-tw MEGA prints "M#F"/"M#aF"; the base JP code
-// drops the trailing F (M4F→M4), so we normalize before matching. Codes are
-// matched case-insensitively. Duplicate codes (e.g. sv1 = スカーレット/バイオレット)
-// resolve to the first product — fine, since both share the same code for pricing.
-const productForScanCode = (rawCode: string | undefined | null): PtcgProduct | undefined => {
-  const raw = (rawCode ?? '').trim();
-  if (!raw) return undefined;
-  const upper = raw.toUpperCase();
-  const base = /^M\d+[A-Z]*F$/i.test(raw) ? upper.replace(/F$/, '') : upper;
-  return (
-    PTCG_PRODUCTS.find(p => p.code.toUpperCase() === upper) ??
-    PTCG_PRODUCTS.find(p => p.code.toUpperCase() === base)
-  );
-};
-
-// Dropdown-only label: the set name plus its expansion code in parentheses,
-// e.g. "深淵之瞳 (SV6A)". Helps users match the code printed on the pack and
-// pick manually when a scan fails or misreads. Kept separate from setLabel so
-// stored item names stay clean (code-free). Codes are uppercased to match the
-// print on the card.
-const setOptionLabel = (name: string): string => {
-  const code = SET_CODE_BY_NAME[name];
-  return code ? `${setLabel(name)} (${code.toUpperCase()})` : setLabel(name);
-};
-
-const editionToLang = (e: CardEdition | ''): ScanLanguage => (e === 'zh-tw' ? 'zh-tw' : 'ja');
+import { findMergeCandidates } from '../lib/mergeCandidates';
+import { ConfirmDialog } from './ConfirmDialog';
+// The gallery used to be one 2.5k-line file. Everything imported below is a pure
+// move out of it: labels/catalog lookups in ./collection/constants, the
+// form <-> row translations in ./collection/formState, and one file per modal.
+// What stays here is the container — state, filtering, the grid, the actions.
+import {
+  ITEM_TYPE_LABELS, CONDITION_LABELS, RARITY_OPTIONS, EDITION_LABELS, GRADING_LABELS,
+  displayType, SET_CODE_BY_NAME, isGradedCondition, ItemTypeBadge,
+} from './collection/constants';
+import { EMPTY_FORM, todayISO, manualPriceFields, formToItem, itemToForm, type FormState } from './collection/formState';
+import { GalleryImage } from './collection/GalleryImage';
+import { CollectionModal } from './collection/CollectionForm';
+import { MergePromptModal } from './collection/MergePromptModal';
+import { CardDetailModal } from './collection/CardDetailModal';
+import { Plus, Trash2, Pencil, TrendingUp, TrendingDown, RefreshCw, Search, ArrowUp, ArrowDown, RotateCcw, ChevronDown } from 'lucide-react';
 
 type FilterType = 'all' | CollectionItemType;
 type SortKey = 'value' | 'pnl' | 'name' | 'date';
@@ -118,1393 +38,6 @@ const SORT_LABELS: Record<SortKey, string> = {
   name: '名稱',
   date: '入手日期',
 };
-
-// Local YYYY-MM-DD for date <input> defaults (avoids the UTC shift toISOString
-// would introduce near midnight).
-const todayISO = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-};
-
-// Compact zh-TW relative time ("剛剛" / "3 小時前" / "5 天前") for the last
-// price-fetch timestamp. Returns null for missing/invalid input.
-const relativeTime = (iso: string | null | undefined): string | null => {
-  if (!iso) return null;
-  const t = new Date(iso).getTime();
-  if (!Number.isFinite(t)) return null;
-  const mins = Math.floor((Date.now() - t) / 60000);
-  if (mins < 1) return '剛剛';
-  if (mins < 60) return `${mins} 分鐘前`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs} 小時前`;
-  const days = Math.floor(hrs / 24);
-  if (days < 30) return `${days} 天前`;
-  const months = Math.floor(days / 30);
-  return `${months} 個月前`;
-};
-
-// Whether a stored market-price condition is a graded slab (PSA10, BGS9.5…) as
-// opposed to a raw grade (A/B/C/D). Used to label a graded reference price on an
-// ungraded card as "參考" so it isn't mistaken for a raw price.
-const isGradedCondition = (c: string | null | undefined): boolean =>
-  !!c && /^(PSA|BGS|CGC|ARS)/i.test(c);
-
-const EMPTY_FORM = {
-  name: '',
-  setName: '',
-  series: '',
-  cardNumber: '',
-  rarity: '',
-  itemType: 'single' as CollectionItemType,
-  condition: '' as CollectionCondition | '',
-  quantity: 1,
-  acquiredDate: '',
-  currentValue: '',
-  // Manual market-price override (TWD). When set, it replaces the auto-fetched
-  // price and is protected from auto-refresh (source is stamped 'manual'). Used
-  // for thin-market chase cards whose auto price is unreliable — the user fills
-  // in a value they trust (from 蝦皮/樂天/Snkrdunk/…).
-  manualPrice: '',
-  notes: '',
-  imageUrl: '',
-  edition: '' as CardEdition | '',
-  isGraded: false,
-  gradingCompany: '' as GradingCompany | '',
-  grade: '',
-  gradingCert: '',
-};
-
-type FormState = typeof EMPTY_FORM;
-
-function ItemTypeIcon({ type }: { type: CollectionItemType }) {
-  if (displayType(type) === 'single') return <CreditCard className="w-3.5 h-3.5" />;
-  return <Package className="w-3.5 h-3.5" />;
-}
-
-function ItemTypeBadge({ type }: { type: CollectionItemType }) {
-  const t = displayType(type);
-  const colours: Record<CollectionItemType, string> = {
-    single: 'bg-poke-accent/20 text-poke-accent',
-    box: 'bg-amber-400/20 text-amber-300',
-  };
-  return (
-    <span className={cn('inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold', colours[t])}>
-      <ItemTypeIcon type={t} />
-      {ITEM_TYPE_LABELS[t]}
-    </span>
-  );
-}
-
-// We display every amount in TWD (the user's home currency). Purchase prices
-// and manual overrides are JPY-native (the app tracks ¥); market prices carry
-// their own currency (JPY from Huca, TWD from kapaipai). `rate` is JPY -> TWD
-// from /api/fx.
-function twdOf(jpy: number, rate: number) {
-  return Math.round(jpy * rate);
-}
-
-// Convert an amount in its native currency to TWD.
-function toTwd(amount: number, currency: 'JPY' | 'TWD', rate: number) {
-  return currency === 'TWD' ? Math.round(amount) : twdOf(amount, rate);
-}
-
-// Consistent image slot for a collection item. Renders the artwork when we have
-// a working URL, otherwise a muted placeholder that shows the item type — so
-// every row keeps the same layout whether or not it has a picture. Broken URLs
-// (e.g. a logo that 404s) fall back to the placeholder automatically.
-function Thumb({
-  src,
-  type,
-  alt,
-  className,
-  onClick,
-}: {
-  src?: string;
-  type: CollectionItemType;
-  alt?: string;
-  className?: string;
-  onClick?: () => void;
-}) {
-  const [broken, setBroken] = useState(false);
-  const box = cn(
-    'w-12 h-16 rounded-md border bg-white/5 flex-shrink-0 overflow-hidden flex items-center justify-center',
-    className,
-  );
-  if (!src || broken) {
-    return (
-      <div className={cn(box, 'border-white/10 text-slate-500')} title="無圖片">
-        <ItemTypeIcon type={type} />
-      </div>
-    );
-  }
-  return (
-    <img
-      src={src}
-      alt={alt ?? ''}
-      referrerPolicy="no-referrer"
-      onError={() => setBroken(true)}
-      onClick={onClick}
-      className={cn(box, 'border-white/10 object-contain', onClick && 'cursor-pointer')}
-    />
-  );
-}
-
-function CollectionForm({
-  initial,
-  onSubmit,
-  onCancel,
-  submitting,
-}: {
-  initial: FormState;
-  onSubmit: (f: FormState) => void;
-  onCancel: () => void;
-  submitting: boolean;
-}) {
-  const [form, setForm] = useState<FormState>(initial);
-  const [scanning, setScanning] = useState(false);
-  const [scanResult, setScanResult] = useState<'matched' | 'fallback' | 'error' | null>(null);
-  const [scanProvider, setScanProvider] = useState<string | null>(null);
-  const [scanHint, setScanHint] = useState<string | null>(null);
-  const [scanDebug, setScanDebug] = useState<string[] | null>(null);
-  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
-  const [fetchingImg, setFetchingImg] = useState(false);
-  const [imgMsg, setImgMsg] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const lastFileRef = useRef<File | null>(null);
-
-  const set = (k: keyof FormState, v: unknown) => setForm(f => ({ ...f, [k]: v }));
-
-  const filteredSets = SET_OPTIONS.filter(s => !form.series || s.series === form.series);
-
-  const handleSeriesChange = (series: string) => {
-    set('series', series);
-    set('setName', '');
-  };
-
-  // Pull a representative image for the chosen set from TCGdex (logo, else a
-  // card from that set). Used both by the manual button and auto for boxes/packs.
-  const fetchSetImage = async (setName: string, edition: CardEdition | '') => {
-    const code = SET_CODE_BY_NAME[setName];
-    if (!code) {
-      setImgMsg('這個系列沒有對應代號，請改用拍照或手動貼圖片網址');
-      return;
-    }
-    setImgMsg(null);
-    setFetchingImg(true);
-    try {
-      const result = await lookupSetImage(code, editionToLang(edition));
-      if (result) {
-        setForm(f => ({ ...f, imageUrl: result.imageUrl }));
-        setImgMsg(result.kind === 'logo' ? '已帶入系列 logo' : '已帶入該系列代表卡圖');
-      } else {
-        setImgMsg('查無此系列圖片，可手動貼上圖片網址');
-      }
-    } catch {
-      setImgMsg('取圖失敗，請稍後再試或手動貼網址');
-    } finally {
-      setFetchingImg(false);
-    }
-  };
-
-  const handleSetNameChange = (setName: string) => {
-    setForm(f => {
-      const next = { ...f, setName };
-      // For boxes the product name is optional — auto-fill it from the chosen set
-      // (Chinese label preferred) when the user hasn't typed their own name yet.
-      // "Their own" = anything other than the previously auto-filled set label,
-      // so switching sets updates the name but a hand-typed name is preserved.
-      if (f.itemType === 'box' && setName && setName !== '其他') {
-        const prevAuto = f.setName ? setLabel(f.setName) : '';
-        if (!f.name.trim() || f.name === prevAuto) next.name = setLabel(setName);
-      }
-      return next;
-    });
-    // For boxes, auto-grab a representative image when none is set yet.
-    if (form.itemType === 'box' && !form.imageUrl && setName) {
-      fetchSetImage(setName, form.edition);
-    }
-  };
-
-  const handlePhotoScan = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 10 * 1024 * 1024) {
-      alert('圖片太大，請選擇小於 10MB 的圖片');
-      return;
-    }
-    lastFileRef.current = file;
-    setPhotoPreview(URL.createObjectURL(file));
-    runScan(file);
-  };
-
-  const runScan = async (file: File) => {
-    setScanResult(null);
-    setScanProvider(null);
-    setScanHint(null);
-    setScanDebug(null);
-    setScanning(true);
-    try {
-      // 1) The AI provider chain reads the reliable identifiers (language + set code + card number).
-      const scan = await recognizeCardFromPhoto(file);
-      setScanProvider(scan.provider ?? null);
-      // 2) Resolve authoritative data (name/rarity/series/official art) from TCGdex,
-      //    querying the endpoint that matches the detected language (falls back internally).
-      const card = scan.setCode && scan.localId
-        ? await lookupCard(scan.setCode, scan.localId, scan.language || 'ja', scan.name)
-        : null;
-
-      // Is this physically a Traditional-Chinese card? Trust the AI's language
-      // read; a trailing-"F" MEGA/超級進化 code (M5F, M2aF) is itself a strong
-      // zh-tw signal even if the AI misdetects the language. JP MEGA prints the
-      // same code WITHOUT the F (M5, M2a), so this won't misfire on Japanese cards.
-      const isZhTw = scan.language === 'zh-tw' || /^M\d+[A-Z]*F$/i.test(scan.setCode);
-
-      // 2b) TCGdex's zh-tw catalog is incomplete (e.g. brand-new sets, the whole
-      //     MEGA series). lookupCard cross-falls-back to the ja endpoint to find
-      //     ANY data, which would mislabel a Chinese card as Japanese with JP
-      //     name/art. When we have a confident zh-tw scan but no genuine zh-tw
-      //     TCGdex hit, resolve the authoritative Chinese record (name + collector
-      //     number + precise art) live from the official TW site via /api/tw-card
-      //     — the always-current complete Chinese card table.
-      const twCard = !scan.error && scan.setCode && scan.localId
-        && isZhTw && (!card || card.edition !== 'zh-tw')
-        ? await lookupTwCard(scan.setCode, scan.localId, scan.name)
-        : null;
-
-      // Map the scanned/printed set code back to a catalog product so we can
-      // persist a setName even when TCGdex has no record. Without a stored
-      // setName, price lookups can't resolve the pack and the row shows no price
-      // (this was the zh-tw "no price" bug — the twCard/fallback branches never
-      // set setName). Prefer the code the TW proxy resolved, else the AI's read.
-      const prod = productForScanCode(twCard?.setCode || scan.setCode);
-
-      if (twCard) {
-        // Authoritative zh-tw record from the official TW site: Chinese name +
-        // precise per-card art. The site carries no rarity letter, so keep the
-        // rarity the AI read off the card. Treat as a confident match.
-        setForm(f => {
-          const setName = prod?.name || f.setName;
-          return {
-            ...f,
-            name:       twCard.name    || scan.name || f.name,
-            setName,
-            series:     prod?.series   || f.series,
-            rarity:     scan.rarity    || f.rarity,
-            cardNumber: scanCardNumber(scan.localId, scan.setCode, setName) || twCard.localId || f.cardNumber,
-            imageUrl:   twCard.imageUrl || f.imageUrl,
-            edition:    'zh-tw',
-          };
-        });
-        setScanResult('matched');
-      } else if (card && !(isZhTw && card.edition !== 'zh-tw')) {
-        // Only trust the TCGdex catalog record when it's NOT a Japanese record
-        // standing in for a Chinese card. A zh-tw scan whose only TCGdex hit is
-        // the ja catalog (the TW proxy failed to resolve the misread set/number)
-        // must NOT adopt the Japanese name/set/art here — that produced the
-        // "繁體中文版 but shows オリジンパルキアVSTAR / VMAXクライマックス" bug on
-        // reflective graded slabs. Such cards fall through to the fallback branch
-        // below, which keeps the AI's own Chinese read + resolves zh-tw artwork.
-        const edition = (scan.language || card.edition) as CardEdition;
-        // Pick artwork in the card's OWN language. For zh-tw, the official TW
-        // proxy has precise per-card art (TCGdex often lacks zh-tw images). For
-        // ja we must NOT use the TW proxy (it would show the Chinese version) —
-        // use TCGdex's ja image, or the SNKRDUNK/Limitless proxy for brand-new
-        // sets TCGdex hasn't published art for yet.
-        let img = card.imageUrl;
-        if (edition === 'zh-tw') {
-          const tw = await lookupTwCardImage(scan.setCode, scan.localId);
-          if (tw) img = tw;
-        } else if (!img) {
-          const jp = await lookupJpCardImage(scan.setCode, scan.localId);
-          if (jp) img = jp;
-        }
-        setForm(f => {
-          const setName = card.setName || prod?.name || f.setName;
-          return {
-            ...f,
-            name:       card.name,
-            setName,
-            series:     card.series  || prod?.series || f.series,
-            // TCGdex answers '其他' for any rarity name it hasn't mapped yet
-            // (new MEGA marks such as MA arrive there late), so a read off the
-            // card itself beats it — it is the printing, not a guess.
-            rarity:     (card.rarity === '其他' ? scan.rarity : card.rarity) || scan.rarity || f.rarity,
-            cardNumber: scanCardNumber(scan.localId, scan.setCode, setName) || f.cardNumber,
-            imageUrl:   img || f.imageUrl,
-            edition,
-          };
-        });
-        setScanResult('matched');
-      } else if (!scan.error && !isZhTw && scan.verified) {
-        // A Japanese card the scan endpoint confirmed against Huca's live card
-        // table. TCGdex has no record — its catalog trails a release by weeks —
-        // but the set code, name and rarity are authoritative, so this is a
-        // match, not a "card not found". Artwork still comes from the ja proxy.
-        const img = (await lookupJpCardImage(scan.setCode, scan.localId)) || '';
-        setForm(f => {
-          // Prefer the catalog's set name (what verify:sets checks and what
-          // pricing resolves against); Huca's own label covers a set so new the
-          // catalog hasn't listed it either.
-          const setName = prod?.name || scan.setName || f.setName;
-          return {
-            ...f,
-            name:       scan.name || f.name,
-            setName,
-            series:     prod?.series || f.series,
-            rarity:     scan.rarity || f.rarity,
-            cardNumber: scanCardNumber(scan.localId, scan.setCode, setName) || f.cardNumber,
-            imageUrl:   img || f.imageUrl,
-            edition:    'ja',
-          };
-        });
-        setScanResult('matched');
-      } else if (scan.error) {
-        // The AI chain couldn't run (quota exhausted / providers down / photo
-        // unreadable) — nothing was read. Tell the user it's a service issue,
-        // not that the card is unknown, so they don't assume the card is invalid.
-        const provs = scan.providers ?? [];
-        if (scan.reason === 'unauthorized') {
-          // 401 from the JWT gate: the session token is missing/expired, so the
-          // fix is re-logging in — waiting and retrying will never help.
-          setScanHint('登入已過期，請重新登入後再掃描');
-        } else if (scan.reason === 'auth_unconfigured') {
-          // 503: the gate itself has no Supabase credentials on the server.
-          setScanHint('伺服器缺少 Supabase 設定（SUPABASE_URL / KEY），請在 Vercel 補上後重新部署');
-        } else if (scan.reason === 'endpoint_missing') {
-          // 404: the /api/scan-card function isn't deployed on this host.
-          setScanHint('找不到掃描服務（/api/scan-card 未部署）；請確認已部署最新版本到 Vercel');
-        } else if (scan.reason === 'endpoint_error' || scan.reason === 'network') {
-          // 5xx / crash / offline: the endpoint exists but couldn't respond.
-          setScanHint('掃描服務暫時無法回應；請稍後重試，或查看 Vercel Functions 記錄');
-        } else if (scan.reason === 'no_provider') {
-          // 200 + explicit no_provider: the server ran but has zero AI keys.
-          setScanHint('伺服器尚未設定任何 AI 金鑰，請在 Vercel 設定 GEMINI / GROQ / OPENROUTER_API_KEY');
-        } else if (scan.reason === 'quota' || provs.length === 1) {
-          setScanHint(`目前只有 ${provs.join('、') || 'gemini'} 可用，額度可能已用盡；建議在 Vercel 再補上 Groq / OpenRouter 免費金鑰`);
-        } else {
-          setScanHint('可換張更清晰、少反光的照片再試一次');
-        }
-        // Per-provider failure lines (gemini:error… / groq:invalid / …) so we can
-        // see the real cause behind an "unreadable" instead of guessing.
-        setScanDebug(scan.debug && scan.debug.length ? scan.debug : null);
-        setScanResult('error');
-      } else {
-        // Fallback: TCGdex has no catalog entry for this card yet (common for
-        // brand-new zh-tw sets — e.g. the MEGA/超級進化 "M#F" series isn't in
-        // TCGdex's Chinese DB). The AI still read name/rarity/number reliably, so
-        // keep those AND try to auto-fill the artwork so the row isn't blank.
-        let img = '';
-        if (scan.setCode && scan.localId) {
-          if (isZhTw) {
-            // Prefer genuine zh-tw art (official TW proxy).
-            img = (await lookupTwCardImage(scan.setCode, scan.localId)) || '';
-            // zh-tw MEGA sets print "M#F"; the JP equivalent is "M#" and shares
-            // the identical illustration (only the text language differs), so use
-            // it as a stand-in thumbnail when no TW art exists.
-            if (!img && /^M\d+[A-Z]*F$/i.test(scan.setCode)) {
-              const jpCode = scan.setCode.replace(/F$/i, '');
-              img = (await lookupJpCardImage(jpCode, scan.localId)) || '';
-            }
-          } else {
-            img = (await lookupJpCardImage(scan.setCode, scan.localId)) || '';
-          }
-        }
-        setForm(f => {
-          const setName = prod?.name || f.setName;
-          return {
-            ...f,
-            name:       scan.name    || f.name,
-            setName,
-            series:     prod?.series || f.series,
-            cardNumber: scanCardNumber(scan.localId, scan.setCode, setName) || f.cardNumber,
-            rarity:     scan.rarity  || f.rarity,
-            edition:    isZhTw ? 'zh-tw' : (scan.language || f.edition),
-            imageUrl:   img || f.imageUrl,
-          };
-        });
-        // Show WHAT was read, not just that the catalog missed. Secret rares are
-        // the usual cause (TCGdex's zh-tw data stops at the official set total,
-        // so a UR numbered past it can't match) — and without these identifiers
-        // on screen there's no way to tell that apart from a genuine misread.
-        setScanHint(
-          `辨識為 ${scan.setCode || '?'} #${scan.localId || '?'}（${isZhTw ? '繁中' : scan.language || 'ja'}）`
-          // A set the catalog knows means the code read fine and it's the card
-          // table that's behind (new sets take weeks to appear) — quite different
-          // from a code nothing recognises, which is usually a misread.
-          + (prod
-            ? '；卡片資料庫尚未收錄這個系列，已依卡面填入'
-            : '；卡片資料庫查無此編號，請確認系列與卡號')
-          + (img ? '' : '。找不到對應卡圖，請手動貼上圖片網址'),
-        );
-        setScanResult('fallback');
-      }
-
-      // Graded slab: the label carries the grading company + grade + cert. Apply
-      // them on top of whichever branch resolved the card (matched/card/fallback)
-      // so a scan of a PSA/BGS/… holder auto-fills the 鑑定 fields the user would
-      // otherwise type by hand. A raw card leaves gradingCompany empty → no-op.
-      const gc = normalizeGradingCompany(scan.gradingCompany);
-      if (!scan.error && gc) {
-        setForm(f => ({
-          ...f,
-          isGraded: true,
-          gradingCompany: gc,
-          grade: scan.grade || f.grade,
-          gradingCert: scan.gradingCert || f.gradingCert,
-        }));
-      }
-    } catch (err) {
-      console.error(err);
-      alert('AI 讀取失敗，請手動輸入');
-    } finally {
-      setScanning(false);
-    }
-  };
-
-  return (
-    <form
-      className="space-y-3"
-      onSubmit={e => { e.preventDefault(); onSubmit(form); }}
-    >
-      {/* Item type */}
-      <div className="flex gap-2">
-        {(['single', 'box'] as CollectionItemType[]).map(t => (
-          <button
-            key={t}
-            type="button"
-            onClick={() => setForm(f => ({
-              ...f,
-              itemType: t,
-              // Default a box to the JA version (the only edition we auto-price)
-              // when no version has been chosen yet.
-              edition: t === 'box' && !f.edition ? 'ja' : f.edition,
-            }))}
-            className={cn(
-              'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-bold border-2 transition-colors',
-              form.itemType === t
-                ? 'border-poke-accent bg-poke-accent/10 text-poke-accent'
-                : 'border-white/10 text-slate-400 hover:border-white/20',
-            )}
-          >
-            <ItemTypeIcon type={t} />
-            {ITEM_TYPE_LABELS[t]}
-          </button>
-        ))}
-      </div>
-
-      {/* Photo scan — single only */}
-      {form.itemType === 'single' && (
-        <div>
-          {/* No `capture` attribute: on mobile this lets the user pick from the
-              photo library or files as well as taking a new photo (with
-              `capture` set, iOS/Android jump straight to the camera). */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={handlePhotoScan}
-          />
-          <button
-            type="button"
-            disabled={scanning}
-            onClick={() => { if (fileInputRef.current) { fileInputRef.current.value = ''; fileInputRef.current.click(); } }}
-            className={cn(
-              'w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-dashed font-bold text-sm transition-colors',
-              scanning
-                ? 'border-poke-accent/40 bg-poke-accent/10 text-poke-accent cursor-wait'
-                : 'border-white/10 text-slate-400 hover:border-poke-accent hover:text-poke-accent hover:bg-poke-accent/10',
-            )}
-          >
-            {scanning ? (
-              <><Loader2 className="w-4 h-4 animate-spin" /><span>AI 辨識中...</span></>
-            ) : (
-              <><Camera className="w-4 h-4" /><Sparkles className="w-3.5 h-3.5" /><span>拍照 / 選圖，自動填入資料</span></>
-            )}
-          </button>
-          {scanResult && !scanning && (
-            <div className={cn(
-              'mt-2 flex items-center gap-3 p-2 border rounded-lg',
-              scanResult === 'matched'
-                ? 'bg-emerald-500/10 border-emerald-500/30'
-                : scanResult === 'error'
-                  ? 'bg-red-500/10 border-red-500/30'
-                  : 'bg-amber-500/10 border-amber-500/30',
-            )}>
-              <img
-                src={scanResult === 'matched' && form.imageUrl ? form.imageUrl : (photoPreview ?? '')}
-                alt="card"
-                referrerPolicy="no-referrer"
-                className="w-12 h-16 object-contain rounded-md border border-white/10 bg-white/5 flex-shrink-0"
-              />
-              <div className="min-w-0">
-                <p className={cn(
-                  'text-xs font-bold',
-                  scanResult === 'matched'
-                    ? 'text-emerald-300'
-                    : scanResult === 'error'
-                      ? 'text-red-300'
-                      : 'text-amber-300',
-                )}>
-                  {scanResult === 'matched' && form.edition ? `（${EDITION_LABELS[form.edition]}）` : ''}
-                  {scanResult === 'matched'
-                    ? '已從卡片資料庫帶入正確資料，請確認後儲存'
-                    : scanResult === 'error'
-                      ? 'AI 暫時無法辨識（服務忙碌／額度用盡，或卡面反光太強）'
-                      : '查無此卡，已填入可辨識的部分，請手動補完'}
-                  {scanProvider && (
-                    <span className="ml-1 font-medium text-slate-400">· {scanProvider}</span>
-                  )}
-                </p>
-                {/* Both non-matched states need this. A "查無此卡" that shows no
-                    identifiers gives the user nothing to correct and nothing to
-                    report, and leaves retry unreachable even though a reflective
-                    slab often reads fine on a second shot. */}
-                {scanResult !== 'matched' && (
-                  <>
-                    {scanHint && (
-                      <p className={cn(
-                        'mt-0.5 text-[11px] font-medium',
-                        scanResult === 'error' ? 'text-red-300/80' : 'text-amber-300/80',
-                      )}>{scanHint}</p>
-                    )}
-                    {scanDebug && (
-                      <div className="mt-1 space-y-0.5">
-                        {scanDebug.map((line, i) => (
-                          <p key={i} className="font-mono text-[10px] leading-tight text-red-400/70 break-all">{line}</p>
-                        ))}
-                      </div>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => { if (lastFileRef.current) runScan(lastFileRef.current); }}
-                      className={cn(
-                        'mt-1.5 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-white/5 border transition-colors',
-                        scanResult === 'error'
-                          ? 'text-red-300 border-red-500/30 hover:bg-red-500/10'
-                          : 'text-amber-300 border-amber-500/30 hover:bg-amber-500/10',
-                      )}
-                    >
-                      <RefreshCw className="w-3 h-3" /> 重試
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Name */}
-      <div>
-        <label className="text-xs font-bold text-slate-400 mb-1 block">
-          卡名 / 商品名稱{form.itemType === 'single' ? ' *' : '（選填，選擇系列後自動帶入）'}
-        </label>
-        <input
-          required={form.itemType === 'single'}
-          value={form.name}
-          onChange={e => set('name', e.target.value)}
-          placeholder={form.itemType === 'box' ? '選擇系列後自動帶入，也可自行修改' : 'e.g. リザードン ex SAR'}
-          className="w-full border border-white/10 bg-white/5 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-poke-accent"
-        />
-      </div>
-
-      {/* Edition (box) — pick the version first so the Chinese labels below make
-          sense; boxes come in Chinese / Japanese / English printings. */}
-      {form.itemType === 'box' && (
-        <div>
-          <label className="text-xs font-bold text-slate-400 mb-1 block">版本</label>
-          <div className="flex gap-2">
-            {(['zh-tw', 'ja', 'en'] as CardEdition[]).map(ed => (
-              <button
-                key={ed}
-                type="button"
-                onClick={() => set('edition', ed)}
-                className={cn(
-                  'flex-1 py-2 rounded-lg text-sm font-bold border-2 transition-colors',
-                  form.edition === ed
-                    ? 'border-poke-accent bg-poke-accent/10 text-poke-accent'
-                    : 'border-white/10 text-slate-400 hover:border-white/20',
-                )}
-              >
-                {EDITION_LABELS[ed]}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Series + Set */}
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <label className="text-xs font-bold text-slate-400 mb-1 block">大系列</label>
-          <select
-            value={form.series}
-            onChange={e => handleSeriesChange(e.target.value)}
-            className="w-full border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-poke-accent bg-surface"
-          >
-            <option value="">全部</option>
-            {SERIES_OPTIONS.map(s => <option key={s} value={s}>{seriesLabel(s)}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="text-xs font-bold text-slate-400 mb-1 block">系列包名</label>
-          <select
-            value={form.setName}
-            onChange={e => handleSetNameChange(e.target.value)}
-            className="w-full border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-poke-accent bg-surface"
-          >
-            <option value="">選擇...</option>
-            {filteredSets.map(s => <option key={s.value} value={s.value}>{setOptionLabel(s.value)}</option>)}
-            <option value="其他">其他</option>
-          </select>
-        </div>
-      </div>
-
-      {/* Image: preview + auto-fetch from set + manual URL */}
-      <div>
-        <label className="text-xs font-bold text-slate-400 mb-1 block">圖片</label>
-        <div className="flex items-start gap-3">
-          <Thumb src={form.imageUrl || undefined} type={form.itemType} alt={form.name} />
-          <div className="flex-1 min-w-0 space-y-1.5">
-            <div className="flex gap-2">
-              <button
-                type="button"
-                disabled={fetchingImg}
-                onClick={() => fetchSetImage(form.setName, form.edition)}
-                className={cn(
-                  'flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold border-2 transition-colors',
-                  fetchingImg
-                    ? 'border-poke-accent/40 bg-poke-accent/10 text-poke-accent cursor-wait'
-                    : 'border-white/10 text-slate-400 hover:border-poke-accent hover:text-poke-accent hover:bg-poke-accent/10',
-                )}
-              >
-                {fetchingImg
-                  ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />取圖中...</>
-                  : <><ImagePlus className="w-3.5 h-3.5" />自動取得系列圖</>}
-              </button>
-              {form.imageUrl && (
-                <button
-                  type="button"
-                  onClick={() => { set('imageUrl', ''); setImgMsg(null); }}
-                  className="flex items-center gap-1 px-2.5 py-2 rounded-lg text-xs font-bold text-slate-400 border border-white/10 hover:text-red-300 hover:border-red-500/40 transition-colors"
-                >
-                  <ImageOff className="w-3.5 h-3.5" />清除
-                </button>
-              )}
-            </div>
-            <input
-              value={form.imageUrl}
-              onChange={e => { set('imageUrl', e.target.value); setImgMsg(null); }}
-              placeholder="或貼上圖片網址 https://..."
-              className="w-full border border-white/10 bg-white/5 rounded-lg px-3 py-1.5 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-poke-accent"
-            />
-            {imgMsg && <p className="text-xs text-slate-400">{imgMsg}</p>}
-          </div>
-        </div>
-      </div>
-
-      {/* Grading toggle + Rarity + Condition/Grading (single only) */}
-      {form.itemType === 'single' && (
-        <>
-          <label className="flex items-center gap-2 cursor-pointer select-none py-0.5">
-            <input
-              type="checkbox"
-              checked={form.isGraded}
-              onChange={e => set('isGraded', e.target.checked)}
-              className="w-4 h-4 rounded border-white/20 bg-white/5 text-poke-blue focus:ring-poke-accent"
-            />
-            <span className="text-sm font-bold text-slate-300">鑑定卡（PSA / BGS…）</span>
-          </label>
-
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="text-xs font-bold text-slate-400 mb-1 block">稀有度</label>
-              <select
-                value={form.rarity}
-                onChange={e => set('rarity', e.target.value)}
-                className="w-full border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-poke-accent bg-surface"
-              >
-                <option value="">—</option>
-                {RARITY_OPTIONS.map(r => <option key={r} value={r}>{r}</option>)}
-              </select>
-            </div>
-            {form.isGraded ? (
-              <div>
-                <label className="text-xs font-bold text-slate-400 mb-1 block">鑑定公司</label>
-                <select
-                  value={form.gradingCompany}
-                  onChange={e => set('gradingCompany', e.target.value as GradingCompany | '')}
-                  className="w-full border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-poke-accent bg-surface"
-                >
-                  <option value="">—</option>
-                  {(['psa', 'bgs', 'other'] as GradingCompany[]).map(g => (
-                    <option key={g} value={g}>{GRADING_LABELS[g]}</option>
-                  ))}
-                </select>
-              </div>
-            ) : (
-              <div>
-                <label className="text-xs font-bold text-slate-400 mb-1 block">品相</label>
-                <select
-                  value={form.condition}
-                  onChange={e => set('condition', e.target.value as CollectionCondition | '')}
-                  className="w-full border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-poke-accent bg-surface"
-                >
-                  <option value="">—</option>
-                  {(Object.keys(CONDITION_LABELS) as CollectionCondition[]).map(c => (
-                    <option key={c} value={c}>{CONDITION_LABELS[c]}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-          </div>
-
-          {form.isGraded && (
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="text-xs font-bold text-slate-400 mb-1 block">評級分數</label>
-                <select
-                  value={form.grade}
-                  onChange={e => set('grade', e.target.value)}
-                  className="w-full border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-poke-accent bg-surface"
-                >
-                  <option value="">—</option>
-                  {GRADE_OPTIONS.map(g => <option key={g} value={g}>{g}</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-bold text-slate-400 mb-1 block">鑑定編號</label>
-                <input
-                  value={form.gradingCert}
-                  onChange={e => set('gradingCert', e.target.value)}
-                  placeholder="選填，例：12345678"
-                  className="w-full border border-white/10 bg-white/5 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-poke-accent"
-                />
-              </div>
-            </div>
-          )}
-        </>
-      )}
-
-      {/* Edition + Card number (single only) */}
-      {form.itemType === 'single' && (
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <label className="text-xs font-bold text-slate-400 mb-1 block">版本</label>
-            <select
-              value={form.edition}
-              onChange={e => set('edition', e.target.value as CardEdition | '')}
-              className="w-full border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-poke-accent bg-surface"
-            >
-              <option value="">—</option>
-              {(['ja', 'zh-tw'] as CardEdition[]).map(ed => (
-                <option key={ed} value={ed}>{EDITION_LABELS[ed]}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs font-bold text-slate-400 mb-1 block">卡號</label>
-            <input
-              value={form.cardNumber}
-              onChange={e => set('cardNumber', e.target.value)}
-              placeholder="e.g. 199/165、198/SV-P"
-              className="w-full border border-white/10 bg-white/5 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-poke-accent"
-            />
-            {/* Promos have no set to pick, so the code in the card number is the
-                only thing that can identify them — say so, or the user drops it
-                and the card silently never gets a price. */}
-            {form.setName === '其他' && (
-              <p className="mt-1 text-[11px] text-slate-500 leading-snug">
-                特典／促銷卡請照卡片左下角完整輸入（如 <span className="font-bold text-slate-400">198/SV-P</span>），
-                斜線後的代號是查價唯一的依據。
-              </p>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Quantity + current-value estimate */}
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <label className="text-xs font-bold text-slate-400 mb-1 block">數量</label>
-          <input
-            type="number"
-            min={1}
-            value={form.quantity}
-            onChange={e => set('quantity', Number(e.target.value))}
-            className="w-full border border-white/10 bg-white/5 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-poke-accent"
-          />
-        </div>
-        <div>
-          <label className="text-xs font-bold text-slate-400 mb-1 block">現估價 (¥)</label>
-          <input
-            type="number"
-            min={0}
-            value={form.currentValue}
-            onChange={e => set('currentValue', e.target.value)}
-            placeholder="0"
-            className="w-full border border-white/10 bg-white/5 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-poke-accent"
-          />
-          <p className="mt-0.5 text-[10px] text-slate-400">作為損益基準；更新價格後與市場價比較</p>
-        </div>
-      </div>
-
-      {/* Manual market-price override */}
-      <div>
-        <label className="text-xs font-bold text-slate-400 mb-1 block">手動市價 (NT$)</label>
-        <input
-          type="number"
-          min={0}
-          value={form.manualPrice}
-          onChange={e => set('manualPrice', e.target.value)}
-          placeholder="留空＝自動抓價"
-          className="w-full border border-white/10 bg-white/5 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-poke-accent"
-        />
-        <p className="mt-0.5 text-[10px] text-slate-400">薄市/自動價不準時，填你查到的市價（蝦皮/樂天等）；填了就以此為準且不會被自動更新覆蓋。清空則恢復自動抓價。</p>
-      </div>
-
-      {/* Acquired date */}
-      <div>
-        <label className="text-xs font-bold text-slate-400 mb-1 block">入手日期</label>
-        <input
-          type="date"
-          value={form.acquiredDate}
-          onChange={e => set('acquiredDate', e.target.value)}
-          className="w-full border border-white/10 bg-white/5 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-poke-accent"
-        />
-      </div>
-
-      {/* Notes */}
-      <div>
-        <label className="text-xs font-bold text-slate-400 mb-1 block">備註</label>
-        <input
-          value={form.notes}
-          onChange={e => set('notes', e.target.value)}
-          placeholder="例：已評級、二手、轉手來源..."
-          className="w-full border border-white/10 bg-white/5 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-poke-accent"
-        />
-      </div>
-
-      <div className="flex gap-2 pt-1">
-        <button
-          type="submit"
-          disabled={submitting}
-          className="flex-1 flex items-center justify-center gap-2 bg-poke-blue text-white rounded-lg py-2.5 text-sm font-bold hover:bg-poke-dark-blue transition-colors disabled:opacity-50"
-        >
-          <Check className="w-4 h-4" />
-          {submitting ? '儲存中...' : '儲存'}
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="px-4 py-2.5 text-sm font-bold text-slate-400 hover:text-slate-200 border border-white/10 rounded-lg hover:border-white/20 transition-colors"
-        >
-          <X className="w-4 h-4" />
-        </button>
-      </div>
-    </form>
-  );
-}
-
-// Market-price fields for a manual override. Stamped source 'manual' so the
-// auto-refresh (client button + daily cron) leaves it alone. Stored in TWD —
-// that's what the user reads off 蝦皮/樂天/local marketplaces.
-function manualPriceFields(value: string): Partial<CollectionItem> {
-  return {
-    marketPrice: Number(value),
-    marketPriceCurrency: 'TWD',
-    marketPriceSource: 'manual',
-    marketPriceUpdatedAt: new Date().toISOString(),
-    marketPriceCondition: undefined,
-  };
-}
-
-function formToItem(f: FormState): Omit<CollectionItem, 'id' | 'createdAt'> {
-  // Box names are optional: if left blank, fall back to the chosen set's label
-  // (Chinese preferred) so the row still has a readable name.
-  const name = f.name.trim() || (f.itemType === 'box' && f.setName ? setLabel(f.setName) : '');
-  return {
-    name,
-    setName:       f.setName,
-    series:        f.series,
-    cardNumber:    f.cardNumber || undefined,
-    rarity:        f.rarity || undefined,
-    itemType:      f.itemType,
-    condition:     f.isGraded ? undefined : ((f.condition as CollectionCondition) || undefined),
-    quantity:      f.quantity,
-    acquiredDate:  f.acquiredDate || undefined,
-    currentValue:  f.currentValue !== '' ? Number(f.currentValue) : undefined,
-    notes:         f.notes || undefined,
-    imageUrl:      f.imageUrl || undefined,
-    edition:       (f.edition as CardEdition) || undefined,
-    isGraded:      f.isGraded,
-    gradingCompany: f.isGraded ? ((f.gradingCompany as GradingCompany) || undefined) : undefined,
-    grade:         f.isGraded ? (f.grade || undefined) : undefined,
-    gradingCert:   f.isGraded ? (f.gradingCert || undefined) : undefined,
-  };
-}
-
-function itemToForm(item: CollectionItem): FormState {
-  return {
-    name:          item.name,
-    setName:       item.setName,
-    series:        item.series,
-    cardNumber:    item.cardNumber ?? '',
-    rarity:        item.rarity ?? '',
-    itemType:      item.itemType,
-    condition:     item.condition ?? '',
-    quantity:      item.quantity,
-    acquiredDate:  item.acquiredDate ?? '',
-    currentValue:  item.currentValue != null ? String(item.currentValue) : '',
-    manualPrice:   item.marketPriceSource === 'manual' && item.marketPrice != null ? String(item.marketPrice) : '',
-    notes:         item.notes ?? '',
-    imageUrl:      item.imageUrl ?? '',
-    edition:       item.edition ?? '',
-    isGraded:      item.isGraded ?? false,
-    gradingCompany: item.gradingCompany ?? '',
-    grade:         item.grade ?? '',
-    gradingCert:   item.gradingCert ?? '',
-  };
-}
-
-// Gallery tile image. Every card gets a picture: use the item's own image when
-// present, otherwise auto-resolve a representative set image from its set code
-// (TCGdex card art / Bulbagarden logo). Falls back to a placeholder only when
-// nothing at all can be resolved or the resolved URL fails to load.
-// Pull the printed collector number out of possibly-messy stored text, for the
-// image CDNs that key on it — the same normalisation the duplicate check uses,
-// so a card that counts as "already in the collection" also resolves to the
-// same artwork.
-const collectorNo = collectorKey;
-
-function GalleryImage({ item }: { item: CollectionItem }) {
-  // An ordered list of candidate image URLs; the <img> advances to the next one
-  // on load error, so a missing per-card scan degrades to the set logo (and
-  // finally a placeholder) rather than a blank tile.
-  // Each candidate carries a `cover` flag: real card art fills the tile edge-to-
-  // edge (object-cover) so it looks crisp and large; set-logo / box fallbacks are
-  // letterboxed (object-contain) so their wide artwork isn't cropped.
-  const [candidates, setCandidates] = useState<{ url: string; cover: boolean }[]>([]);
-  const [idx, setIdx] = useState(0);
-
-  useEffect(() => {
-    let alive = true;
-    setCandidates([]);
-    setIdx(0);
-
-    const code = SET_CODE_BY_NAME[item.setName];
-    const stored = item.imageUrl || undefined;
-    const lang = editionToLang(item.edition ?? '');
-    // A ja card that stored a Traditional-Chinese image (from the TW proxy, back
-    // when resolution was language-agnostic) is wrong: drop it so it re-resolves
-    // in ja below. Genuine ja/other stored art is kept.
-    const storedUsable =
-      stored && !(lang === 'ja' && stored.includes('asia.pokemon-card.com'))
-        ? stored
-        : undefined;
-    const num = collectorNo(item.cardNumber);
-
-    const build = async (): Promise<{ url: string; cover: boolean }[]> => {
-      const out: { url: string; cover: boolean }[] = [];
-      // cover=true for real card art (fills the tile); cover=false for set-logo
-      // fallbacks and box art (letterboxed so nothing important is cropped).
-      const push = (u?: string | null, cover = true) => {
-        if (u && !out.some(c => c.url === u)) out.push({ url: u, cover });
-      };
-
-      // The setName of a brand-new set (e.g. M4) isn't in local products, so fall
-      // back to TCGdex's ja set-name → code map to recover its code.
-      let sc = code;
-      if (!sc && lang === 'ja') sc = (await resolveJaSetCode(item.setName)) ?? undefined;
-
-      if (item.itemType === 'single') {
-        push(storedUsable); // genuine scanned/uploaded art first
-        if (sc && num) {
-          if (lang === 'zh-tw') {
-            push(await lookupTwCardImage(sc, num)); // TW proxy is zh-tw only
-          } else {
-            const card = await lookupCard(sc, num, lang); // TCGdex ja official art (older sets)
-            push(card?.imageUrl);
-            push(await lookupJpCardImage(sc, num)); // SNKRDUNK / Limitless (newest sets)
-            push(jpCardImageUrl(sc, num)); // direct Limitless URL (dev / proxy-down fallback)
-          }
-        }
-        if (sc) push((await lookupSetImage(sc, lang))?.imageUrl, false); // set logo last (letterboxed)
-        return out;
-      }
-
-      // Boxes (incl. legacy 'pack'): prefer official set art, then stored logo —
-      // both letterboxed (box/logo art is wide and shouldn't be cropped).
-      if (sc) push((await lookupSetImage(sc, lang))?.imageUrl, false);
-      push(storedUsable, false);
-      return out;
-    };
-
-    build()
-      .then(list => { if (alive) setCandidates(list); })
-      .catch(() => { if (alive) setCandidates(storedUsable ? [{ url: storedUsable, cover: false }] : []); });
-    return () => { alive = false; };
-  }, [item.imageUrl, item.setName, item.edition, item.itemType, item.cardNumber]);
-
-  const cand = candidates[idx];
-  if (!cand) {
-    return (
-      <div className="w-full h-full flex flex-col items-center justify-center gap-1 text-slate-600">
-        <div className="scale-[2.2]"><ItemTypeIcon type={item.itemType} /></div>
-        <span className="text-[10px] font-bold mt-2">無圖片</span>
-      </div>
-    );
-  }
-  return (
-    <img
-      src={cand.url}
-      alt={item.name}
-      referrerPolicy="no-referrer"
-      onError={() => setIdx(i => i + 1)}
-      className={cn(
-        'w-full h-full',
-        cand.cover ? 'object-cover' : 'object-contain p-2',
-      )}
-    />
-  );
-}
-
-// Modal shell for the add / edit form so it floats above the gallery instead of
-// pushing the grid around.
-function CollectionModal({
-  title,
-  initial,
-  onSubmit,
-  onClose,
-  submitting,
-}: {
-  title: string;
-  initial: FormState;
-  onSubmit: (f: FormState) => void;
-  onClose: () => void;
-  submitting: boolean;
-}) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <motion.div
-        initial={{ opacity: 0, y: 40 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 40 }}
-        transition={{ duration: 0.2 }}
-        className="relative w-full sm:max-w-lg bg-surface border border-white/10 rounded-t-2xl sm:rounded-2xl shadow-2xl max-h-[92vh] overflow-y-auto"
-      >
-        <div className="sticky top-0 bg-surface border-b border-white/10 px-5 py-4 flex items-center justify-between z-10">
-          <h2 className="font-black text-lg text-slate-100">{title}</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors">
-            <X className="w-5 h-5 text-slate-400" />
-          </button>
-        </div>
-        <div className="p-5">
-          <CollectionForm
-            initial={initial}
-            onSubmit={onSubmit}
-            onCancel={onClose}
-            submitting={submitting}
-          />
-        </div>
-      </motion.div>
-    </div>
-  );
-}
-
-// Asked before an add that would duplicate something already in the collection:
-// merge into that row (3 boxes + 2 = 5) instead of leaving two rows for the same
-// product. Sits ON TOP of the still-open add form, so cancelling drops the user
-// back into it with their input intact — and keeping them separate stays one tap
-// away, because tracking two purchases apart is a legitimate thing to want.
-function MergePromptModal({
-  incoming,
-  candidates,
-  onMerge,
-  onKeepSeparate,
-  onClose,
-  submitting,
-}: {
-  incoming: FormState;
-  candidates: CollectionItem[];
-  onMerge: (target: CollectionItem) => void;
-  onKeepSeparate: () => void;
-  onClose: () => void;
-  submitting: boolean;
-}) {
-  const label = incoming.name.trim() || (incoming.setName ? setLabel(incoming.setName) : '這筆收藏');
-  return (
-    <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <motion.div
-        initial={{ opacity: 0, y: 40 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 40 }}
-        transition={{ duration: 0.2 }}
-        className="relative w-full sm:max-w-md bg-surface border border-white/10 rounded-t-2xl sm:rounded-2xl shadow-2xl max-h-[92vh] overflow-y-auto"
-      >
-        <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between">
-          <h2 className="font-black text-lg text-slate-100">收藏庫已經有這個了</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors">
-            <X className="w-5 h-5 text-slate-400" />
-          </button>
-        </div>
-        <div className="p-5 space-y-3">
-          <p className="text-[13px] text-slate-300 leading-relaxed">
-            <span className="font-bold text-slate-100">{label}</span> 已經在收藏庫裡了。
-            要把這次新增的 <span className="font-bold text-poke-accent">×{incoming.quantity}</span> 併進現有的那筆，還是另外存成新的一筆？
-          </p>
-          <div className="space-y-2">
-            {candidates.map(c => (
-              <button
-                key={c.id}
-                type="button"
-                disabled={submitting}
-                onClick={() => onMerge(c)}
-                className="w-full flex items-center justify-between gap-3 text-left rounded-xl border border-white/10 bg-white/5 px-3.5 py-3 hover:border-poke-accent/60 hover:bg-white/10 transition-colors disabled:opacity-50"
-              >
-                <span className="min-w-0">
-                  <span className="block text-[13px] font-bold text-slate-100 truncate">
-                    {c.name}{c.cardNumber ? ` #${c.cardNumber}` : ''}
-                  </span>
-                  <span className="block text-[11px] text-slate-500">
-                    {[c.edition ? EDITION_LABELS[c.edition] : null, c.setName ? setLabel(c.setName) : null,
-                      c.acquiredDate ? `入手 ${c.acquiredDate.replace(/-/g, '/')}` : null]
-                      .filter(Boolean).join(' · ')}
-                  </span>
-                </span>
-                <span className="shrink-0 text-[13px] font-black text-poke-accent whitespace-nowrap">
-                  {c.quantity} → {c.quantity + incoming.quantity}
-                </span>
-              </button>
-            ))}
-          </div>
-          {/* Merging only moves the quantity — say so, because the date and the
-              price of the row being merged into are the ones that survive. */}
-          <p className="text-[11px] text-slate-500 leading-relaxed">
-            合併只會增加數量，保留現有那筆的入手日期與估價；這次填的其他欄位不會寫入。
-          </p>
-          <div className="flex gap-2 pt-1">
-            <button
-              type="button"
-              disabled={submitting}
-              onClick={onKeepSeparate}
-              className="flex-1 rounded-lg border border-white/10 py-2.5 text-sm font-bold text-slate-300 hover:border-white/25 hover:text-slate-100 transition-colors disabled:opacity-50"
-            >
-              {submitting ? '處理中...' : '另存成新的一筆'}
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2.5 text-sm font-bold text-slate-500 hover:text-slate-300 transition-colors"
-            >
-              取消
-            </button>
-          </div>
-        </div>
-      </motion.div>
-    </div>
-  );
-}
-
-function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
-  if (value == null || value === '') return null;
-  return (
-    <div className="flex items-baseline justify-between gap-3 py-1.5 border-b border-white/5 last:border-0">
-      <span className="text-[11px] font-bold text-slate-500 shrink-0">{label}</span>
-      <span className="text-[13px] font-bold text-slate-200 text-right break-all">{value}</span>
-    </div>
-  );
-}
-
-// Tapping a card in the gallery opens this: the artwork big enough to actually
-// look at, the details that don't fit on a tile, and the per-card actions.
-// 「更新價格」 here re-prices JUST this card — the bulk refresh walks every
-// priceable item one request at a time, which is a long wait when you only
-// care about the card you're looking at.
-function CardDetailModal({
-  item,
-  estTwd,
-  est,
-  diff,
-  diffPct,
-  onClose,
-  onEdit,
-  onDelete,
-  onReprice,
-  pricing,
-  priceMsg,
-}: {
-  item: CollectionItem;
-  estTwd: number | null;
-  est: { amount: number; currency: 'JPY' | 'TWD' } | null;
-  diff: number | null;
-  diffPct: number | null;
-  onClose: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
-  onReprice: () => void;
-  pricing: boolean;
-  priceMsg: { ok: boolean; text: string } | null;
-}) {
-  const graded = item.isGraded
-    ? `${item.gradingCompany ? GRADING_LABELS[item.gradingCompany] : '鑑定'}${item.grade ? ` ${item.grade}` : ''}`
-    : null;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <motion.div
-        initial={{ opacity: 0, y: 40 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 40 }}
-        transition={{ duration: 0.2 }}
-        className="relative w-full sm:max-w-md bg-surface border border-white/10 rounded-t-2xl sm:rounded-2xl shadow-2xl max-h-[92vh] overflow-y-auto"
-      >
-        <div className="sticky top-0 bg-surface border-b border-white/10 px-5 py-4 flex items-center justify-between gap-2 z-10">
-          <h2 className="font-black text-lg text-slate-100 leading-tight line-clamp-2">{item.name}</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors shrink-0">
-            <X className="w-5 h-5 text-slate-400" />
-          </button>
-        </div>
-
-        <div className="p-5 space-y-4">
-          {/* Enlarged artwork */}
-          <div className="relative mx-auto w-full max-w-[260px] aspect-[3/4] rounded-xl overflow-hidden bg-white/5 border border-white/10">
-            <GalleryImage item={item} />
-          </div>
-
-          <div className="flex items-center justify-center gap-1.5 flex-wrap">
-            <ItemTypeBadge type={item.itemType} />
-            {item.edition && (
-              <span className="text-[10px] font-bold text-sky-300 bg-sky-500/15 px-1.5 py-0.5 rounded-full">
-                {EDITION_LABELS[item.edition]}
-              </span>
-            )}
-            {item.rarity && (
-              <span className="text-[10px] font-bold text-violet-300 bg-violet-500/15 px-1.5 py-0.5 rounded-full">
-                {item.rarity}
-              </span>
-            )}
-            {graded && (
-              <span className="text-[10px] font-black text-amber-700 bg-gradient-to-r from-amber-100 to-yellow-100 border border-amber-300 px-1.5 py-0.5 rounded-full">
-                {graded}
-              </span>
-            )}
-          </div>
-
-          {/* Current value */}
-          <div className="rounded-xl bg-white/5 border border-white/10 px-4 py-3">
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="text-[11px] font-bold text-slate-500">目前價值</span>
-              {diffPct != null && (
-                <span className={cn(
-                  'inline-flex items-center gap-0.5 text-[11px] font-black',
-                  diffPct >= 0 ? 'text-emerald-500' : 'text-red-400',
-                )}>
-                  {diffPct >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                  {diffPct >= 0 ? '+' : ''}{diffPct.toFixed(1)}%
-                  {diff != null && (
-                    <span className="ml-1 font-bold">
-                      ({diff >= 0 ? '+' : ''}NT${Math.round(diff).toLocaleString()})
-                    </span>
-                  )}
-                </span>
-              )}
-            </div>
-            <p className="mt-0.5 text-2xl font-black text-slate-100">
-              {estTwd != null ? `NT$${estTwd.toLocaleString()}` : '—'}
-              {estTwd != null && est?.currency === 'JPY' && (
-                <span className="ml-1 text-xs font-normal text-slate-400">
-                  (¥{Math.round(est.amount).toLocaleString()})
-                </span>
-              )}
-            </p>
-            {item.marketPrice != null && (
-              <p className="mt-1 text-[11px] text-slate-400">
-                {[
-                  item.marketPriceSource === 'manual' ? '手動輸入' : item.marketPriceSource,
-                  relativeTime(item.marketPriceUpdatedAt),
-                  item.marketPriceCondition
-                    ? (!item.isGraded && isGradedCondition(item.marketPriceCondition)
-                        ? `${item.marketPriceCondition} 參考`
-                        : item.marketPriceCondition)
-                    : null,
-                ].filter(Boolean).join(' · ')}
-              </p>
-            )}
-            {estTwd == null && (
-              <p className="mt-1 text-[11px] text-slate-500">
-                還沒有價格。按「更新價格」試著抓一次，抓不到就會維持空白。
-              </p>
-            )}
-          </div>
-
-          {/* Details */}
-          <div className="rounded-xl bg-white/5 border border-white/10 px-4 py-2">
-            <DetailRow label="系列" value={item.setName ? setLabel(item.setName) : null} />
-            <DetailRow label="卡號" value={item.cardNumber} />
-            <DetailRow label="數量" value={item.quantity > 1 ? `×${item.quantity}` : null} />
-            {!item.isGraded && (
-              <DetailRow label="卡況" value={item.condition ? CONDITION_LABELS[item.condition] : null} />
-            )}
-            <DetailRow label="鑑定編號" value={item.gradingCert} />
-            <DetailRow label="入手日" value={item.acquiredDate?.replace(/-/g, '/')} />
-            <DetailRow
-              label="當初估價"
-              value={item.currentValue != null ? `¥${Math.round(item.currentValue).toLocaleString()}` : null}
-            />
-            <DetailRow label="備註" value={item.notes} />
-          </div>
-        </div>
-
-        {/* Actions. Sticky: artwork + details is taller than the sheet on a
-            phone, and the whole point of opening a card is to act on it — the
-            buttons must not sit below the fold. */}
-        <div className="sticky bottom-0 bg-surface border-t border-white/10 px-5 py-3 space-y-2">
-            <button
-              onClick={onReprice}
-              disabled={pricing}
-              className={cn(
-                'w-full inline-flex items-center justify-center gap-2 py-2.5 rounded-xl font-black text-sm transition-colors',
-                pricing
-                  ? 'bg-poke-accent/10 text-poke-accent/70 cursor-wait'
-                  : 'bg-poke-accent/20 text-poke-accent hover:bg-poke-accent/30',
-              )}
-            >
-              {pricing
-                ? <><Loader2 className="w-4 h-4 animate-spin" /> 查詢中…</>
-                : <><RefreshCw className="w-4 h-4" /> 更新價格</>}
-            </button>
-            {priceMsg && (
-              <p className={cn(
-                'text-[11px] font-bold text-center',
-                priceMsg.ok ? 'text-emerald-400' : 'text-amber-400',
-              )}>
-                {priceMsg.text}
-              </p>
-            )}
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={onEdit}
-                className="inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-white/5 border border-white/10 text-slate-200 hover:bg-white/10 font-bold text-sm transition-colors"
-              >
-                <Pencil className="w-4 h-4" /> 編輯資訊
-              </button>
-              <button
-                onClick={onDelete}
-                className="inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-300 hover:bg-red-500/20 font-bold text-sm transition-colors"
-              >
-                <Trash2 className="w-4 h-4" /> 刪除卡片
-              </button>
-            </div>
-        </div>
-      </motion.div>
-    </div>
-  );
-}
 
 export function Collection() {
   const { items: allItems, deletedItems: allDeletedItems, loading, addItem, updateItem, deleteItem, restoreItem, purgeItem } = useCollection();
@@ -1532,6 +65,21 @@ export function Collection() {
   const [pricingId, setPricingId] = useState<string | null>(null);
   const [priceMsg, setPriceMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Destructive/overwriting actions ask through ConfirmDialog instead of the
+  // native confirm(): the browser dialog is a different visual language, and on
+  // iOS Safari it can be suppressed outright — which would turn "確認刪除" into
+  // "delete without asking". Non-null = the dialog is open.
+  const [confirmAsk, setConfirmAsk] = useState<{
+    title: string;
+    message: React.ReactNode;
+    confirmLabel: string;
+    destructive?: boolean;
+    run: () => Promise<void>;
+  } | null>(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
+  // Failures that used to be alert() — shown as a dismissible banner so the
+  // message can't be missed but also doesn't block the page.
+  const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [fxRate, setFxRate] = useState(0.2); // JPY -> TWD, refined from /api/fx
   const [refreshing, setRefreshing] = useState(false);
   const [priceProgress, setPriceProgress] = useState<{ done: number; total: number } | null>(null);
@@ -1553,15 +101,6 @@ export function Collection() {
   // Looked up from `items` (not held as a snapshot) so the modal re-renders with
   // the new price the moment a per-card refresh writes one.
   const detailItem = detailId ? (items.find(i => i.id === detailId) ?? null) : null;
-
-  // Live current value for a card, in its native currency: the auto-fetched
-  // market price wins (its own currency), otherwise the estimate the user
-  // recorded when adding (現估價, JPY). No purchase price is tracked any more.
-  const estValue = (i: CollectionItem): { amount: number; currency: 'JPY' | 'TWD' } | null => {
-    if (i.marketPrice != null) return { amount: i.marketPrice, currency: i.marketPriceCurrency === 'TWD' ? 'TWD' : 'JPY' };
-    if (i.currentValue != null) return { amount: i.currentValue, currency: 'JPY' };
-    return null;
-  };
 
   // Per-item value change (損益) in TWD: live market price vs. the user's
   // recorded estimate (現估價) — only defined when we have BOTH, otherwise null
@@ -1700,10 +239,19 @@ export function Collection() {
     if (pricingId) return;
     // The bulk refresh skips manual prices outright; here the user is asking for
     // this specific card, so offer it — but say plainly what will be lost.
-    if (
-      item.marketPriceSource === 'manual'
-      && !confirm('這張卡目前是你手動輸入的價格。更新後會被市場價覆蓋，確定嗎？')
-    ) return;
+    if (item.marketPriceSource === 'manual') {
+      setConfirmAsk({
+        title: '會蓋掉你手動輸入的價格',
+        message: '這張卡現在顯示的是你自己填的市價。更新後改用抓到的市場價，手動填的數值不會保留（可以再編輯填回去）。',
+        confirmLabel: '仍要更新',
+        run: () => runReprice(item),
+      });
+      return;
+    }
+    await runReprice(item);
+  };
+
+  const runReprice = async (item: CollectionItem) => {
     setPricingId(item.id);
     setPriceMsg(null);
     try {
@@ -1809,7 +357,7 @@ export function Collection() {
       setShowAddForm(false);
     } catch (err) {
       console.error(err);
-      alert('新增失敗，請再試一次');
+      setActionMsg('新增失敗，請再試一次');
     } finally {
       setSubmitting(false);
     }
@@ -1838,7 +386,7 @@ export function Collection() {
       setShowAddForm(false);
     } catch (err) {
       console.error(err);
-      alert('合併失敗，請再試一次');
+      setActionMsg('合併失敗，請再試一次');
     } finally {
       setSubmitting(false);
     }
@@ -1866,47 +414,54 @@ export function Collection() {
       setEditingId(null);
     } catch (err) {
       console.error(err);
-      alert('更新失敗，請再試一次');
+      setActionMsg('更新失敗，請再試一次');
     } finally {
       setSubmitting(false);
     }
   };
 
   // Soft delete → the card moves to the 已刪除 graveyard, where it can be
-  // restored or permanently removed.
-  // Returns whether the row was actually deleted, so a caller (the detail modal)
-  // can close itself without having to guess — cancelling the confirm must not
-  // dismiss the card the user is looking at.
-  const handleDelete = async (id: string): Promise<boolean> => {
-    if (!confirm('確定要刪除這筆收藏嗎？（可到「已刪除」區域還原）')) return false;
-    try {
-      await deleteItem(id);
-      return true;
-    } catch (err) {
-      console.error(err);
-      alert('刪除失敗');
-      return false;
-    }
-  };
+  // restored or permanently removed. Closing the detail sheet happens INSIDE the
+  // confirmed branch: cancelling must leave the card the user is looking at open.
+  const askDelete = (item: CollectionItem) => setConfirmAsk({
+    title: '刪除這筆收藏？',
+    message: <>「{item.name}」會移到下方的「已刪除」區域，之後還可以還原。</>,
+    confirmLabel: '刪除',
+    destructive: true,
+    run: async () => {
+      try {
+        await deleteItem(item.id);
+        if (detailId === item.id) setDetailId(null);
+      } catch (err) {
+        console.error(err);
+        setActionMsg('刪除失敗，請稍後再試');
+      }
+    },
+  });
 
   const handleRestore = async (id: string) => {
     try {
       await restoreItem(id);
     } catch (err) {
       console.error(err);
-      alert('還原失敗');
+      setActionMsg('還原失敗，請稍後再試');
     }
   };
 
-  const handlePurge = async (id: string) => {
-    if (!confirm('永久刪除後無法復原，確定嗎？')) return;
-    try {
-      await purgeItem(id);
-    } catch (err) {
-      console.error(err);
-      alert('刪除失敗');
-    }
-  };
+  const askPurge = (item: CollectionItem) => setConfirmAsk({
+    title: '永久刪除？',
+    message: <>「{item.name}」會從資料庫整筆移除，這個動作無法復原。</>,
+    confirmLabel: '永久刪除',
+    destructive: true,
+    run: async () => {
+      try {
+        await purgeItem(item.id);
+      } catch (err) {
+        console.error(err);
+        setActionMsg('永久刪除失敗，請稍後再試');
+      }
+    },
+  });
 
   if (loading) {
     return (
@@ -1929,6 +484,8 @@ export function Collection() {
     setPriceMsg(null);
     setRefreshDone(null);
     setRefreshErrors([]);
+    setActionMsg(null);
+    setConfirmAsk(null);
   };
 
   return (
@@ -2163,6 +720,21 @@ export function Collection() {
         </div>
       )}
 
+      {/* Action failures (add / update / merge / delete / restore). Replaces the
+          alert() these used to raise: visible, but doesn't block the page. */}
+      {actionMsg && (
+        <div className="flex items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs">
+          <span className="font-bold text-red-300">{actionMsg}</span>
+          <button
+            onClick={() => setActionMsg(null)}
+            className="ml-auto text-slate-500 hover:text-slate-300 font-bold"
+            aria-label="關閉"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       {/* Price refresh result: surface failures instead of only console.error */}
       {!refreshing && refreshDone != null && (
         <div className="rounded-xl border border-white/10 bg-surface px-3 py-2 text-xs">
@@ -2272,7 +844,7 @@ export function Collection() {
                       <Pencil className="w-3.5 h-3.5" />
                     </button>
                     <button
-                      onClick={() => handleDelete(item.id)}
+                      onClick={() => askDelete(item)}
                       className="p-1.5 rounded-lg bg-black/40 backdrop-blur text-slate-200 hover:text-red-400 shadow-sm transition-colors"
                       title="刪除"
                     >
@@ -2402,7 +974,7 @@ export function Collection() {
                         <RotateCcw className="w-3.5 h-3.5" /> 還原
                       </button>
                       <button
-                        onClick={() => handlePurge(item.id)}
+                        onClick={() => askPurge(item)}
                         className="inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-500/10 text-red-300 hover:bg-red-500/20 text-[11px] font-bold transition-colors"
                         title="永久刪除"
                       >
@@ -2465,12 +1037,27 @@ export function Collection() {
             priceMsg={priceMsg}
             onReprice={() => handleRepriceOne(detailItem)}
             onEdit={() => { setEditingId(detailItem.id); setShowAddForm(false); }}
-            onDelete={async () => {
-              // Only dismiss if the delete really happened — cancelling the
-              // confirm must leave the card open.
-              if (await handleDelete(detailItem.id)) setDetailId(null);
-            }}
+            onDelete={() => askDelete(detailItem)}
             onClose={() => { setDetailId(null); setPriceMsg(null); }}
+          />
+        )}
+        {confirmAsk && (
+          <ConfirmDialog
+            title={confirmAsk.title}
+            message={confirmAsk.message}
+            confirmLabel={confirmAsk.confirmLabel}
+            destructive={confirmAsk.destructive}
+            busy={confirmBusy}
+            onCancel={() => setConfirmAsk(null)}
+            onConfirm={async () => {
+              setConfirmBusy(true);
+              try {
+                await confirmAsk.run();
+              } finally {
+                setConfirmBusy(false);
+                setConfirmAsk(null);
+              }
+            }}
           />
         )}
       </AnimatePresence>

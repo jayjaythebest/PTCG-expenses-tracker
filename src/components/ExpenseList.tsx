@@ -6,6 +6,7 @@ import { Trash2, Tag, Camera, ImageIcon, Loader2, Pencil, Clock, Wallet } from '
 import { cn, availableMonths, inMonth, formatMonthLabel } from '../lib/utils';
 import { AnimatePresence } from 'motion/react';
 import { ExpenseEditModal } from './ExpenseEditModal';
+import { ConfirmDialog } from './ConfirmDialog';
 import { lookupSetImage } from '../lib/tcgdex';
 
 function getCategoryText(category: string) {
@@ -81,6 +82,11 @@ export function ExpenseList() {
   const { expenses, loading, deleteExpense, uploadExpenseImage, updateExpense } = useExpenses();
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  // Delete asks through ConfirmDialog rather than window.confirm(): iOS Safari
+  // can suppress the native dialog, and a suppressed confirm() returns false
+  // here — the row would simply refuse to delete with no explanation.
+  const [pendingDelete, setPendingDelete] = useState<Expense | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [month, setMonth] = useState<string>('all');
   const pendingIdRef = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -152,6 +158,27 @@ export function ExpenseList() {
         <ExpenseEditModal
           expense={editingExpense}
           onClose={() => setEditingExpense(null)}
+        />
+      )}
+      {pendingDelete && (
+        <ConfirmDialog
+          title="刪除這筆記錄？"
+          message={<>「{pendingDelete.title}」會從記錄中移除，這個動作無法復原。</>}
+          confirmLabel="刪除"
+          destructive
+          busy={deleting}
+          onCancel={() => setPendingDelete(null)}
+          onConfirm={async () => {
+            setDeleting(true);
+            try {
+              await deleteExpense(pendingDelete.id);
+            } catch (err) {
+              console.error(err);
+            } finally {
+              setDeleting(false);
+              setPendingDelete(null);
+            }
+          }}
         />
       )}
     </AnimatePresence>
@@ -305,9 +332,7 @@ export function ExpenseList() {
 
                   {/* Delete button */}
                   <button
-                    onClick={() => {
-                      if (confirm('確定要刪除這筆記錄嗎？')) deleteExpense(expense.id);
-                    }}
+                    onClick={() => setPendingDelete(expense)}
                     className="p-2 text-slate-500 hover:text-red-400 transition-colors rounded-lg"
                   >
                     <Trash2 className="w-4 h-4" />

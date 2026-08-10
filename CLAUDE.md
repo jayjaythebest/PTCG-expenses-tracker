@@ -8,7 +8,7 @@
 - Tailwind CSS v4 (via `@tailwindcss/vite`)
 - Supabase — Postgres (expense rows) + Storage (receipt images, up to 5MB)
 - `@google/genai` — Gemini API for summaries / insights
-- `lucide-react`, `motion`, `date-fns`, `react-markdown`
+- `lucide-react`, `motion`, `date-fns`
 - Deployed on **Vercel** (auto-deploy from `main`)
 
 ## Architecture
@@ -21,16 +21,28 @@ src/
     ExpenseForm.tsx       # Create / edit expense (incl. photo upload)
     ExpenseList.tsx       # List + filter
     Login.tsx             # Email/password sign-in — the whole app sits behind it
+    ConfirmDialog.tsx     # In-app replacement for window.confirm()
+    Collection.tsx        # 圖庫 container: owner tabs, filters, grid, bulk reprice
+    collection/           # The pieces Collection.tsx composes
+      constants.tsx       #   labels, set-code maps, ItemTypeBadge / Thumb
+      formState.ts        #   FormState + formToItem / itemToForm
+      CollectionForm.tsx  #   add/edit form + its modal shell (photo scan lives here)
+      CardDetailModal.tsx #   tap-a-card detail sheet
+      GalleryImage.tsx    #   tile artwork with its fallback chain
+      MergePromptModal.tsx#   "already in the collection — merge?" prompt
   lib/
     supabase.ts           # Supabase client (current source of truth)
     useExpenses.ts        # Data hook
     AuthContext.tsx       # Supabase Auth session -> UserProfile
     apiFetch.ts           # fetch wrapper that attaches the session JWT to /api calls
-    utils.ts              # clsx/tw-merge helpers
+    fetchTimeout.ts       # fetchWithTimeout — every external request must use it
+    collectionValue.ts    # toTwd / estValue / P&L — the one place value math lives
+    utils.ts              # clsx/tw-merge helpers, relativeTime
   types.ts
 supabase/
   schema.sql              # DB schema — keep in sync with Supabase project
   auth_lockdown.sql       # RLS + storage policies + allowed_users list
+.github/workflows/ci.yml  # lint + test + build on every push / PR
 ```
 
 Receipts are stored in Supabase Storage; rows in the expenses table reference the storage path. The "add photo later" flow means an expense row can exist without a photo and be patched afterward — never assume the photo field is present.
@@ -59,17 +71,20 @@ npm run dev     # vite on :3000, host 0.0.0.0
 
 ## Dev / Build / Deploy
 - **Dev:** `npm run dev` (port 3000)
-- **Typecheck / lint:** `npm run lint` (runs `tsc --noEmit`)
+- **Typecheck / lint:** `npm run lint` (runs `tsc --noEmit`; there is no ESLint)
+- **Test:** `npm test` (`vitest run`)
 - **Verify the set catalog:** `npm run verify:sets` (network; not part of `npm test`)
 - **Build:** `npm run build` → `dist/`
 - **Preview build:** `npm run preview`
 - **Deploy:** Pushing to `main` auto-deploys via Vercel — there is no manual deploy step.
+- **CI:** `.github/workflows/ci.yml` runs `lint` → `test` → `build` on every push to `main` and every PR. Because `main` *is* production, that workflow is the only automated gate between a typo and a live deploy — don't let it go red.
 
 ### Deploy gotchas (bake these in)
 - Vercel project env vars **must** include `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`. Missing either → Supabase client throws and the app shows a blank screen. Verify via `vercel env ls` before merging any change that touches env handling.
 - Never *rename* `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` into the un-prefixed forms to satisfy a server-side need — add a second variable instead. Vercel hands every var to the function runtime regardless of prefix, but Vite only inlines `VITE_`-prefixed ones into the bundle, so renaming them white-screens the app on the next deploy.
 - Server-side Supabase config resolves through `api/_lib/env.ts`, which falls back to the `VITE_*` pair for the URL. So only `SUPABASE_SERVICE_ROLE_KEY` (RLS bypass, crons) and `CRON_SECRET` / `RESEND_API_KEY` genuinely have to exist as separate vars. When config is absent the endpoints answer **503**, never 401/500 — `requireUser` sends `Auth not configured`, the crons send `Supabase not configured`. Handy check: `curl -H 'Authorization: Bearer x' <deployment>/api/fx` → 401 means the config is healthy, 503 means it isn't.
 - `GEMINI_API_KEY` is read at build time by Vite (`define`). Changing the key requires a **redeploy**, not just a config update.
+- `NOTIFY_EMAIL_TO` (optional) is where the cron emails go — the weekly summary and the new-set alert both read it via `notifyEmailTo()` in `api/_lib/env.ts`. Unset, it falls back to the address that used to be hardcoded, so leaving it out changes nothing.
 - Image upload limit is **5 MB** (raised from earlier default). If changing, update both the client-side validation and the Supabase Storage policy.
 
 ## Do NOT
@@ -89,5 +104,7 @@ npm run dev     # vite on :3000, host 0.0.0.0
 - Shared hooks / clients in `src/lib/`, camelCase filenames.
 - Styling is Tailwind utility classes; avoid adding CSS modules or styled-components.
 - Keep Supabase queries co-located in `lib/useExpenses.ts` (or sibling hooks) — do not call `supabase` directly from components.
-- No test suite today. If adding one, prefer Vitest (matches Vite toolchain).
+- Tests are Vitest, co-located as `*.test.ts` next to the module under test (`src/lib/`). They cover the pure logic — value math, set-code normalisation, card-number parsing, merge candidates, fetch timeouts — and deliberately not the React components. Run them with `npm test`.
+- Every outbound `fetch` to a third party goes through `fetchWithTimeout` (`src/lib/fetchTimeout.ts`), on the server as well as the client. A hung external source otherwise burns the whole 60s serverless budget and takes the daily snapshot cron down with it. Server files import it as `../src/lib/fetchTimeout.js` (note the `.js`).
+- Prefer `ConfirmDialog` over `window.confirm()` for anything destructive, and an inline message over `alert()` for failures.
 - When changing `supabase/schema.sql`, also run the change in the Supabase project — the file is documentation of intent, not an auto-migrator.

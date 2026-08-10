@@ -9,7 +9,7 @@ import {
 } from '../lib/collectionValue';
 import { usePriceHistory } from '../lib/usePriceHistory';
 import { PRIMARY_OWNER, ownerOf } from '../data/collectionOwners';
-import { inMonth } from '../lib/utils';
+import { inMonth, relativeTime } from '../lib/utils';
 import { Expense } from '../types';
 import {
   TrendingUp, TrendingDown, Wallet, Clock, Sparkles,
@@ -34,19 +34,6 @@ function nt(n: number): string {
 
 function yen(n: number): string {
   return `¥${Math.round(n).toLocaleString()}`;
-}
-
-// Compact zh-TW relative time for the FX "更新於 …" note.
-function relativeTime(iso: string | null): string | null {
-  if (!iso) return null;
-  const t = new Date(iso).getTime();
-  if (!Number.isFinite(t)) return null;
-  const mins = Math.floor((Date.now() - t) / 60000);
-  if (mins < 1) return '剛剛';
-  if (mins < 60) return `${mins} 分鐘前`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs} 小時前`;
-  return `${Math.floor(hrs / 24)} 天前`;
 }
 
 // A minimal stock-ticker sparkline over the recent value snapshots.
