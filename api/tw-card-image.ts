@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { requireUser } from './_lib/auth.js';
+import { fetchWithTimeout } from '../src/lib/fetchTimeout.js';
 
 // Resolves precise official Traditional-Chinese card / product artwork from the
 // official Pokémon TCG Asia site (asia.pokemon-card.com/tw). That site serves no
@@ -30,7 +31,7 @@ let productMap: Map<string, string> | null = null;
 
 async function fetchText(url: string): Promise<string | null> {
   try {
-    const res = await fetch(url, { headers: { 'User-Agent': UA } });
+    const res = await fetchWithTimeout(url, { headers: { 'User-Agent': UA } });
     if (!res.ok) return null;
     return await res.text();
   } catch {

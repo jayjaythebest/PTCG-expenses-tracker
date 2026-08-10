@@ -6,6 +6,8 @@
 // Traditional-Chinese (zh-tw) cards -> kapaipai (trade.kapaipai.tw, TWD).
 // Returns null when no match is found so callers can fall back to manual entry.
 
+import { fetchWithTimeout } from '../../src/lib/fetchTimeout.js';
+
 const HUCA_API = 'https://huca.tw/api/api.php';
 const KP_API = 'https://trade.kapaipai.tw/api';
 const TCGDEX_ZH_SETS = 'https://api.tcgdex.net/v2/zh-tw/sets';
@@ -78,9 +80,13 @@ let kpPackListCache: { at: number; nameToId: Map<string, string>; idToId: Map<st
 let tdZhSetsCache: { at: number; nameToId: Map<string, string> } | null = null;
 const kpPackDetailCache = new Map<string, { at: number; rows: KpCardRow[] }>();
 
+// Every source read in this module goes through here, so the timeout applies
+// to all of them: Huca, kapaipai, Snkrdunk and TCGdex are other people's
+// servers, and one hung socket would otherwise spend the caller's entire 60s
+// budget — killing the daily cron mid-batch.
 async function fetchJson<T>(url: string): Promise<T | null> {
   try {
-    const res = await fetch(url, { headers: { 'User-Agent': UA } });
+    const res = await fetchWithTimeout(url, { headers: { 'User-Agent': UA } });
     if (!res.ok) return null;
     return (await res.json()) as T;
   } catch {

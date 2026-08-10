@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { requireUser } from './_lib/auth.js';
+import { fetchWithTimeout } from '../src/lib/fetchTimeout.js';
 
 // Currency conversion rate for the collection's value display. Market prices are
 // stored in their source's native currency (JPY from Huca) but shown in TWD, so
@@ -29,7 +30,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   let jpyToTwd = FALLBACK_JPY_TO_TWD;
   let source = 'fallback';
   try {
-    const r = await fetch(HUCA_FX, { headers: { 'User-Agent': UA } });
+    const r = await fetchWithTimeout(HUCA_FX, { headers: { 'User-Agent': UA } });
     if (r.ok) {
       const rates = (await r.json()) as Record<string, number>;
       // rates are per 1 USD, so JPY -> TWD = TWD_perUSD / JPY_perUSD.

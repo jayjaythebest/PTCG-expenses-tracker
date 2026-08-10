@@ -17,8 +17,16 @@
 // new provider is just "add the key in Vercel".
 
 import { GoogleGenAI } from '@google/genai';
+import { fetchWithTimeout } from '../../src/lib/fetchTimeout.js';
 
 export type Provider = 'gemini' | 'groq' | 'openrouter';
+
+// Vision models are genuinely slow, so this is far more generous than the 8s the
+// scraping sources get — but it must still exist. Without it a stalled provider
+// holds the request until Vercel kills the whole function at 60s, and the point
+// of the fallback chain is that a provider which won't answer gets skipped so
+// the NEXT one can try. Two 25s attempts still fit inside the budget.
+const AI_TIMEOUT_MS = 25_000;
 
 interface RawResult {
   text: string;
@@ -65,6 +73,7 @@ const geminiAdapter: Adapter = {
         },
       ],
       config: {
+        abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
         responseMimeType: 'application/json',
         ...(schema ? { responseSchema: schema as object } : {}),
       },
@@ -74,7 +83,11 @@ const geminiAdapter: Adapter = {
   async text({ prompt }) {
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY ?? '' });
     const model = process.env.GEMINI_TEXT_MODEL || 'gemini-flash-latest';
-    const res = await ai.models.generateContent({ model, contents: prompt });
+    const res = await ai.models.generateContent({
+      model,
+      contents: prompt,
+      config: { abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS) },
+    });
     return { text: res.text ?? '', model };
   },
 };
@@ -91,7 +104,7 @@ function openAiCompatible(opts: {
   extraHeaders?: Record<string, string>;
 }): Adapter {
   const call = async (model: string, messages: unknown, json: boolean): Promise<string> => {
-    const res = await fetch(`${opts.baseUrl}/chat/completions`, {
+    const res = await fetchWithTimeout(`${opts.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -104,7 +117,7 @@ function openAiCompatible(opts: {
         temperature: 0,
         ...(json ? { response_format: { type: 'json_object' } } : {}),
       }),
-    });
+    }, AI_TIMEOUT_MS);
     if (!res.ok) {
       const body = await res.text().catch(() => '');
       throw new Error(`${opts.name} ${res.status} ${body.slice(0, 200)}`);

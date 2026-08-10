@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { requireUser } from './_lib/auth.js';
+import { fetchWithTimeout } from '../src/lib/fetchTimeout.js';
 
 // Resolves precise official-style Japanese card artwork by set code + collector
 // number. Two complementary free sources, tried in order:
@@ -29,7 +30,7 @@ async function snkrdunkImage(set: string, num: number): Promise<string | null> {
   for (const n of new Set([String(num).padStart(3, '0'), String(num)])) {
     try {
       const pn = `pkmn-tcg-${set}-${n}`;
-      const res = await fetch(
+      const res = await fetchWithTimeout(
         `https://snkrdunk.com/v1/apparels?productNumber=${encodeURIComponent(pn)}`,
         { headers: { 'User-Agent': UA, Accept: 'application/json' } },
       );
@@ -49,7 +50,7 @@ async function limitlessImage(set: string, num: number): Promise<string | null> 
   // Spaces returns 200 when the object exists, 403 when it doesn't.
   const url = `${LIMITLESS_CDN}/${set}/${set}_${num}_R_JP.png`;
   try {
-    const res = await fetch(url, { method: 'HEAD', headers: { 'User-Agent': UA } });
+    const res = await fetchWithTimeout(url, { method: 'HEAD', headers: { 'User-Agent': UA } });
     return res.ok ? url : null;
   } catch {
     return null;

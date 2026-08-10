@@ -10,6 +10,7 @@
 // first, and the prompt now treats the list as a spelling reference only.
 
 import { PTCG_PRODUCTS } from '../../src/data/ptcg-products.js';
+import { fetchWithTimeout } from '../../src/lib/fetchTimeout.js';
 
 type Lang = 'ja' | 'zh-tw';
 type SetCodes = { ja: string[]; 'zh-tw': string[] };
@@ -32,7 +33,7 @@ function localCodes(lang: Lang): string[] {
 
 async function fetchIds(lang: Lang): Promise<string[]> {
   try {
-    const res = await fetch(`https://api.tcgdex.net/v2/${lang}/sets`);
+    const res = await fetchWithTimeout(`https://api.tcgdex.net/v2/${lang}/sets`);
     if (!res.ok) return [];
     const data = await res.json();
     return (Array.isArray(data) ? data : [])

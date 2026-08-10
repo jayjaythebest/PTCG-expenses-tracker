@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 import { Resend } from 'resend';
 import { textCompletion } from './_lib/ai.js';
-import { supabaseUrl, serviceRoleKey } from './_lib/env.js';
+import { supabaseUrl, serviceRoleKey, notifyEmailTo } from './_lib/env.js';
 
 interface ExpenseRow {
   title: string;
@@ -39,11 +39,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const rows = (expenses ?? []) as ExpenseRow[];
-  const lines = rows.length
-    ? rows
-        .map(e => `- ${e.date.slice(0, 10)} ${e.type === 'Income' ? '收入' : '支出'} ${e.title} x${e.quantity ?? 1} ¥${Number(e.amount) * (e.quantity ?? 1)}（${e.category}）`)
-        .join('\n')
-    : '（過去 7 天沒有任何記錄）';
+
+  // Nothing happened this week: don't spend AI quota writing "you spent nothing"
+  // and don't send a mail that says it. A quiet week should be quiet.
+  if (rows.length === 0) {
+    return res.status(200).json({ ok: true, skipped: 'no expenses' });
+  }
+
+  // Resend is only needed once we know there's something to send, but check it
+  // before paying for the summary — generating text we then can't deliver just
+  // burns quota. Missing config is 503 across this project, never 500.
+  if (!process.env.RESEND_API_KEY) {
+    console.error('[weekly-summary] missing RESEND_API_KEY');
+    return res.status(503).json({ error: 'Resend not configured' });
+  }
+
+  const lines = rows
+    .map(e => `- ${e.date.slice(0, 10)} ${e.type === 'Income' ? '收入' : '支出'} ${e.title} x${e.quantity ?? 1} ¥${Number(e.amount) * (e.quantity ?? 1)}（${e.category}）`)
+    .join('\n');
 
   let summary = '本週摘要產生失敗。';
   try {
@@ -66,7 +79,7 @@ ${lines}
   const resend = new Resend(process.env.RESEND_API_KEY);
   const { error: sendError } = await resend.emails.send({
     from: process.env.RESEND_FROM_EMAIL ?? 'onboarding@resend.dev',
-    to: 'jj940170@gmail.com',
+    to: notifyEmailTo(),
     subject: `PTCG Vault 週報 — ${new Date().toISOString().slice(0, 10)}`,
     text: summary,
   });

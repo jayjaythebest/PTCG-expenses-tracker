@@ -5,6 +5,7 @@ import { supabaseUrl, serviceRoleKey } from './_lib/env.js';
 import { PTCG_PRODUCTS } from '../src/data/ptcg-products.js';
 import { boxSnkrdunkId } from '../src/data/ptcg-boxes.js';
 import { PRIMARY_OWNER, ownerOf } from '../src/data/collectionOwners.js';
+import { fetchWithTimeout } from '../src/lib/fetchTimeout.js';
 
 // Daily cron. Three jobs, in order:
 //   1. Refresh every single card's live market price from its source (Huca for
@@ -57,7 +58,7 @@ const SET_CODE_BY_NAME: Record<string, string> = Object.fromEntries(
 // JPY -> TWD rate (mirrors /api/fx). Falls back to a rough static rate.
 async function jpyToTwd(): Promise<number> {
   try {
-    const r = await fetch(HUCA_FX, { headers: { 'User-Agent': UA } });
+    const r = await fetchWithTimeout(HUCA_FX, { headers: { 'User-Agent': UA } });
     if (r.ok) {
       const rates = (await r.json()) as Record<string, number>;
       if (Number.isFinite(rates.JPY) && Number.isFinite(rates.TWD) && rates.JPY > 0) {
@@ -145,8 +146,19 @@ async function refreshOne(supabase: any, row: ItemRow): Promise<boolean> {
 // lookups concurrently (gentle on the sources, but well under maxDuration).
 const REFRESH_CONCURRENCY = 5;
 
+// vercel.json allows this function 60s. Stop starting new lookups once we're
+// this far in, so the two writes that follow — the per-card history and the
+// day's collection-value snapshot, which are the job's actual output — still
+// happen. A day with some prices a little stale beats a day with no row at all,
+// and the row can't be recomputed later because it IS the history.
+const REFRESH_BUDGET_MS = 45_000;
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function refreshPrices(supabase: any, rows: ItemRow[]): Promise<{ refreshed: number }> {
+async function refreshPrices(
+  supabase: any,
+  rows: ItemRow[],
+  deadline: number,
+): Promise<{ refreshed: number; skipped: number; timedOut: boolean }> {
   // Singles always; boxes only when they map to a curated Snkrdunk id (JA).
   // Manual overrides are skipped so the cron never clobbers a hand-set price.
   const priceable = rows.filter(
@@ -157,12 +169,18 @@ async function refreshPrices(supabase: any, rows: ItemRow[]): Promise<{ refreshe
           boxSnkrdunkId(SET_CODE_BY_NAME[r.set_name ?? ''] ?? '', r.edition ?? 'ja') != null)),
   );
   let refreshed = 0;
-  for (let i = 0; i < priceable.length; i += REFRESH_CONCURRENCY) {
+  let i = 0;
+  for (; i < priceable.length; i += REFRESH_CONCURRENCY) {
+    if (Date.now() > deadline) break;
     const batch = priceable.slice(i, i + REFRESH_CONCURRENCY);
     const results = await Promise.all(batch.map(row => refreshOne(supabase, row)));
     refreshed += results.filter(Boolean).length;
   }
-  return { refreshed };
+  const skipped = Math.max(0, priceable.length - i);
+  if (skipped > 0) {
+    console.warn(`[snapshot-collection] price budget spent; ${skipped} card(s) keep yesterday's price`);
+  }
+  return { refreshed, skipped, timedOut: skipped > 0 };
 }
 
 // Persist today's per-card prices so "which cards moved" is answerable later.
@@ -210,6 +228,10 @@ function todayIso(): string {
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // Start the clock before anything else, so the price budget is measured
+  // against the platform's limit and not against whenever step 1 begins.
+  const startedAt = Date.now();
+
   if (req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
@@ -236,8 +258,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const rows = (items ?? []) as unknown as ItemRow[];
 
-  // 1) Refresh live prices (mutates rows in place).
-  const { refreshed } = await refreshPrices(supabase, rows);
+  // 1) Refresh live prices (mutates rows in place), stopping in time to write.
+  const { refreshed, skipped, timedOut } = await refreshPrices(
+    supabase,
+    rows,
+    startedAt + REFRESH_BUDGET_MS,
+  );
 
   // 2) Record each card's price for today (per-card history).
   const rate = await jpyToTwd();
@@ -268,6 +294,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     ok: true,
     date: todayIso(),
     refreshed,
+    // Reported so a run that ran out of time is visible in the cron log rather
+    // than looking like a day when nothing moved.
+    ...(timedOut ? { skipped, timedOut } : {}),
     totalTwd: Math.round(totalTwd),
     itemCount,
     historyRows: history.written,

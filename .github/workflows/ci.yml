@@ -1,0 +1,37 @@
+# Pushing to main auto-deploys to Vercel, so main is production. Until now the
+# only thing standing between a typo and a live deploy was remembering to run
+# `npm run lint` by hand. This runs it for us.
+#
+# Deliberately does NOT run `npm run verify:sets`: that job hits TCGdex and
+# kapaipai over the network, so it would fail for reasons unrelated to the
+# change under test. It stays a manual check (see CLAUDE.md).
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # tsc --noEmit — the project has no ESLint, so this is the whole lint step.
+      - run: npm run lint
+
+      - run: npm test
+
+      # Catches what typechecking can't: a missing dependency, a bad import path.
+      # Build-time env vars are absent here on purpose — the build must not need
+      # secrets, and Supabase config is read at runtime.
+      - run: npm run build

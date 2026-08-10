@@ -1,6 +1,10 @@
 import { PTCG_PRODUCTS } from '../data/ptcg-products';
 import type { CardEdition } from '../types';
 import { apiFetch } from './apiFetch';
+// TCGdex / Bulbagarden are third-party hosts read while the gallery renders.
+// Without a deadline a stalled one leaves a card tile spinning forever; with it
+// the image chain simply moves on to the next candidate.
+import { fetchWithTimeout } from './fetchTimeout';
 
 // Authoritative card data resolved from the free TCGdex API (multilingual).
 // Docs: https://tcgdex.dev — endpoint: /v2/{lang}/sets/{setCode}/{localId}
@@ -85,7 +89,7 @@ export async function resolveJaSetCode(setName: string): Promise<string | null> 
   if (!name) return null;
   if (!jaSetNameToCode) {
     try {
-      const res = await fetch('https://api.tcgdex.net/v2/ja/sets');
+      const res = await fetchWithTimeout('https://api.tcgdex.net/v2/ja/sets');
       const data = res.ok ? await res.json() : [];
       jaSetNameToCode = new Map(
         (Array.isArray(data) ? data : [])
@@ -105,7 +109,7 @@ export async function resolveJaSetCode(setName: string): Promise<string | null> 
 let setCodeCache: { ja: string[]; 'zh-tw': string[] } | null = null;
 
 async function fetchSetCodes(lang: ScanLanguage): Promise<string[]> {
-  const res = await fetch(`https://api.tcgdex.net/v2/${lang}/sets`);
+  const res = await fetchWithTimeout(`https://api.tcgdex.net/v2/${lang}/sets`);
   if (!res.ok) throw new Error(`TCGdex /sets ${lang} ${res.status}`);
   const data = await res.json();
   return (Array.isArray(data) ? data : [])
@@ -131,7 +135,7 @@ export async function getKnownSetCodes(): Promise<{ ja: string[]; 'zh-tw': strin
 // ---- Card lookup ----
 async function tryLookup(code: string, id: string, lang: ScanLanguage): Promise<CardLookupResult | null> {
   try {
-    const res = await fetch(`https://api.tcgdex.net/v2/${lang}/sets/${encodeURIComponent(code)}/${encodeURIComponent(id)}`);
+    const res = await fetchWithTimeout(`https://api.tcgdex.net/v2/${lang}/sets/${encodeURIComponent(code)}/${encodeURIComponent(id)}`);
     if (!res.ok) return null;
     const data = await res.json();
     if (!data?.name) return null;
@@ -161,7 +165,7 @@ async function tryLookup(code: string, id: string, lang: ScanLanguage): Promise<
 // traced back when the scan's set code is garbled (mirrors the zh-tw path).
 async function lookupByName(name: string, id: string, lang: ScanLanguage): Promise<CardLookupResult | null> {
   try {
-    const res = await fetch(`https://api.tcgdex.net/v2/${lang}/cards?name=${encodeURIComponent(name)}`);
+    const res = await fetchWithTimeout(`https://api.tcgdex.net/v2/${lang}/cards?name=${encodeURIComponent(name)}`);
     if (!res.ok) return null;
     const list = await res.json();
     if (!Array.isArray(list)) return null;
@@ -224,7 +228,7 @@ export interface SetImageResult {
 
 async function trySetImage(code: string, lang: ScanLanguage): Promise<SetImageResult | null> {
   try {
-    const res = await fetch(`https://api.tcgdex.net/v2/${lang}/sets/${encodeURIComponent(code)}`);
+    const res = await fetchWithTimeout(`https://api.tcgdex.net/v2/${lang}/sets/${encodeURIComponent(code)}`);
     if (!res.ok) return null;
     const data = await res.json();
 
@@ -256,7 +260,7 @@ const BULBA_API = 'https://archives.bulbagarden.net/w/api.php';
 async function resolveBulbaImageUrl(title: string): Promise<string | null> {
   try {
     const url = `${BULBA_API}?action=query&titles=${encodeURIComponent(title)}&prop=imageinfo&iiprop=url&format=json&origin=*`;
-    const res = await fetch(url);
+    const res = await fetchWithTimeout(url);
     if (!res.ok) return null;
     const data = await res.json();
     const pages = data?.query?.pages;
@@ -276,7 +280,7 @@ async function resolveBulbaImageUrl(title: string): Promise<string | null> {
 async function searchBulbaLogoTitle(code: string): Promise<string | null> {
   try {
     const url = `${BULBA_API}?action=query&list=search&srsearch=${encodeURIComponent(`${code} Logo`)}&srnamespace=6&format=json&origin=*`;
-    const res = await fetch(url);
+    const res = await fetchWithTimeout(url);
     if (!res.ok) return null;
     const data = await res.json();
     const results = data?.query?.search;

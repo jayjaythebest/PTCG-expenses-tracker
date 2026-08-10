@@ -1,6 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { Resend } from 'resend';
 import { PTCG_PRODUCTS } from '../src/data/ptcg-products.js';
+import { fetchWithTimeout } from '../src/lib/fetchTimeout.js';
+import { notifyEmailTo } from './_lib/env.js';
 
 // Weekly cron: has a new expansion shipped that src/data/ptcg-products.ts
 // doesn't know about yet?
@@ -22,7 +24,6 @@ import { PTCG_PRODUCTS } from '../src/data/ptcg-products.js';
 const KP_PACKS = 'https://trade.kapaipai.tw/api/card/getCardPackList?game=pkmtw';
 const HUCA_API = 'https://huca.tw/api/api.php';
 const UA = 'Mozilla/5.0 (compatible; PTCGTracker/1.0)';
-const MAIL_TO = 'jj940170@gmail.com';
 
 // How far around today a pack's publish date may sit and still count as "news".
 //
@@ -81,7 +82,7 @@ async function hucaJaSetName(code: string): Promise<string | null> {
   const url = `${HUCA_API}?search=&set_code=${encodeURIComponent(code)}`
     + '&card_number=1&promo=0&accuracy=1&limit=1';
   try {
-    const r = await fetch(url, { headers: { 'User-Agent': UA } });
+    const r = await fetchWithTimeout(url, { headers: { 'User-Agent': UA } });
     if (!r.ok) return null;
     const json = (await r.json()) as { data?: { title?: string }[] };
     const title = json?.data?.[0]?.title;
@@ -104,7 +105,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   let packs: KpPack[];
   try {
-    const r = await fetch(KP_PACKS, { headers: { 'User-Agent': UA } });
+    const r = await fetchWithTimeout(KP_PACKS, { headers: { 'User-Agent': UA } });
     const json = (await r.json()) as { data?: { list?: KpPack[] } | KpPack[] };
     const data = json?.data;
     packs = (Array.isArray(data) ? data : data?.list) ?? [];
@@ -173,7 +174,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const resend = new Resend(process.env.RESEND_API_KEY);
   const { error: sendError } = await resend.emails.send({
     from: process.env.RESEND_FROM_EMAIL ?? 'onboarding@resend.dev',
-    to: MAIL_TO,
+    to: notifyEmailTo(),
     subject: `PTCG 新商品偵測 — ${candidates.length} 個未收錄擴充包`,
     text: body,
   });
