@@ -54,3 +54,9 @@ alter table public.expenses
 -- 2026-06: default new expenses to 待報銷 (confirm paid at logging time)
 alter table public.expenses
   alter column payment_status set default 'pending';
+
+-- 2026-08: index the column every read filters or orders by.
+-- api/weekly-summary.ts selects the last 7 days with `gte('date', …)`, and the
+-- client list is `order('date', desc)`. Both were sequential scans; the table is
+-- small today, but the weekly cron pays for it every run and it only grows.
+create index if not exists expenses_date_idx on public.expenses (date desc);

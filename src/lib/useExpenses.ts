@@ -5,6 +5,22 @@ import { Expense, ExpenseStatus, PaymentStatus } from '../types';
 
 let channelCounter = 0;
 
+// Storage object name for a receipt photo.
+//
+// The `receipts` bucket is public-read (see supabase/auth_lockdown.sql), so the
+// object name is the only thing standing between a stranger and a receipt. It
+// used to be just `${Date.now()}.jpg` — a timestamp anyone can enumerate, which
+// made every receipt in the bucket effectively browsable. The UUID makes the
+// name unguessable; the timestamp stays in front purely so the bucket sorts
+// chronologically when you look at it in the dashboard.
+//
+// It also fixes a real bug: two uploads inside the same millisecond collided,
+// and the upload runs with `upsert: false`, so the second one simply failed.
+function receiptPath(file: File): string {
+  const ext = file.name.split('.').pop();
+  return `${Date.now()}-${crypto.randomUUID()}.${ext}`;
+}
+
 function mapRow(row: Record<string, unknown>): Expense {
   return {
     id:                row.id as string,
@@ -66,8 +82,7 @@ export function useExpenses() {
     let imageUrl: string | undefined;
 
     if (imageFile) {
-      const ext = imageFile.name.split('.').pop();
-      const path = `${Date.now()}.${ext}`;
+      const path = receiptPath(imageFile);
 
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from('receipts')
@@ -108,8 +123,7 @@ export function useExpenses() {
   };
 
   const uploadExpenseImage = async (id: string, file: File) => {
-    const ext = file.name.split('.').pop();
-    const path = `${Date.now()}.${ext}`;
+    const path = receiptPath(file);
 
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from('receipts')

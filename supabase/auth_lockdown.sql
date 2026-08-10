@@ -97,6 +97,21 @@ create policy "Allowed users manage collection_price_history"
 --    Reads stay public: the app renders card photos via
 --    getPublicUrl(), so locking reads would need signed URLs.
 --    Writes and deletes now require an allowed user.
+--
+--    Public read is only defensible because object names are
+--    UNGUESSABLE. src/lib/useExpenses.ts names each upload
+--    `${Date.now()}-${crypto.randomUUID()}.<ext>`; keep it that
+--    way. Listing the bucket isn't granted to anon, so a name
+--    nobody can guess is a name nobody can reach. (It used to be
+--    the bare timestamp — trivially enumerable, i.e. every
+--    receipt was effectively browsable.)
+--
+--    Making receipts genuinely private is a different job: turn
+--    the bucket private, store the storage PATH in
+--    expenses.image_url instead of a public URL, and render via
+--    createSignedUrl(). That invalidates every public URL
+--    already stored, so it's a one-off data migration rather
+--    than a policy tweak.
 -- ------------------------------------------------------------
 drop policy if exists "Public upload receipts" on storage.objects;
 drop policy if exists "Public delete receipts" on storage.objects;
