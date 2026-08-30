@@ -307,14 +307,24 @@ async function fetchBulbaLogo(code: string): Promise<string | null> {
 // The official TW site (asia.pokemon-card.com) has precise zh-tw card & pack
 // art but serves no CORS header, so we resolve the URL through a same-origin
 // serverless proxy (api/tw-card-image). The images hotlink freely afterwards.
-async function fetchTwOfficialImage(code: string, number?: number): Promise<string | null> {
+// `kind` matters to the caller: the endpoint answers with a genuine pack photo
+// ('product') when it has one, but falls back to the set's FIRST CARD
+// ('representative') when it doesn't — those are not interchangeable.
+interface TwOfficialImage {
+  imageUrl: string;
+  kind: string;
+}
+
+async function fetchTwOfficialImage(code: string, number?: number): Promise<TwOfficialImage | null> {
   try {
     const qs = new URLSearchParams({ set: code });
     if (number && Number.isFinite(number)) qs.set('number', String(number));
     const res = await apiFetch(`/api/tw-card-image?${qs.toString()}`);
     if (!res.ok) return null;
     const data = await res.json();
-    return typeof data?.imageUrl === 'string' && data.imageUrl ? data.imageUrl : null;
+    const imageUrl = typeof data?.imageUrl === 'string' ? data.imageUrl : '';
+    if (!imageUrl) return null;
+    return { imageUrl, kind: typeof data?.kind === 'string' ? data.kind : '' };
   } catch {
     return null;
   }
@@ -383,7 +393,7 @@ export async function lookupTwCardImage(setCode: string, cardNumber: number | st
   const key = `${code.toLowerCase()}#${n}`;
   const cached = twCardImageCache.get(key);
   if (cached !== undefined) return cached;
-  const url = await fetchTwOfficialImage(code, n);
+  const url = (await fetchTwOfficialImage(code, n))?.imageUrl ?? null;
   twCardImageCache.set(key, url);
   return url;
 }
@@ -442,9 +452,14 @@ export async function lookupSetImage(
   // 1) Official TW pack/product art — the real product photo. Used for every
   //    language: a booster pack looks essentially the same across editions, and
   //    a genuine pack photo beats a plain expansion logo for a row thumbnail.
-  let result: SetImageResult | null = null;
+  //    ONLY a genuine 'product' hit counts here. The TW site only lists pack art
+  //    for the products it is currently selling, and for anything else the
+  //    endpoint falls back to the set's first card — which is a random common
+  //    (M2 インフェルノX → 走路草), unrecognisable as the set. The logo below
+  //    identifies the set every time, so that arbitrary card belongs after it.
   const tw = await fetchTwOfficialImage(code);
-  result = tw ? { imageUrl: tw, kind: 'card', edition: language } : null;
+  let result: SetImageResult | null =
+    tw?.kind === 'product' ? { imageUrl: tw.imageUrl, kind: 'card', edition: language } : null;
 
   // 2) Bulbagarden expansion logo (searches "<code> Logo JP", so ja-appropriate).
   if (!result) {
@@ -452,7 +467,11 @@ export async function lookupSetImage(
     result = logo ? { imageUrl: logo, kind: 'logo', edition: language } : null;
   }
 
-  // 3) TCGdex representative card art (older sets the others might miss).
+  // 3) Whatever card art the sources can offer: the TW site's representative
+  //    card from step 1, else TCGdex (older sets the others might miss).
+  if (!result && tw) {
+    result = { imageUrl: tw.imageUrl, kind: 'card', edition: language };
+  }
   if (!result) {
     const secondary: ScanLanguage = language === 'ja' ? 'zh-tw' : 'ja';
     result = (await trySetImage(code, language)) ?? (await trySetImage(code, secondary));
