@@ -24,6 +24,7 @@ import { EMPTY_FORM, todayISO, manualPriceFields, formToItem, itemToForm, type F
 import { GalleryImage } from './collection/GalleryImage';
 import { CollectionModal } from './collection/CollectionForm';
 import { MergePromptModal } from './collection/MergePromptModal';
+import { DuplicateMergeModal } from './collection/DuplicateMergeModal';
 import { CardDetailModal } from './collection/CardDetailModal';
 import { Plus, Trash2, Pencil, TrendingUp, TrendingDown, RefreshCw, Search, ArrowUp, ArrowDown, RotateCcw, ChevronDown, Layers } from 'lucide-react';
 
@@ -59,6 +60,9 @@ export function Collection() {
   // Pending add that duplicates existing rows: the form as submitted, plus the
   // rows it could be merged into. Non-null = the 「已經有這個了」 prompt is open.
   const [mergeAsk, setMergeAsk] = useState<{ form: FormState; candidates: CollectionItem[] } | null>(null);
+  // The 「N 組重複」 picker. Open = the user is choosing which of the detected
+  // duplicate groups to actually fold together.
+  const [showDupMerge, setShowDupMerge] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   // Per-card price refresh, driven from the detail modal.
@@ -413,52 +417,37 @@ export function Collection() {
     }
   };
 
-  // Fold every duplicate group in this tab into one row each. Same idea as the
-  // add-time prompt, applied to rows that are already here: the earliest row
-  // keeps the collection's history and takes on the summed quantity, the
+  // Fold duplicate groups into one row each — ONLY the ones the user ticked in
+  // the picker. The scan matches on name/set/version/condition and can be wrong,
+  // so which groups are real is the user's call, never this function's.
+  //
+  // Same fold as the add-time prompt, applied to rows already here: the earliest
+  // row keeps the collection's history and takes on the summed quantity, the
   // quantity-weighted baseline and the freshest of the prices the group held.
-  // The rest are SOFT-deleted, so a merge the user didn't want is one 還原 away.
-  const askMergeDuplicates = () => setConfirmAsk({
-    title: `合併 ${dupGroups.length} 組重複的收藏？`,
-    message: (
-      <>
-        <span className="block mb-2">同一個商品被拆成好幾筆，會各自合併成一筆：</span>
-        {dupGroups.map(g => {
-          const plan = planMerge(g)!;
-          return (
-            <span key={plan.keep.id} className="block text-slate-400">
-              「{plan.keep.name}」{g.map(i => `×${i.quantity}`).join(' + ')}
-              {' → '}
-              <span className="font-black text-poke-accent">×{plan.quantity}</span>
-            </span>
-          );
-        })}
-        <span className="block mt-2">
-          保留最早入手的那筆，市價取各筆之中最新抓到的；多餘的會移到「已刪除」，需要時可以還原。
-        </span>
-      </>
-    ),
-    confirmLabel: '合併',
-    run: async () => {
-      try {
-        for (const g of dupGroups) {
-          const plan = planMerge(g);
-          if (!plan) continue;
-          await updateItem(plan.keep.id, {
-            quantity: plan.quantity,
-            ...(plan.currentValue != null ? { currentValue: plan.currentValue } : {}),
-            ...plan.price,
-          });
-          for (const d of plan.drop) await deleteItem(d.id);
-        }
-        // A row the user had open may have just been merged away.
-        setDetailId(null);
-      } catch (err) {
-        console.error(err);
-        setActionMsg('合併失敗，請再試一次');
+  // The rest are SOFT-deleted, so a merge the user regrets is one 還原 away.
+  const mergeDuplicates = async (groups: CollectionItem[][]) => {
+    setSubmitting(true);
+    try {
+      for (const g of groups) {
+        const plan = planMerge(g);
+        if (!plan) continue;
+        await updateItem(plan.keep.id, {
+          quantity: plan.quantity,
+          ...(plan.currentValue != null ? { currentValue: plan.currentValue } : {}),
+          ...plan.price,
+        });
+        for (const d of plan.drop) await deleteItem(d.id);
       }
-    },
-  });
+      // A row the user had open may have just been merged away.
+      setDetailId(null);
+      setShowDupMerge(false);
+    } catch (err) {
+      console.error(err);
+      setActionMsg('合併失敗，請再試一次');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const handleUpdate = async (id: string, f: FormState) => {
     setSubmitting(true);
@@ -549,6 +538,7 @@ export function Collection() {
     setEditingId(null);
     setShowAddForm(false);
     setShowGraveyard(false);
+    setShowDupMerge(false);
     setPriceMsg(null);
     setRefreshDone(null);
     setRefreshErrors([]);
@@ -797,17 +787,17 @@ export function Collection() {
         <div className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs">
           <Layers className="w-4 h-4 text-amber-300 shrink-0" />
           <span className="font-bold text-amber-300">
-            {dupGroups.length} 組重複
+            {dupGroups.length} 組可能重複
           </span>
           <span className="text-slate-400 min-w-0 truncate">
             {dupGroups.slice(0, 3).map(g => g[0].name).join('、')}
             {dupGroups.length > 3 ? ' …' : ''} 被拆成好幾筆
           </span>
           <button
-            onClick={askMergeDuplicates}
+            onClick={() => setShowDupMerge(true)}
             className="ml-auto shrink-0 px-3 py-1.5 rounded-lg font-bold bg-amber-500/20 border border-amber-500/40 text-amber-200 hover:bg-amber-500/30 transition-colors"
           >
-            合併
+            檢查
           </button>
         </div>
       )}
@@ -1100,6 +1090,14 @@ export function Collection() {
             onKeepSeparate={() => insertItem(mergeAsk.form)}
             // Cancel returns to the add form, which is still open behind this.
             onClose={() => setMergeAsk(null)}
+            submitting={submitting}
+          />
+        )}
+        {showDupMerge && dupGroups.length > 0 && (
+          <DuplicateMergeModal
+            groups={dupGroups}
+            onMerge={mergeDuplicates}
+            onClose={() => setShowDupMerge(false)}
             submitting={submitting}
           />
         )}
