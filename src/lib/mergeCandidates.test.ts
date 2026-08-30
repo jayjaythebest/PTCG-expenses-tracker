@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { findMergeCandidates, collectorKey, type IncomingItem } from './mergeCandidates';
+import { findMergeCandidates, findDuplicateGroups, planMerge, collectorKey, type IncomingItem } from './mergeCandidates';
 import type { CollectionItem } from '../types';
 
 const row = (over: Partial<CollectionItem> = {}): CollectionItem => ({
@@ -91,5 +91,114 @@ describe('findMergeCandidates', () => {
 
   it('suggests nothing when the incoming item has no name to match on', () => {
     expect(findMergeCandidates([row()], incoming({ name: '' }))).toEqual([]);
+  });
+});
+
+describe('findDuplicateGroups', () => {
+  // The case that prompted this: 深淵之瞳 sitting in the gallery twice, ×2 and
+  // ×3, added ten days apart and each carrying its own snkrdunk price.
+  const pair = [
+    row({ id: 'a', quantity: 2, acquiredDate: '2026-08-08' }),
+    row({ id: 'b', quantity: 3, acquiredDate: '2026-07-28' }),
+  ];
+
+  it('finds the same box listed twice', () => {
+    const groups = findDuplicateGroups(pair);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].map(i => i.id).sort()).toEqual(['a', 'b']);
+  });
+
+  it('leaves a row that is not duplicated alone', () => {
+    expect(findDuplicateGroups([row({ id: 'a' }), row({ id: 'b', name: '別的東西' })])).toEqual([]);
+  });
+
+  it('does not group two different cards from the same set', () => {
+    const rows = [
+      row({ id: 'a', itemType: 'single', name: 'カイオーガ', cardNumber: '080/076' }),
+      row({ id: 'b', itemType: 'single', name: 'カイオーガ', cardNumber: '081/076' }),
+    ];
+    expect(findDuplicateGroups(rows)).toEqual([]);
+  });
+
+  it('never groups graded slabs — each one is its own physical object', () => {
+    const rows = [
+      row({ id: 'a', isGraded: true, gradingCompany: 'psa', grade: '10', gradingCert: '111' }),
+      row({ id: 'b', isGraded: true, gradingCompany: 'psa', grade: '10', gradingCert: '222' }),
+    ];
+    expect(findDuplicateGroups(rows)).toEqual([]);
+  });
+
+  it('keeps two collectors owning the same box apart', () => {
+    const rows = [row({ id: 'a', owner: 'jay' }), row({ id: 'b', owner: 'ting' })];
+    expect(findDuplicateGroups(rows)).toEqual([]);
+  });
+
+  // A row with no owner predates the column and belongs to the account holder,
+  // so it duplicates that person's row — not nobody's.
+  it('treats an owner-less row as the account holder\'s', () => {
+    const rows = [row({ id: 'a', owner: undefined }), row({ id: 'b', owner: 'jay' })];
+    expect(findDuplicateGroups(rows)).toHaveLength(1);
+  });
+
+  // Merging soft-deletes the extra rows. Counting the graveyard would put the
+  // banner straight back up on the row that was just merged away.
+  it('ignores soft-deleted rows', () => {
+    const rows = [row({ id: 'a' }), row({ id: 'b', deletedAt: '2026-08-30T00:00:00Z' })];
+    expect(findDuplicateGroups(rows)).toEqual([]);
+  });
+});
+
+describe('planMerge', () => {
+  const a = row({ id: 'a', quantity: 2, acquiredDate: '2026-08-08' });
+  const b = row({ id: 'b', quantity: 3, acquiredDate: '2026-07-28' });
+
+  it('keeps the earliest row and sums the quantities', () => {
+    const plan = planMerge([a, b])!;
+    expect(plan.keep.id).toBe('b');
+    expect(plan.drop.map(i => i.id)).toEqual(['a']);
+    expect(plan.quantity).toBe(5);
+  });
+
+  it('needs at least two rows', () => {
+    expect(planMerge([a])).toBeNull();
+  });
+
+  // The two rows only disagree on price because they were fetched a week apart.
+  it('takes the freshest price, not the keeper\'s', () => {
+    const plan = planMerge([
+      { ...a, marketPrice: 8498, marketPriceUpdatedAt: '2026-08-29T20:00:00Z' },
+      { ...b, marketPrice: 8799, marketPriceUpdatedAt: '2026-08-22T20:00:00Z' },
+    ])!;
+    expect(plan.keep.id).toBe('b');
+    expect(plan.price?.marketPrice).toBe(8498);
+  });
+
+  it('lets a hand-typed price outrank a newer fetch', () => {
+    const plan = planMerge([
+      { ...a, marketPrice: 8498, marketPriceSource: 'huca', marketPriceUpdatedAt: '2026-08-29T20:00:00Z' },
+      { ...b, marketPrice: 9000, marketPriceSource: 'manual', marketPriceUpdatedAt: '2026-08-01T20:00:00Z' },
+    ])!;
+    expect(plan.price?.marketPrice).toBe(9000);
+    expect(plan.price?.marketPriceSource).toBe('manual');
+  });
+
+  it('leaves the price alone when no row has one', () => {
+    expect(planMerge([a, b])!.price).toBeUndefined();
+  });
+
+  // currentValue is the per-copy P&L baseline, so it has to be averaged over the
+  // copies — (8000*2 + 8500*3) / 5.
+  it('averages the estimate across the copies', () => {
+    const plan = planMerge([{ ...a, currentValue: 8000 }, { ...b, currentValue: 8500 }])!;
+    expect(plan.currentValue).toBe(8300);
+  });
+
+  it('ignores rows with no estimate when averaging', () => {
+    const plan = planMerge([{ ...a, currentValue: 8000 }, b])!;
+    expect(plan.currentValue).toBe(8000);
+  });
+
+  it('has no estimate to write when nobody recorded one', () => {
+    expect(planMerge([a, b])!.currentValue).toBeUndefined();
   });
 });
