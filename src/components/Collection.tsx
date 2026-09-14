@@ -12,6 +12,7 @@ import { toTwd, estValue } from '../lib/collectionValue';
 import { fetchCardPrice, fetchFxJpyToTwd, type CardPrice } from '../lib/pricing';
 import { findMergeCandidates, findDuplicateGroups, planMerge } from '../lib/mergeCandidates';
 import { ConfirmDialog } from './ConfirmDialog';
+import { IS_DEMO } from '../lib/demo';
 // The gallery used to be one 2.5k-line file. Everything imported below is a pure
 // move out of it: labels/catalog lookups in ./collection/constants, the
 // form <-> row translations in ./collection/formState, and one file per modal.
@@ -39,6 +40,11 @@ const SORT_LABELS: Record<SortKey, string> = {
   name: '名稱',
   date: '入手日期',
 };
+
+// pnlOf() returns null throughout the public build, which would make 損益 a
+// sort that does nothing.
+const SORT_KEYS = (Object.keys(SORT_LABELS) as SortKey[])
+  .filter(k => !(IS_DEMO && k === 'pnl'));
 
 export function Collection() {
   const { items: allItems, deletedItems: allDeletedItems, loading, addItem, updateItem, deleteItem, restoreItem, purgeItem } = useCollection();
@@ -110,6 +116,12 @@ export function Collection() {
   // recorded estimate (現估價) — only defined when we have BOTH, otherwise null
   // (no baseline to compare against). Quantity-aware.
   const pnlOf = (i: CollectionItem): { diff: number; pct: number } | null => {
+    // Not in the public build. 損益 compares the live market price against
+    // 現估價, a manual field only a handful of cards carry, so the few badges
+    // that do render read like +7647% — fine for the owner, who knows the
+    // baseline is one old guess, and unreadable for a stranger. The market
+    // price itself, which is the part worth showing, stays.
+    if (IS_DEMO) return null;
     if (i.marketPrice == null || i.currentValue == null) return null;
     const market = toTwd(i.marketPrice, i.marketPriceCurrency === 'TWD' ? 'TWD' : 'JPY', fxRate);
     const base = toTwd(i.currentValue, 'JPY', fxRate);
@@ -194,6 +206,9 @@ export function Collection() {
     }
   }
   const hasPrices = totalCurrentTwd > 0;
+  // Headline figures for the public build, which shows neither total.
+  const totalQuantity = items.reduce((s, i) => s + i.quantity, 0);
+  const pricedCount = items.filter(i => i.marketPrice != null).length;
 
   // The Snkrdunk box id for an item, or undefined when it can't be auto-priced.
   // Only boxes that map to a curated JA Snkrdunk product id are priceable.
@@ -550,7 +565,7 @@ export function Collection() {
     <div className="space-y-4">
       {/* Owner tabs — one shared account, several collectors. Always rendered,
           including for an empty tab, or there'd be no way back out of one. */}
-      {COLLECTION_OWNERS.length > 1 && (
+      {!IS_DEMO && COLLECTION_OWNERS.length > 1 && (
         <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
           {COLLECTION_OWNERS.map(o => {
             const active = o.id === owner;
@@ -591,14 +606,27 @@ export function Collection() {
           <div className="pointer-events-none absolute -top-16 -right-10 w-48 h-48 rounded-full bg-white/10 blur-2xl" />
 
           <div className="relative">
+            {/* The public build must not publish the collection's absolute
+                worth. One card's market price is scraped public market data;
+                the sum of them is a personal asset figure, and this page is
+                linked from a CV. The demo headline is how many cards are held
+                and how many are being priced — the price tracking is the part
+                worth showing. See supabase/public_demo.sql. */}
             <p className="text-xs font-bold uppercase tracking-wide text-white/70">
-              Portfolio · 收藏現估總值
+              Portfolio · {IS_DEMO ? '收藏規模' : '收藏現估總值'}
             </p>
             <div className="mt-1 flex items-end flex-wrap gap-x-3 gap-y-1">
               <span className="text-3xl sm:text-4xl font-black tracking-tight">
-                NT${Math.round(totalCurrentTwd).toLocaleString()}
+                {IS_DEMO
+                  ? `${totalQuantity.toLocaleString()} 張`
+                  : `NT$${Math.round(totalCurrentTwd).toLocaleString()}`}
               </span>
-              {totalBaseTwd > 0 && (
+              {/* No headline percentage in the demo either. 損益 is measured
+                  against 現估價, which only a handful of cards have recorded —
+                  a ratio over that baseline is a fine at-a-glance number for
+                  the owner, who knows which cards it covers, and a misleading
+                  headline for a stranger, who doesn't. */}
+              {!IS_DEMO && totalBaseTwd > 0 && (
                 <span className={cn(
                   'inline-flex items-center gap-1 px-2 py-1 rounded-full text-sm font-black bg-white/15',
                   pnlTwd >= 0 ? 'text-emerald-200' : 'text-red-200',
@@ -613,7 +641,10 @@ export function Collection() {
             </div>
 
             <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs font-bold text-white/70">
-              <span>收藏件數 <span className="text-white/90">{items.reduce((s, i) => s + i.quantity, 0)}</span></span>
+              <span>收藏件數 <span className="text-white/90">{totalQuantity}</span></span>
+              {IS_DEMO && (
+                <span>已追蹤市價 <span className="text-white/90">{pricedCount}</span> 張 · 每日更新</span>
+              )}
             </div>
           </div>
         </motion.div>
@@ -642,7 +673,7 @@ export function Collection() {
                 className="px-2.5 py-2 rounded-lg bg-surface border border-white/10 text-sm font-bold text-slate-200 focus:outline-none focus:border-poke-accent"
                 title="排序依據"
               >
-                {(Object.keys(SORT_LABELS) as SortKey[]).map(k => (
+                {SORT_KEYS.map(k => (
                   <option key={k} value={k}>{SORT_LABELS[k]}</option>
                 ))}
               </select>
@@ -655,7 +686,7 @@ export function Collection() {
               </button>
             </div>
 
-            {priceable.length > 0 && (
+            {!IS_DEMO && priceable.length > 0 && (
               <button
                 onClick={handleRefreshPrices}
                 disabled={refreshing}
@@ -669,13 +700,15 @@ export function Collection() {
               </button>
             )}
 
-            <button
-              onClick={() => { setEditingId(null); setShowAddForm(true); }}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold bg-poke-blue text-white hover:bg-poke-dark-blue transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              新增
-            </button>
+            {!IS_DEMO && (
+              <button
+                onClick={() => { setEditingId(null); setShowAddForm(true); }}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold bg-poke-blue text-white hover:bg-poke-dark-blue transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                新增
+              </button>
+            )}
           </div>
 
           {/* Row 2: type chips + edition chips */}
@@ -783,7 +816,7 @@ export function Collection() {
           shows one product at two prices and the totals double-count nothing but
           look wrong. Offer the fix rather than merging behind the user's back —
           keeping two purchases apart is a legitimate thing to want. */}
-      {dupGroups.length > 0 && (
+      {!IS_DEMO && dupGroups.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs">
           <Layers className="w-4 h-4 text-amber-300 shrink-0" />
           <span className="font-bold text-amber-300">
@@ -842,7 +875,7 @@ export function Collection() {
         <div className="text-center p-12 bg-surface rounded-2xl border-2 border-dashed border-white/10">
           <p className="text-slate-400 text-sm">
             {items.length === 0
-              ? '這裡還沒有收藏紀錄，點下面的「新增」開始記錄吧！'
+              ? (IS_DEMO ? '尚無收藏紀錄' : '這裡還沒有收藏紀錄，點下面的「新增」開始記錄吧！')
               : filtersActive
                 ? '找不到符合條件的收藏'
                 : '尚無收藏紀錄'}
@@ -850,7 +883,7 @@ export function Collection() {
           {/* The toolbar (and with it the only other 新增 button) is hidden when
               the tab has no cards — so without this one, a brand-new owner's tab
               would be a dead end with no way to add the first card. */}
-          {items.length === 0 && (
+          {!IS_DEMO && items.length === 0 && (
             <button
               onClick={() => { setEditingId(null); setShowAddForm(true); }}
               className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-bold bg-poke-blue text-white hover:bg-poke-dark-blue transition-colors"
@@ -917,22 +950,24 @@ export function Collection() {
                   )}
 
                   {/* Actions (always visible so they work on touch/mobile too) */}
-                  <div className="absolute top-1.5 right-1.5 z-[2] flex gap-1">
-                    <button
-                      onClick={() => { setEditingId(item.id); setShowAddForm(false); }}
-                      className="p-1.5 rounded-lg bg-black/40 backdrop-blur text-slate-200 hover:text-poke-accent shadow-sm transition-colors"
-                      title="編輯"
-                    >
-                      <Pencil className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => askDelete(item)}
-                      className="p-1.5 rounded-lg bg-black/40 backdrop-blur text-slate-200 hover:text-red-400 shadow-sm transition-colors"
-                      title="刪除"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
+                  {!IS_DEMO && (
+                    <div className="absolute top-1.5 right-1.5 z-[2] flex gap-1">
+                      <button
+                        onClick={() => { setEditingId(item.id); setShowAddForm(false); }}
+                        className="p-1.5 rounded-lg bg-black/40 backdrop-blur text-slate-200 hover:text-poke-accent shadow-sm transition-colors"
+                        title="編輯"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => askDelete(item)}
+                        className="p-1.5 rounded-lg bg-black/40 backdrop-blur text-slate-200 hover:text-red-400 shadow-sm transition-colors"
+                        title="刪除"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Info */}
@@ -1123,6 +1158,7 @@ export function Collection() {
             est={estValue(detailItem)}
             diff={pnlOf(detailItem)?.diff ?? null}
             diffPct={pnlOf(detailItem)?.pct ?? null}
+            readOnly={IS_DEMO}
             pricing={pricingId === detailItem.id}
             priceMsg={priceMsg}
             onReprice={() => handleRepriceOne(detailItem)}

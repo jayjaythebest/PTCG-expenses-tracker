@@ -6,8 +6,9 @@ import { Dashboard } from './components/Dashboard';
 import { Collection } from './components/Collection';
 import { Home } from './components/Home';
 import { Login } from './components/Login';
-import { Zap, Home as HomeIcon, ClipboardList, BarChart2, Star, LogOut } from 'lucide-react';
+import { Zap, Home as HomeIcon, ClipboardList, BarChart2, Star, LogOut, Eye } from 'lucide-react';
 import { cn } from './lib/utils';
+import { IS_DEMO } from './lib/demo';
 
 type Tab = 'home' | 'record' | 'analysis' | 'collection';
 
@@ -106,7 +107,46 @@ function AppContent() {
   );
 }
 
+// The public read-only build (VITE_DEMO=1). No sign-in, no AuthProvider, and
+// only the gallery: the expense side reads tables anon cannot touch, so it is
+// not merely hidden here, it is never mounted. See src/lib/demo.ts.
+function DemoApp() {
+  return (
+    <div className="min-h-screen bg-ink pb-12">
+      <header className="bg-surface/80 backdrop-blur border-b border-white/10 sticky top-0 z-10">
+        <div className="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 bg-poke-blue rounded-full flex items-center justify-center shadow-sm">
+              <Zap className="w-5 h-5 text-white fill-white" />
+            </div>
+            <span className="font-black text-xl text-slate-100 tracking-tight">J Vault</span>
+          </div>
+
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-black bg-white/5 border border-white/10 text-slate-400">
+            <Eye className="w-3.5 h-3.5" />
+            唯讀展示
+          </span>
+        </div>
+      </header>
+
+      <main className="max-w-4xl mx-auto px-4 py-6 space-y-4">
+        <div className="rounded-xl border border-white/10 bg-surface px-4 py-3 text-sm text-slate-400">
+          <p className="font-bold text-slate-200">寶可夢卡牌收藏庫 — 公開展示版</p>
+          <p className="mt-1 leading-relaxed">
+            實際收藏資料，每日自動從日本／台灣的二手市場抓取市價並記錄歷史走勢。
+            此版本僅供瀏覽，無法新增或修改；記帳與支出分析功能不在公開版內。
+          </p>
+        </div>
+
+        <Collection />
+      </main>
+    </div>
+  );
+}
+
 export default function App() {
+  if (IS_DEMO) return <DemoApp />;
+
   return (
     <AuthProvider>
       <AppContent />

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabase';
+import { COLLECTION_SOURCE, IS_DEMO, readOnly } from './demo';
 import { CollectionItem } from '../types';
 
 let channelCounter = 0;
@@ -49,8 +50,10 @@ export function useCollection() {
   const channelName = useRef(`collection-${++channelCounter}`).current;
 
   async function fetchItems() {
+    // The demo build reads public.collection_public instead — same shape, minus
+    // the columns anon must not see, minus other owners' cards. See src/lib/demo.ts.
     const { data, error } = await supabase
-      .from('collection_items')
+      .from(COLLECTION_SOURCE)
       .select('*')
       .order('created_at', { ascending: false });
 
@@ -67,6 +70,11 @@ export function useCollection() {
   useEffect(() => {
     fetchItems();
 
+    // Realtime is a subscription on collection_items, which anon cannot read —
+    // in the demo it would only produce a failing channel. Nothing writes to the
+    // demo's data while a visitor is looking at it anyway, so one fetch is it.
+    if (IS_DEMO) return;
+
     const channel = supabase
       .channel(channelName)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'collection_items' }, fetchItems)
@@ -76,6 +84,7 @@ export function useCollection() {
   }, []);
 
   const addItem = async (item: CollectionInput) => {
+    if (IS_DEMO) readOnly();
     const { error } = await supabase.from('collection_items').insert({
       name:           item.name,
       set_name:       item.setName,
@@ -109,6 +118,7 @@ export function useCollection() {
   };
 
   const updateItem = async (id: string, updates: Partial<CollectionInput>) => {
+    if (IS_DEMO) readOnly();
     const dbUpdates: Record<string, unknown> = {};
     if (updates.name !== undefined)          dbUpdates.name = updates.name;
     if (updates.setName !== undefined)       dbUpdates.set_name = updates.setName;
@@ -143,6 +153,7 @@ export function useCollection() {
   // Soft delete: tombstone the row so it moves to the 已刪除 graveyard instead
   // of being lost. Restorable via restoreItem; permanently removed via purgeItem.
   const deleteItem = async (id: string) => {
+    if (IS_DEMO) readOnly();
     const { error } = await supabase
       .from('collection_items')
       .update({ deleted_at: new Date().toISOString() })
@@ -152,6 +163,7 @@ export function useCollection() {
 
   // Bring a soft-deleted card back to the active gallery.
   const restoreItem = async (id: string) => {
+    if (IS_DEMO) readOnly();
     const { error } = await supabase
       .from('collection_items')
       .update({ deleted_at: null })
@@ -161,6 +173,7 @@ export function useCollection() {
 
   // Permanent hard delete (from the graveyard). This cannot be undone.
   const purgeItem = async (id: string) => {
+    if (IS_DEMO) readOnly();
     const { error } = await supabase.from('collection_items').delete().eq('id', id);
     if (error) throw error;
   };

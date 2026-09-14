@@ -17,8 +17,19 @@ const FALLBACK_JPY_TO_TWD = 0.2; // rough long-run rate; only used if fetch fail
 const TTL_MS = 12 * 60 * 60 * 1000;
 let cache: { at: number; jpyToTwd: number; source: string } | null = null;
 
+// The public read-only build (VITE_DEMO=1) has no Supabase session, so this
+// route would answer 401 and the gallery would fall back to the stale static
+// rate — every TWD figure on the demo would be quietly wrong. Setting
+// DEMO_PUBLIC_FX=1 on the demo Vercel project opens this ONE route.
+//
+// It is the only route that can be opened safely: it returns a public exchange
+// rate, spends no AI quota, touches no user data, and is cached for 12h both
+// in-process and at the edge. Do not set it on the production project, and do
+// not copy this escape into a route that scrapes, writes, or costs money.
+const FX_IS_PUBLIC = process.env.DEMO_PUBLIC_FX === '1';
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  if (!(await requireUser(req, res))) return;
+  if (!FX_IS_PUBLIC && !(await requireUser(req, res))) return;
 
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'public, max-age=3600, s-maxage=43200');

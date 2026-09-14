@@ -37,11 +37,14 @@ src/
     apiFetch.ts           # fetch wrapper that attaches the session JWT to /api calls
     fetchTimeout.ts       # fetchWithTimeout — every external request must use it
     collectionValue.ts    # toTwd / estValue / P&L — the one place value math lives
+    demo.ts               # IS_DEMO / COLLECTION_SOURCE — the public read-only build
     utils.ts              # clsx/tw-merge helpers, relativeTime
   types.ts
 supabase/
   schema.sql              # DB schema — keep in sync with Supabase project
   auth_lockdown.sql       # RLS + storage policies + allowed_users list
+  public_demo.sql         # the ONE anon-readable view, for the demo build
+DEMO.md                   # how the public read-only demo is built + deployed
 .github/workflows/ci.yml  # lint + test + build on every push / PR
 ```
 
@@ -51,6 +54,29 @@ Receipts are stored in Supabase Storage; rows in the expenses table reference th
 The app is private. `App.tsx` renders `Login` until there is a Supabase session, and every table is guarded by RLS policies that require `authenticated` **and** an email listed in `public.allowed_users`. Public signup is turned off in the Supabase dashboard, so accounts are created by hand.
 
 Granting someone access takes two steps, both in the dashboard: create the user under Authentication → Users, then add their email to `allowed_users`. No SQL or policy edits.
+
+### The public demo build
+There is a second, read-only face of this app: `npm run build:demo`
+(`vite --mode demo`, which defines `VITE_DEMO`) builds a gallery-only version
+with no sign-in, deployed as a separate Vercel project off the `demo` branch so
+it can be linked from a CV. The switch lives in `vite.config.ts` rather than an
+env file on purpose — `.gitignore` excludes `.env*`, so an env file would never
+reach Vercel or CI and the flag would be off in the one build that needs it. **Read `DEMO.md` before touching anything
+it names.** The short version:
+
+- `src/lib/demo.ts` exports `IS_DEMO`. `App.tsx` returns `DemoApp` (Collection
+  only — the expense components are never mounted), and `Collection.tsx` /
+  `CardDetailModal.tsx` drop every write control plus the collection's absolute
+  total. Per-card market prices stay; they are scraped public market data, while
+  the sum is a personal asset figure on a page linked from a CV.
+- The demo reads `public.collection_public`, not `collection_items`. That view is
+  the single exception to the anon lockdown below, and it exists because RLS
+  filters rows but not columns — `purchase_price`, `notes` and `grading_cert`
+  come back null, and soft-deleted rows and other owners are filtered out.
+- Because the anon key ships in the production bundle too, that view is readable
+  by anyone who has loaded the live site. That is the accepted premise, not an
+  oversight — so what the view selects *is* the privacy boundary. Widening its
+  column list is a privacy decision, not a refactor.
 
 The cron endpoints (`api/weekly-summary.ts`, `api/snapshot-collection.ts`) use the service-role key, which bypasses RLS — tightening policies never breaks them. They authenticate with a `CRON_SECRET` bearer check, because Vercel Cron has no Supabase session.
 
@@ -90,7 +116,9 @@ npm run dev     # vite on :3000, host 0.0.0.0
 ## Do NOT
 - Do **not** reintroduce Firebase. The project was migrated off Firebase → Supabase and the last Firebase config files have been deleted.
 - Do **not** commit `.env` or any Supabase service-role key. Only the anon key goes in the client.
-- Do **not** write an RLS policy with `using (true)` or one granted `to public`/`to anon`. The anon key ships in the browser bundle, so such a policy hands the table to anyone who opens the site. Guard every policy with `to authenticated` + `public.is_allowed_user()`.
+- Do **not** write an RLS policy with `using (true)` or one granted `to public`/`to anon`. The anon key ships in the browser bundle, so such a policy hands the table to anyone who opens the site. Guard every policy with `to authenticated` + `public.is_allowed_user()`. The one deliberate exception is `public.collection_public` (`supabase/public_demo.sql`), a column-filtered view granted `select` to anon for the demo build — it is a **view, not a policy**, precisely so the columns can be dropped. Do not add a second one without the same treatment.
+- Do **not** "fix" the security advisor's *security definer view* warning on `collection_public` by turning `security_invoker` on. The view runs as its owner on purpose; with invoker rights anon reads zero rows and the demo goes blank.
+- Do **not** copy the `DEMO_PUBLIC_FX` escape in `api/fx.ts` into another endpoint. It is safe only because `/api/fx` returns a public exchange rate, spends no quota, and touches no user data.
 - Do **not** bypass the 5MB upload cap without also updating the Supabase Storage bucket policy — silent failures will follow.
 - Do **not** call an `/api/` endpoint from the client with bare `fetch` — use `apiFetch` (`src/lib/apiFetch.ts`) so the Supabase JWT is attached, or the call comes back 401.
 - Do **not** assume an expense row has a photo. The "add photo later" feature means `photo_path` may be null at any time.

@@ -34,6 +34,7 @@ export function CardDetailModal({
   onReprice,
   pricing,
   priceMsg,
+  readOnly = false,
 }: {
   item: CollectionItem;
   estTwd: number | null;
@@ -46,6 +47,10 @@ export function CardDetailModal({
   onReprice: () => void;
   pricing: boolean;
   priceMsg: { ok: boolean; text: string } | null;
+  // The public read-only build drops the action bar entirely: every button in
+  // it either writes, or spends the scraping quota through an endpoint that
+  // answers 401 without a session.
+  readOnly?: boolean;
 }) {
   const graded = item.isGraded
     ? `${item.gradingCompany ? GRADING_LABELS[item.gradingCompany] : '鑑定'}${item.grade ? ` ${item.grade}` : ''}`
@@ -161,6 +166,7 @@ export function CardDetailModal({
         {/* Actions. Sticky: artwork + details is taller than the sheet on a
             phone, and the whole point of opening a card is to act on it — the
             buttons must not sit below the fold. */}
+        {!readOnly && (
         <div className="sticky bottom-0 bg-surface border-t border-white/10 px-5 py-3 space-y-2">
             <button
               onClick={onReprice}
@@ -199,6 +205,7 @@ export function CardDetailModal({
               </button>
             </div>
         </div>
+        )}
       </motion.div>
     </div>
   );
