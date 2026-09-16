@@ -31,6 +31,7 @@ interface HucaRow {
 
 // Snkrdunk apparel detail shape (only the fields we use). Public JSON, no auth.
 interface SnkrdunkApparel {
+  productCatalogId?: number;    // keys the v3 trading-history endpoint
   usedMinPrice?: number;        // second-hand (raw) floor
   minPrice?: number;            // lowest listing (may be sealed/new)
   minPriceOfNewListing?: number; // new/unopened floor
@@ -114,6 +115,77 @@ export async function lookupSnkrdunkUsed(
     return { price: Math.round(used), count: Number(data.usedListingCount) || 0 };
   }
   return null;
+}
+
+// One completed Snkrdunk trade. `title` is the condition as displayed — 'A'
+// for a near-mint raw card, 'PSA10', 'BGS9.5' … for slabs — and `label` the
+// bundle size ('1枚', '2枚' …).
+export interface SnkrdunkTrade {
+  price?: number;
+  soldAt?: string;
+  title?: string;
+  label?: string;
+}
+
+const SNKRDUNK_TRADES = 'https://snkrdunk.com/v3/products';
+
+// Condition filter codes Snkrdunk's trading history accepts, keyed by the label
+// its trades carry. Raw cards are priced from 'A' (nearly unused), the grade a
+// collection card is assumed to be in. Slabs not listed here have no filter of
+// their own on Snkrdunk and keep the older Huca path.
+const SNKRDUNK_CONDITION_CODES: Record<string, string> = {
+  A: 'trading_card_single_nearly_unused',
+  PSA10: 'trading_card_single_psa10',
+  PSA9: 'trading_card_single_psa9',
+  'BGS9.5': 'trading_card_single_bgs95',
+  ARS10: 'trading_card_single_ars10',
+};
+
+// Price from Snkrdunk's recent trades in one condition, single cards only (a
+// '2枚' bundle sells for a multiple). The endpoint returns the latest 20.
+export function snkrdunkSalePrice(trades: SnkrdunkTrade[], condition: string, now = Date.now()): number | null {
+  const sales = trades
+    .filter(t => t.title === condition && (t.label ?? '1枚') === '1枚')
+    .map(t => ({ price: Number(t.price), at: Date.parse(t.soldAt ?? '') }));
+  return recentSalePrice(sales, now);
+}
+
+const snkrdunkCatalogCache = new Map<string, number>();
+
+// A single card's price from what it has actually sold for on Snkrdunk — the
+// source Huca aggregates. Huca's own average_price lags and, for chase cards,
+// is often a PSA10 figure sitting on the only row (メガゲンガーex SAR read
+// ¥73,520 while A-condition copies were trading at ¥30,000–39,000).
+async function lookupSnkrdunkSales(
+  snkrdunkId: string | number,
+  wantGrade: string | null,
+): Promise<PriceResult | null> {
+  const id = String(snkrdunkId ?? '').trim();
+  const condition = wantGrade ?? 'A';
+  const code = SNKRDUNK_CONDITION_CODES[condition];
+  if (!id || !code) return null;
+
+  let catalogId = snkrdunkCatalogCache.get(id);
+  if (catalogId == null) {
+    const apparel = await fetchJson<SnkrdunkApparel>(`${SNKRDUNK_API}/${encodeURIComponent(id)}`);
+    if (!apparel?.productCatalogId) return null;
+    catalogId = apparel.productCatalogId;
+    snkrdunkCatalogCache.set(id, catalogId);
+  }
+
+  const json = await fetchJson<{ trades?: SnkrdunkTrade[] }>(
+    `${SNKRDUNK_TRADES}/${catalogId}/trading-history?condition_code=${code}`,
+  );
+  const price = snkrdunkSalePrice(json?.trades ?? [], condition);
+  if (price == null) return null;
+  return {
+    price,
+    currency: 'JPY',
+    source: 'snkrdunk',
+    condition,
+    url: `https://snkrdunk.com/apparels/${encodeURIComponent(id)}`,
+    updatedAt: new Date().toISOString(),
+  };
 }
 
 // Pick a sealed-box price from a Snkrdunk apparel payload. Prefer the
@@ -538,6 +610,16 @@ async function lookupHuca(
       if (code === promoCode && name) {
         rows = rows.filter(r => hucaTitleMatchesName(r.title ?? '', name));
       }
+      // Huca files overseas printings under the same set+number, marked
+      // 【インドネシア語版】 etc. and sometimes listed first — SV8a 217 answered
+      // with the Indonesian row and priced a raw ブラッキーex off its PSA10 sale.
+      const japanese = rows.filter(r => !/語版】/.test(r.title ?? ''));
+      if (japanese.length > 0) rows = japanese;
+      // Recent Snkrdunk sales first; Huca's aggregates only when the card has
+      // none in the wanted condition.
+      const repRow = rows.find(r => r.snkrdunk_id);
+      const sold = repRow?.snkrdunk_id ? await lookupSnkrdunkSales(repRow.snkrdunk_id, wantGrade) : null;
+      if (sold) return sold;
       const result = await resolveHucaResult(rows, wantGrade);
       if (result) return result;
     }
@@ -596,17 +678,40 @@ export interface KpListing {
   sortTime?: string;    // last bump; the sale can only come after it
 }
 
-const KP_SALE_WINDOW_DAYS = 30;
-const KP_SALE_MIN_RECENT = 5;
-const KP_SALE_FALLBACK_COUNT = 10;
+const SALE_WINDOW_DAYS = 30;
+const SALE_MIN_RECENT = 5;
+const SALE_FALLBACK_COUNT = 10;
+const SALE_MAX_AGE_DAYS = 90;
+
+// One completed sale: price, and when it sold (epoch ms).
+export interface Sale {
+  price: number;
+  at: number;
+}
+
+// The market price from a card's sales, used for both kapaipai (zh-tw) and
+// Snkrdunk (ja): the last 30 days when that holds at least five sales, else the
+// ten most recent within 90 days, then the trimmed mean of those. Nothing within
+// 90 days returns null so the caller's older source answers instead — a lone
+// March sale had priced a common フシギダネ at ¥1,000.
+export function recentSalePrice(sales: Sale[], now = Date.now()): number | null {
+  const day = 24 * 60 * 60 * 1000;
+  const sorted = sales
+    .filter(x => Number.isFinite(x.price) && x.price > 0 && Number.isFinite(x.at))
+    .filter(x => x.at >= now - SALE_MAX_AGE_DAYS * day)
+    .sort((a, b) => b.at - a.at);
+  const since = now - SALE_WINDOW_DAYS * day;
+  const recent = sorted.filter(x => x.at >= since);
+  const use = recent.length >= SALE_MIN_RECENT ? recent : sorted.slice(0, SALE_FALLBACK_COUNT);
+  return trimmedMean(use.map(x => x.price));
+}
 
 // A card's market price from what it actually SOLD for, rather than kapaipai's
 // own averagePrice — which lags badly (M2a 240 read 4373 while its last ten
 // sales sat around 3200–3600). Only perfect-condition sales of this exact
 // printing count; the pack's sealed box and loose packs share packCardId 000P,
-// so `rare` has to match too. Uses the last 30 days when that holds enough
-// sales, else the ten most recent. Listings carry no sale timestamp —
-// updatedTime gets bulk-touched — so sortTime, the last bump, dates the sale.
+// so `rare` has to match too. Listings carry no sale timestamp — updatedTime
+// gets bulk-touched — so sortTime, the last bump, dates the sale.
 export function kpSalePrice(listings: KpListing[], row: KpCardRow, now = Date.now()): number | null {
   const rares = row.rare ?? [];
   const sold = listings
@@ -616,13 +721,8 @@ export function kpSalePrice(listings: KpListing[], row: KpCardRow, now = Date.no
       && (!l.productKey || l.productKey === row.cardGlobalKey)
       && l.packCardId === row.packCardId
       && (rares.length === 0 || rares.includes(l.rare ?? '')))
-    .map(l => ({ price: Number(l.price), at: Date.parse(l.sortTime ?? '') }))
-    .filter(x => Number.isFinite(x.price) && x.price > 0 && Number.isFinite(x.at))
-    .sort((a, b) => b.at - a.at);
-  const since = now - KP_SALE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
-  const recent = sold.filter(x => x.at >= since);
-  const use = recent.length >= KP_SALE_MIN_RECENT ? recent : sold.slice(0, KP_SALE_FALLBACK_COUNT);
-  return trimmedMean(use.map(x => x.price));
+    .map(l => ({ price: Number(l.price), at: Date.parse(l.sortTime ?? '') }));
+  return recentSalePrice(sold, now);
 }
 
 async function getKpSalePrice(packId: string, row: KpCardRow): Promise<number | null> {

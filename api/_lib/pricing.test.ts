@@ -14,7 +14,10 @@ import {
   parseHucaTitle,
   trimmedMean,
   kpSalePrice,
+  recentSalePrice,
+  snkrdunkSalePrice,
   type KpCardRow,
+  type SnkrdunkTrade,
   type KpListing,
 } from './pricing';
 
@@ -345,5 +348,47 @@ describe('kpSalePrice', () => {
 
   it('returns null when nothing has sold', () => {
     expect(kpSalePrice([sale(3000, 1, { soldQuantity: 0 })], row, now)).toBeNull();
+  });
+});
+
+describe('recentSalePrice', () => {
+  const now = Date.parse('2026-09-17T00:00:00Z');
+  const daysAgo = (d: number) => now - d * 86400000;
+
+  it('uses only the last 30 days when that holds at least five sales', () => {
+    const sales = [100, 100, 100, 100, 100].map((p, i) => ({ price: p, at: daysAgo(i + 1) }));
+    expect(recentSalePrice([...sales, { price: 9000, at: daysAgo(45) }], now)).toBe(100);
+  });
+
+  it('ignores sales older than 90 days', () => {
+    expect(recentSalePrice([{ price: 1000, at: daysAgo(180) }], now)).toBeNull();
+    expect(recentSalePrice([{ price: 1000, at: daysAgo(180) }, { price: 300, at: daysAgo(60) }], now)).toBe(300);
+  });
+
+  it('ignores unparseable dates', () => {
+    expect(recentSalePrice([{ price: 500, at: NaN }], now)).toBeNull();
+  });
+});
+
+describe('snkrdunkSalePrice', () => {
+  const now = Date.parse('2026-09-17T00:00:00Z');
+  const trade = (price: number, day: number, over: Partial<SnkrdunkTrade> = {}): SnkrdunkTrade => ({
+    price, soldAt: new Date(now - day * 86400000).toISOString(), title: 'A', label: '1枚', ...over,
+  });
+
+  it('trims and averages single-card sales in the wanted condition', () => {
+    const trades = [30000, 35000, 36000, 37000, 38000, 39000, 40000, 52000].map((p, i) => trade(p, i + 1));
+    // drop 2 each side -> 36000..39000
+    expect(snkrdunkSalePrice(trades, 'A', now)).toBe(37500);
+  });
+
+  it('skips other conditions and multi-card bundles', () => {
+    const trades = [
+      trade(1000, 1), trade(1000, 2), trade(1000, 3), trade(1000, 4), trade(1000, 5),
+      trade(62000, 1, { title: 'PSA10' }),
+      trade(5000, 1, { label: '2枚' }),
+    ];
+    expect(snkrdunkSalePrice(trades, 'A', now)).toBe(1000);
+    expect(snkrdunkSalePrice(trades, 'PSA10', now)).toBe(62000);
   });
 });
