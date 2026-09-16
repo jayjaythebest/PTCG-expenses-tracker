@@ -17,6 +17,9 @@ import { SET_CODE_BY_NAME, collectorNo, editionToLang, ItemTypeIcon } from './co
 const SNKRDUNK_BG_REMOVED = 'cdn.snkrdunk.com/upload_bg_removed/';
 const SNKRDUNK_CARD_ZOOM = 1.26;
 
+// Hosts that only ever serve Japanese card art.
+const JA_ART_HOSTS = ['cdn.snkrdunk.com', 'limitlesstcg.nyc3.cdn.digitaloceanspaces.com', 'assets.tcgdex.net/ja/'];
+
 export function GalleryImage({ item }: { item: CollectionItem }) {
   // An ordered list of candidate image URLs; the <img> advances to the next one
   // on load error, so a missing per-card scan degrades to the set logo (and
@@ -42,6 +45,12 @@ export function GalleryImage({ item }: { item: CollectionItem }) {
       stored && !(lang === 'ja' && stored.includes('asia.pokemon-card.com'))
         ? stored
         : undefined;
+    // The reverse: a zh-tw card whose stored art is Japanese. The scan saves the
+    // JP illustration as a stand-in when the TW site hasn't listed the card yet
+    // (and editing a card's 版本 keeps its old picture), so once the TW art
+    // exists it should win — the Japanese picture stays as the fallback.
+    const storedIsJa = !!stored && JA_ART_HOSTS.some(h => stored.includes(h));
+    const preferTwOverStored = lang === 'zh-tw' && storedIsJa;
     const num = collectorNo(item.cardNumber);
 
     const build = async (): Promise<{ url: string; cover: boolean }[]> => {
@@ -58,7 +67,7 @@ export function GalleryImage({ item }: { item: CollectionItem }) {
       if (!sc && lang === 'ja') sc = (await resolveJaSetCode(item.setName)) ?? undefined;
 
       if (item.itemType === 'single') {
-        push(storedUsable); // genuine scanned/uploaded art first
+        if (!preferTwOverStored) push(storedUsable); // genuine scanned/uploaded art first
         if (sc && num) {
           if (lang === 'zh-tw') {
             push(await lookupTwCardImage(sc, num)); // TW proxy is zh-tw only
@@ -69,6 +78,7 @@ export function GalleryImage({ item }: { item: CollectionItem }) {
             push(jpCardImageUrl(sc, num)); // direct Limitless URL (dev / proxy-down fallback)
           }
         }
+        push(storedUsable); // no-op unless the JP stand-in was deferred above
         if (sc) push((await lookupSetImage(sc, lang))?.imageUrl, false); // set logo last (letterboxed)
         return out;
       }
