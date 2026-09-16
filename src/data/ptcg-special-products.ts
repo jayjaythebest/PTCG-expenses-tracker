@@ -28,11 +28,6 @@ export const SPECIAL_PRODUCTS: SpecialProduct[] = [
     nameJa: '30th CELEBRATION FUTURISTIC BOX',
     nameZh: '30th CELEBRATION FUTURISTIC BOX',
   },
-  {
-    setCode: 'm6a', group: '30 週年特別商品',
-    nameJa: '30th CELEBRATION プレミアムデッキセット エーフィ・ブラッキー',
-    nameZh: '30th CELEBRATION頂級牌組組合 太陽伊布・月亮伊布',
-  },
   // The two markets split the starter product differently: Japan sells nine
   // separate カードセット (2026-10-16), Taiwan one 特別卡組 in nine variants.
   {

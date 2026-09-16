@@ -20,7 +20,9 @@ export function ExpenseEditModal({ expense, onClose }: Props) {
   const [type, setType] = useState<ExpenseType>(expense.type ?? 'Expense');
   const [title, setTitle] = useState(expense.title);
   const [amount, setAmount] = useState(String(expense.amount));
-  const [quantity, setQuantity] = useState(expense.quantity ?? 1);
+  // Kept as text so the field can be blank (placeholder 1) while typing.
+  const [quantityText, setQuantityText] = useState(String(expense.quantity ?? 1));
+  const quantity = Math.max(1, parseInt(quantityText, 10) || 1);
   const [quantityUnit, setQuantityUnit] = useState<'盒' | '包'>(
     (expense.quantityUnit as '盒' | '包') ?? '盒'
   );
@@ -160,7 +162,7 @@ export function ExpenseEditModal({ expense, onClose }: Props) {
                         setCategory(customCategory || '');
                       } else {
                         setCategory(value as ExpenseCategory);
-                        if (value !== 'Box') setQuantity(1);
+                        if (value !== 'Box') setQuantityText('');
                       }
                     }}
                     className={cn(
@@ -212,25 +214,22 @@ export function ExpenseEditModal({ expense, onClose }: Props) {
                   </div>
                   <button
                     type="button"
-                    onClick={() => setQuantity(q => Math.max(1, q - 1))}
+                    onClick={() => setQuantityText(String(Math.max(1, quantity - 1)))}
                     className="w-10 h-10 rounded-lg border border-white/10 flex items-center justify-center text-slate-300 hover:border-poke-accent transition-colors"
                   >
                     <Minus className="w-4 h-4" />
                   </button>
                   <input
-                    type="number"
+                    type="text"
                     inputMode="numeric"
-                    min={1}
-                    value={quantity}
-                    onChange={e => {
-                      const n = parseInt(e.target.value, 10);
-                      setQuantity(Number.isNaN(n) ? 1 : Math.max(1, n));
-                    }}
+                    placeholder="1"
+                    value={quantityText}
+                    onChange={e => setQuantityText(e.target.value.replace(/\D/g, ''))}
                     className="w-16 text-center text-xl font-black text-slate-100 bg-white/5 border border-white/10 rounded-lg py-1.5 focus:outline-none focus:border-poke-accent"
                   />
                   <button
                     type="button"
-                    onClick={() => setQuantity(q => q + 1)}
+                    onClick={() => setQuantityText(String(quantity + 1))}
                     className="w-10 h-10 rounded-lg border border-white/10 flex items-center justify-center text-slate-300 hover:border-poke-accent transition-colors"
                   >
                     <Plus className="w-4 h-4" />

@@ -94,8 +94,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
    - 繁體中文版：回繁體中文字（如 噴火龍 ex、起源帕路奇亞VSTAR）。**絕對不可**回日文假名（如把繁中卡寫成 オリジンパルキアVSTAR 就是錯的）。
    - 日文版：回日文假名/漢字（如 リザードン ex、メガゲッコウガex）。
    - 若 language 判為 zh-tw，name 就一定要是中文字；若 language 判為 ja，name 才會是日文。兩者要一致。看不清楚就回空字串。
-5. rarity：稀有度，從這些選一個最接近的（看不出來就回空字串）：UR、MUR、MA、SAR、AR、SR、HR、CSR、SER、RR、R、U、C、ACE SPEC、Promo。
-   參考：UR/MUR=全金卡(整張金色反光，字壓印在金箔上)、MA=メガ系列專屬標記(卡面印 MA)、SAR=全圖特殊插畫(卡號常超出總數)、AR=全圖插畫、SR=金框特殊加工、HR=彩虹金、RR=一般 ex/V、R=閃卡、U/C=一般非閃卡。卡面右下若印有 UR / MUR / MA / SAR 等英文縮寫，請優先採用。
+5. rarity：稀有度，從這些選一個最接近的（看不出來就回空字串）：FUR、UR、MUR、MA、SAR、AR、SR、HR、CSR、SER、RR、R、U、C、ACE SPEC、Promo。
+   參考：FUR=30th CELEBRATION 新稀有度（未來感特殊加工，卡面印 FUR）、UR/MUR=全金卡(整張金色反光，字壓印在金箔上)、MA=メガ系列專屬標記(卡面印 MA)、SAR=全圖特殊插畫(卡號常超出總數)、AR=全圖插畫、SR=金框特殊加工、HR=彩虹金、RR=一般 ex/V、R=閃卡、U/C=一般非閃卡。卡面右下若印有 FUR / UR / MUR / MA / SAR 等英文縮寫，請優先採用。
    MA 是獨立的稀有度，**不要**因為它是全圖插畫就改回 AR/SAR；卡面印什麼就回什麼。
 
 【鑑定卡（評級卡 / slab）辨識】

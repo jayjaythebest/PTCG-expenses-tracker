@@ -16,7 +16,9 @@ export function ExpenseForm() {
   const [titleQuery, setTitleQuery] = useState('');
   const [showPicker, setShowPicker] = useState(false);
   const [amount, setAmount] = useState('');
-  const [quantity, setQuantity] = useState(1);
+  // Kept as text so the field can be blank (placeholder 1) while typing.
+  const [quantityText, setQuantityText] = useState('');
+  const quantity = Math.max(1, parseInt(quantityText, 10) || 1);
   const [quantityUnit, setQuantityUnit] = useState<'盒' | '包'>('盒');
   const [seriesTag, setSeriesTag] = useState('');
   const [detectingSeries, setDetectingSeries] = useState(false);
@@ -103,7 +105,7 @@ export function ExpenseForm() {
       setTitle('');
       setTitleQuery('');
       setAmount('');
-      setQuantity(1);
+      setQuantityText('');
       setSeriesTag('');
       setCustomCategory('');
       setPaymentStatus('pending');
@@ -349,7 +351,7 @@ export function ExpenseForm() {
                   onClick={() => {
                     setCategory(value as ExpenseCategory | 'Other');
                     if (value !== 'Other') setCustomCategory('');
-                    if (value !== 'Box') { setQuantity(1); setQuantityUnit('盒'); }
+                    if (value !== 'Box') { setQuantityText(''); setQuantityUnit('盒'); }
                   }}
                   className={cn(
                     'py-2.5 px-3 rounded-lg border-2 text-sm font-bold transition-all text-center',
@@ -396,25 +398,22 @@ export function ExpenseForm() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => setQuantity(q => Math.max(1, q - 1))}
+                  onClick={() => setQuantityText(String(Math.max(1, quantity - 1)))}
                   className="w-10 h-10 rounded-lg border border-white/10 flex items-center justify-center text-slate-300 hover:border-poke-accent hover:text-poke-accent transition-colors"
                 >
                   <Minus className="w-4 h-4" />
                 </button>
                 <input
-                  type="number"
+                  type="text"
                   inputMode="numeric"
-                  min={1}
-                  value={quantity}
-                  onChange={e => {
-                    const n = parseInt(e.target.value, 10);
-                    setQuantity(Number.isNaN(n) ? 1 : Math.max(1, n));
-                  }}
+                  placeholder="1"
+                  value={quantityText}
+                  onChange={e => setQuantityText(e.target.value.replace(/\D/g, ''))}
                   className="w-16 text-center text-xl font-black text-slate-100 bg-white/5 border border-white/10 rounded-lg py-1.5 focus:outline-none focus:border-poke-accent"
                 />
                 <button
                   type="button"
-                  onClick={() => setQuantity(q => q + 1)}
+                  onClick={() => setQuantityText(String(quantity + 1))}
                   className="w-10 h-10 rounded-lg border border-white/10 flex items-center justify-center text-slate-300 hover:border-poke-accent hover:text-poke-accent transition-colors"
                 >
                   <Plus className="w-4 h-4" />

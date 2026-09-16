@@ -37,6 +37,8 @@ const RARITY_MAP: Record<string, string> = {
   'mega art rare': 'MA',
   'mega hyper rare': 'MUR',
   'mega ultra rare': 'MUR',
+  // 30th CELEBRATION's new rarity.
+  'futuristic rare': 'FUR',
   'ultra gold rare': 'UR',
   'gold rare': 'UR',
   'shiny rare': 'SR',

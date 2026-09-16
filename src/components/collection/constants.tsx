@@ -29,7 +29,7 @@ export const CONDITION_LABELS: Record<CollectionCondition, string> = {
 
 // MA is its own rarity (the MEGA-series mark printed on the card), not a kind of
 // AR/SAR — collapsing it into either loses a distinction the cards actually make.
-export const RARITY_OPTIONS = ['UR', 'MUR', 'MA', 'SAR', 'AR', 'SR', 'HR', 'CSR', 'SER', 'RR', 'R', 'U', 'C', 'ACE SPEC', 'Promo', '其他'];
+export const RARITY_OPTIONS = ['FUR', 'UR', 'MUR', 'MA', 'SAR', 'AR', 'SR', 'HR', 'CSR', 'SER', 'RR', 'R', 'U', 'C', 'ACE SPEC', 'Promo', '其他'];
 
 export const EDITION_LABELS: Record<CardEdition, string> = {
   'ja': '日文版',

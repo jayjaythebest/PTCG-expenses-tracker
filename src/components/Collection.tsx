@@ -22,7 +22,7 @@ import {
   ITEM_TYPE_LABELS, CONDITION_LABELS, RARITY_OPTIONS, EDITION_LABELS, GRADING_LABELS,
   displayType, SET_CODE_BY_NAME, isGradedCondition, ItemTypeBadge,
 } from './collection/constants';
-import { EMPTY_FORM, todayISO, manualPriceFields, formToItem, itemToForm, type FormState } from './collection/formState';
+import { EMPTY_FORM, todayISO, manualPriceFields, formToItem, itemToForm, formQuantity, type FormState } from './collection/formState';
 import { GalleryImage } from './collection/GalleryImage';
 import { CollectionModal } from './collection/CollectionForm';
 import { MergePromptModal } from './collection/MergePromptModal';
@@ -426,7 +426,7 @@ export function Collection() {
   const handleMergeInto = async (target: CollectionItem, f: FormState) => {
     setSubmitting(true);
     try {
-      await updateItem(target.id, { quantity: target.quantity + f.quantity });
+      await updateItem(target.id, { quantity: target.quantity + formQuantity(f) });
       setMergeAsk(null);
       setShowAddForm(false);
     } catch (err) {

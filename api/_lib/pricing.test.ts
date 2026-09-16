@@ -178,6 +178,15 @@ describe('parseHucaTitle', () => {
       setName: 'ストームエメラルダ',
     });
   });
+  it('reads FUR, the rarity 30th CELEBRATION introduced', () => {
+    expect(parseHucaTitle('ミュウツーex FUR [M6a 134/103](拡張パック「30th CELEBRATION」)')).toEqual({
+      setCode: 'M6a',
+      collectorNumber: '134/103',
+      name: 'ミュウツーex',
+      rarity: 'FUR',
+      setName: '30th CELEBRATION',
+    });
+  });
   it('reads a set name that itself contains a rarity-ish suffix', () => {
     expect(parseHucaTitle('イーブイex SAR [SV8a 223/187](ハイクラスパック「テラスタルフェスex」)')).toEqual({
       setCode: 'SV8a',

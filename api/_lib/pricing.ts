@@ -238,7 +238,7 @@ export function pickHucaPrice(row: HucaRow): number | null {
 
 // Rarity/edition tokens Huca appends after the card name in a listing title.
 const HUCA_TITLE_TOKENS = new Set([
-  'UR', 'MUR', 'MA', 'SAR', 'AR', 'SR', 'HR', 'CSR', 'SER', 'CHR', 'RR', 'RRR', 'R', 'U', 'C',
+  'FUR', 'UR', 'MUR', 'MA', 'SAR', 'AR', 'SR', 'HR', 'CSR', 'SER', 'CHR', 'RR', 'RRR', 'R', 'U', 'C',
   'ACE', 'SPEC', 'P', 'PROMO', 'K', 'S',
 ]);
 
@@ -258,7 +258,7 @@ export function hucaTitleCardName(title: string): string {
 // Rarity letters, as they appear as a trailing token in a Huca title.
 // MA is the MEGA-series mark, a rarity in its own right — keep it distinct from
 // AR/SAR so a title that says MA doesn't come back as "no rarity".
-const HUCA_RARITIES = new Set(['UR', 'MUR', 'MA', 'SAR', 'AR', 'SR', 'HR', 'CSR', 'SER', 'CHR', 'RR', 'RRR', 'R', 'U', 'C']);
+const HUCA_RARITIES = new Set(['FUR', 'UR', 'MUR', 'MA', 'SAR', 'AR', 'SR', 'HR', 'CSR', 'SER', 'CHR', 'RR', 'RRR', 'R', 'U', 'C']);
 
 // A card's identity as Huca prints it in a listing title.
 export interface HucaCardIdentity {

@@ -2,7 +2,7 @@ import { motion } from 'motion/react';
 import { X } from 'lucide-react';
 import { CollectionItem } from '../../types';
 import { EDITION_LABELS, setLabel } from './constants';
-import { type FormState } from './formState';
+import { formQuantity, type FormState } from './formState';
 
 // Asked before an add that would duplicate something already in the collection:
 // merge into that row (3 boxes + 2 = 5) instead of leaving two rows for the same
@@ -44,7 +44,7 @@ export function MergePromptModal({
         <div className="p-5 space-y-3">
           <p className="text-[13px] text-slate-300 leading-relaxed">
             <span className="font-bold text-slate-100">{label}</span> 已經在收藏庫裡了。
-            要把這次新增的 <span className="font-bold text-poke-accent">×{incoming.quantity}</span> 併進現有的那筆，還是另外存成新的一筆？
+            要把這次新增的 <span className="font-bold text-poke-accent">×{formQuantity(incoming)}</span> 併進現有的那筆，還是另外存成新的一筆？
           </p>
           <div className="space-y-2">
             {candidates.map(c => (

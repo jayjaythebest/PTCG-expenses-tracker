@@ -47,10 +47,12 @@ const JA_NAME_OVERRIDES = {
 const ZH_NAME_OVERRIDES = {
   // Official TW title is 擴充包「30th CELEBRATION」 (asia.pokemon-card.com/tw).
   M6A: { kapaipaiSays: '30th擴充包', weSay: '30th CELEBRATION' },
+  // The premium deck set; its official TW title is 30th CELEBRATION頂級牌組組合 太陽伊布・月亮伊布.
+  MF: { kapaipaiSays: '30th預組', weSay: '30th CELEBRATION頂級牌組組合 太陽伊布・月亮伊布' },
 };
 
 const ZH_VIA_KAPAIPAI = new Set([
-  'M1L', 'M1S', 'M2', 'M2A', 'M3', 'M4', 'M5', 'M6', 'M6A',
+  'M1L', 'M1S', 'M2', 'M2A', 'M3', 'M4', 'M5', 'M6', 'M6A', 'MF',
   'SV11B', 'SV11W',
 ]);
 
@@ -64,10 +66,11 @@ const ZH_VIA_KAPAIPAI = new Set([
 // This is a TEMPORARY exemption by design: once TCGdex publishes the set the
 // loop below fails and tells us to drop the code from here, so the waiver can't
 // quietly become a permanent blind spot.
-const JA_VIA_HUCA = new Set(['M6A']);
+const JA_VIA_HUCA = new Set(['M6A', 'MF']);
 
 // Pull a set's Japanese name out of any one of its Huca card titles, e.g.
 // 「ヘラクロス C [M6 001/076](拡張パック「ストームエメラルダ」)」 -> ストームエメラルダ.
+// Deck products say 構築デッキ「…」 instead.
 // Returns null when Huca doesn't know the set (or the request fails), which the
 // caller reports as a problem rather than silently passing.
 async function hucaJaSetName(id) {
@@ -77,7 +80,7 @@ async function hucaJaSetName(id) {
     const json = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } }).then(r => r.json());
     const title = json?.data?.[0]?.title;
     if (!title) return null;
-    return title.match(/拡張パック「([^」]+)」/)?.[1] ?? null;
+    return title.match(/(?:拡張パック|構築デッキ)「([^」]+)」/)?.[1] ?? null;
   } catch {
     return null;
   }
@@ -148,7 +151,7 @@ async function main() {
         );
       } else {
         const hucaJa = await hucaJaSetName(id);
-        if (!hucaJa) problems.push(`${code}: not in TCGdex, and Huca has no 拡張パック title for it either`);
+        if (!hucaJa) problems.push(`${code}: not in TCGdex, and Huca has no 拡張パック/構築デッキ title for it either`);
         else if (hucaJa !== name) problems.push(`${code}: name '${name}' but Huca says '${hucaJa}'`);
       }
     } else if (!realJa) {

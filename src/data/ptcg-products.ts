@@ -47,6 +47,10 @@ export const PTCG_PRODUCTS: PtcgProduct[] = [
   // name is stored (see ZH_NAME_OVERRIDES). zh-tw prints M6aF, which
   // productForScanCode already folds back to M6a.
   { code: 'm6a',  name: '30th CELEBRATION',          series: 'ポケモンカードゲーム MEGA', nameZh: '30th CELEBRATION' },
+  // The 30th premium deck set prints its own code, MF — its cards are filed
+  // under that, not M6a. Not a booster set, so Huca's title says 構築デッキ「…」
+  // and TCGdex has no record; verified the same way as M6a above.
+  { code: 'MF',   name: '30th CELEBRATION プレミアムデッキセット エーフィ・ブラッキー', series: 'ポケモンカードゲーム MEGA', nameZh: '30th CELEBRATION頂級牌組組合 太陽伊布・月亮伊布' },
   // ── スカーレット＆バイオレット 2023 ─────────────────────────
   { code: 'sv1S', name: 'スカーレットex',           series: 'スカーレット＆バイオレット', nameZh: '朱ex' },
   { code: 'sv1V', name: 'バイオレットex',           series: 'スカーレット＆バイオレット', nameZh: '紫ex' },

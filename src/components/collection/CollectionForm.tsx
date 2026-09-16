@@ -703,10 +703,11 @@ function CollectionForm({
         <div>
           <label className="text-xs font-bold text-slate-400 mb-1 block">數量</label>
           <input
-            type="number"
-            min={1}
+            type="text"
+            inputMode="numeric"
             value={form.quantity}
-            onChange={e => set('quantity', Number(e.target.value))}
+            onChange={e => set('quantity', e.target.value.replace(/\D/g, ''))}
+            placeholder="1"
             className="w-full border border-white/10 bg-white/5 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-poke-accent"
           />
         </div>

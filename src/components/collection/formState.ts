@@ -14,7 +14,9 @@ export const EMPTY_FORM = {
   rarity: '',
   itemType: 'single' as CollectionItemType,
   condition: '' as CollectionCondition | '',
-  quantity: 1,
+  // Text, not a number, so the field can start blank (placeholder 1) instead of
+  // making the user delete a pre-filled 1 first. Read it through formQuantity().
+  quantity: '',
   acquiredDate: '',
   currentValue: '',
   // Manual market-price override (TWD). When set, it replaces the auto-fetched
@@ -32,6 +34,10 @@ export const EMPTY_FORM = {
 };
 
 export type FormState = typeof EMPTY_FORM;
+
+// Blank or junk counts as one copy.
+export const formQuantity = (f: Pick<FormState, 'quantity'>): number =>
+  Math.max(1, parseInt(f.quantity, 10) || 1);
 
 // Local YYYY-MM-DD for date <input> defaults (avoids the UTC shift toISOString
 // would introduce near midnight).
@@ -65,7 +71,7 @@ export function formToItem(f: FormState): Omit<CollectionItem, 'id' | 'createdAt
     rarity:        f.rarity || undefined,
     itemType:      f.itemType,
     condition:     f.isGraded ? undefined : ((f.condition as CollectionCondition) || undefined),
-    quantity:      f.quantity,
+    quantity:      formQuantity(f),
     acquiredDate:  f.acquiredDate || undefined,
     currentValue:  f.currentValue !== '' ? Number(f.currentValue) : undefined,
     notes:         f.notes || undefined,
@@ -87,7 +93,7 @@ export function itemToForm(item: CollectionItem): FormState {
     rarity:        item.rarity ?? '',
     itemType:      item.itemType,
     condition:     item.condition ?? '',
-    quantity:      item.quantity,
+    quantity:      String(item.quantity),
     acquiredDate:  item.acquiredDate ?? '',
     currentValue:  item.currentValue != null ? String(item.currentValue) : '',
     manualPrice:   item.marketPriceSource === 'manual' && item.marketPrice != null ? String(item.marketPrice) : '',
