@@ -8,6 +8,15 @@ import { cn } from '../../lib/utils';
 import { lookupCard, lookupSetImage, lookupTwCardImage, lookupJpCardImage, resolveJaSetCode, jpCardImageUrl } from '../../lib/tcgdex';
 import { SET_CODE_BY_NAME, collectorNo, editionToLang, ItemTypeIcon } from './constants';
 
+// SNKRDUNK's background-removed scans are 1000x730 landscape canvases with the
+// card centred on transparency (card box ~434x610 at y 60-670, same on every
+// image checked). Under object-cover that card fills only ~79% of the tile's
+// width, so these tiles looked smaller than the full-bleed art beside them.
+// Scaling by 1000/434 * 0.75 brings the card edge to the tile edge, cropping
+// its top and bottom by the same few percent as the other sources.
+const SNKRDUNK_BG_REMOVED = 'cdn.snkrdunk.com/upload_bg_removed/';
+const SNKRDUNK_CARD_ZOOM = 1.26;
+
 export function GalleryImage({ item }: { item: CollectionItem }) {
   // An ordered list of candidate image URLs; the <img> advances to the next one
   // on load error, so a missing per-card scan degrades to the set logo (and
@@ -86,16 +95,20 @@ export function GalleryImage({ item }: { item: CollectionItem }) {
       </div>
     );
   }
+  const zoom = cand.cover && cand.url.includes(SNKRDUNK_BG_REMOVED);
   return (
-    <img
-      src={cand.url}
-      alt={item.name}
-      referrerPolicy="no-referrer"
-      onError={() => setIdx(i => i + 1)}
-      className={cn(
-        'w-full h-full',
-        cand.cover ? 'object-cover' : 'object-contain p-2',
-      )}
-    />
+    <div className="w-full h-full overflow-hidden">
+      <img
+        src={cand.url}
+        alt={item.name}
+        referrerPolicy="no-referrer"
+        onError={() => setIdx(i => i + 1)}
+        style={zoom ? { transform: `scale(${SNKRDUNK_CARD_ZOOM})` } : undefined}
+        className={cn(
+          'w-full h-full',
+          cand.cover ? 'object-cover' : 'object-contain p-2',
+        )}
+      />
+    </div>
   );
 }
