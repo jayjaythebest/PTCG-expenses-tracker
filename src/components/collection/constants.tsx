@@ -110,6 +110,24 @@ export const editionToLang = (e: CardEdition | ''): ScanLanguage => (e === 'zh-t
 export const isGradedCondition = (c: string | null | undefined): boolean =>
   !!c && /^(PSA|BGS|CGC|ARS)/i.test(c);
 
+// The condition shown beside a market price. A slab price is marked "參考"
+// whenever it isn't this card's own grade — on a raw card, and on a graded one
+// whose grade had no sales of its own (a BGS 9 falling back to a PSA10 figure).
+export const priceConditionLabel = (item: {
+  marketPriceCondition?: string;
+  isGraded?: boolean;
+  gradingCompany?: GradingCompany;
+  grade?: string;
+}): string | null => {
+  const c = item.marketPriceCondition;
+  if (!c) return null;
+  if (!isGradedCondition(c)) return c;
+  const own = item.isGraded && item.gradingCompany && item.grade
+    ? `${item.gradingCompany}${item.grade}`.toUpperCase()
+    : null;
+  return own === c.toUpperCase() ? c : `${c} 參考`;
+};
+
 // Pull the printed collector number out of possibly-messy stored text, for the
 // image CDNs that key on it — the same normalisation the duplicate check uses,
 // so a card that counts as "already in the collection" also resolves to the

@@ -3,7 +3,7 @@ import { X, Pencil, Trash2, TrendingUp, TrendingDown, Loader2, RefreshCw } from 
 import { CollectionItem } from '../../types';
 import { cn, relativeTime } from '../../lib/utils';
 import {
-  CONDITION_LABELS, EDITION_LABELS, GRADING_LABELS, setLabel, isGradedCondition, ItemTypeBadge,
+  CONDITION_LABELS, EDITION_LABELS, GRADING_LABELS, setLabel, priceConditionLabel, ItemTypeBadge,
 } from './constants';
 import { GalleryImage } from './GalleryImage';
 
@@ -130,11 +130,7 @@ export function CardDetailModal({
                 {[
                   item.marketPriceSource === 'manual' ? '手動輸入' : item.marketPriceSource,
                   relativeTime(item.marketPriceUpdatedAt),
-                  item.marketPriceCondition
-                    ? (!item.isGraded && isGradedCondition(item.marketPriceCondition)
-                        ? `${item.marketPriceCondition} 參考`
-                        : item.marketPriceCondition)
-                    : null,
+                  priceConditionLabel(item),
                 ].filter(Boolean).join(' · ')}
               </p>
             )}

@@ -129,17 +129,31 @@ export interface SnkrdunkTrade {
 
 const SNKRDUNK_TRADES = 'https://snkrdunk.com/v3/products';
 
-// Condition filter codes Snkrdunk's trading history accepts, keyed by the label
-// its trades carry. Raw cards are priced from 'A' (nearly unused), the grade a
-// collection card is assumed to be in. Slabs not listed here have no filter of
-// their own on Snkrdunk and keep the older Huca path.
-const SNKRDUNK_CONDITION_CODES: Record<string, string> = {
-  A: 'trading_card_single_nearly_unused',
-  PSA10: 'trading_card_single_psa10',
-  PSA9: 'trading_card_single_psa9',
-  'BGS9.5': 'trading_card_single_bgs95',
-  ARS10: 'trading_card_single_ars10',
-};
+// Which Snkrdunk trading-history bucket a card's grade sells in: the filter
+// code, and the `title` its trades carry. Raw cards use 'A' (nearly unused),
+// the grade a collection card is assumed to be in. Snkrdunk lumps low slabs
+// together, so a BGS 9 prices off 'BGS9以下' and a PSA 7 off 'PSA8以下'. Grades
+// with no bucket of their own (BGS 10, split into Black/Gold Label) return null
+// and keep the older Huca path.
+export function snkrdunkBucket(wantGrade: string | null): { code: string; title: string } | null {
+  if (!wantGrade) return { code: 'trading_card_single_nearly_unused', title: 'A' };
+  const m = wantGrade.toUpperCase().match(/^(PSA|BGS|ARS)(\d+(?:\.5)?)$/);
+  if (!m) return null;
+  const [, company, g] = m;
+  const grade = Number(g);
+  if (company === 'PSA') {
+    if (grade === 10) return { code: 'trading_card_single_psa10', title: 'PSA10' };
+    if (grade === 9) return { code: 'trading_card_single_psa9', title: 'PSA9' };
+    return { code: 'trading_card_single_psa8_under', title: 'PSA8以下' };
+  }
+  if (company === 'BGS') {
+    if (grade === 9.5) return { code: 'trading_card_single_bgs95', title: 'BGS9.5' };
+    if (grade <= 9) return { code: 'trading_card_single_bgs9_less_than_or_equal', title: 'BGS9以下' };
+    return null;
+  }
+  if (grade === 10) return { code: 'trading_card_single_ars10', title: 'ARS10' };
+  return null;
+}
 
 // Price from Snkrdunk's recent trades in one condition, single cards only (a
 // '2枚' bundle sells for a multiple). The endpoint returns the latest 20.
@@ -161,9 +175,8 @@ async function lookupSnkrdunkSales(
   wantGrade: string | null,
 ): Promise<PriceResult | null> {
   const id = String(snkrdunkId ?? '').trim();
-  const condition = wantGrade ?? 'A';
-  const code = SNKRDUNK_CONDITION_CODES[condition];
-  if (!id || !code) return null;
+  const bucket = snkrdunkBucket(wantGrade);
+  if (!id || !bucket) return null;
 
   let catalogId = snkrdunkCatalogCache.get(id);
   if (catalogId == null) {
@@ -174,15 +187,16 @@ async function lookupSnkrdunkSales(
   }
 
   const json = await fetchJson<{ trades?: SnkrdunkTrade[] }>(
-    `${SNKRDUNK_TRADES}/${catalogId}/trading-history?condition_code=${code}`,
+    `${SNKRDUNK_TRADES}/${catalogId}/trading-history?condition_code=${bucket.code}`,
   );
-  const price = snkrdunkSalePrice(json?.trades ?? [], condition);
+  const price = snkrdunkSalePrice(json?.trades ?? [], bucket.title);
   if (price == null) return null;
   return {
     price,
     currency: 'JPY',
     source: 'snkrdunk',
-    condition,
+    // The card's own grade: the bucket it sold in covers it.
+    condition: wantGrade ?? 'A',
     url: `https://snkrdunk.com/apparels/${encodeURIComponent(id)}`,
     updatedAt: new Date().toISOString(),
   };

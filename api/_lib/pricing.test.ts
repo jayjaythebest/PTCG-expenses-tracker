@@ -16,6 +16,7 @@ import {
   kpSalePrice,
   recentSalePrice,
   snkrdunkSalePrice,
+  snkrdunkBucket,
   type KpCardRow,
   type SnkrdunkTrade,
   type KpListing,
@@ -390,5 +391,28 @@ describe('snkrdunkSalePrice', () => {
     ];
     expect(snkrdunkSalePrice(trades, 'A', now)).toBe(1000);
     expect(snkrdunkSalePrice(trades, 'PSA10', now)).toBe(62000);
+  });
+});
+
+describe('snkrdunkBucket', () => {
+  it('maps raw cards to condition A', () => {
+    expect(snkrdunkBucket(null)?.title).toBe('A');
+  });
+  it('has exact buckets for the top grades', () => {
+    expect(snkrdunkBucket('PSA10')?.title).toBe('PSA10');
+    expect(snkrdunkBucket('PSA9')?.title).toBe('PSA9');
+    expect(snkrdunkBucket('BGS9.5')?.title).toBe('BGS9.5');
+    expect(snkrdunkBucket('ARS10')?.title).toBe('ARS10');
+  });
+  it('lumps low slabs into Snkrdunk\'s "or below" buckets', () => {
+    expect(snkrdunkBucket('BGS9')?.code).toBe('trading_card_single_bgs9_less_than_or_equal');
+    expect(snkrdunkBucket('BGS8.5')?.title).toBe('BGS9以下');
+    expect(snkrdunkBucket('PSA8')?.title).toBe('PSA8以下');
+    expect(snkrdunkBucket('PSA6')?.title).toBe('PSA8以下');
+  });
+  it('has no bucket for BGS 10 or unknown companies', () => {
+    expect(snkrdunkBucket('BGS10')).toBeNull();
+    expect(snkrdunkBucket('CGC10')).toBeNull();
+    expect(snkrdunkBucket('ARS9')).toBeNull();
   });
 });

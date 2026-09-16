@@ -20,7 +20,7 @@ import { IS_DEMO } from '../lib/demo';
 // What stays here is the container — state, filtering, the grid, the actions.
 import {
   ITEM_TYPE_LABELS, CONDITION_LABELS, RARITY_OPTIONS, EDITION_LABELS, GRADING_LABELS,
-  displayType, SET_CODE_BY_NAME, isGradedCondition, ItemTypeBadge,
+  displayType, SET_CODE_BY_NAME, priceConditionLabel, ItemTypeBadge,
 } from './collection/constants';
 import { EMPTY_FORM, todayISO, manualPriceFields, formToItem, itemToForm, formQuantity, type FormState } from './collection/formState';
 import { GalleryImage } from './collection/GalleryImage';
@@ -1084,11 +1084,7 @@ export function Collection() {
                         {[
                           item.marketPriceSource === 'manual' ? '手動輸入' : item.marketPriceSource,
                           relativeTime(item.marketPriceUpdatedAt),
-                          item.marketPriceCondition
-                            ? (!item.isGraded && isGradedCondition(item.marketPriceCondition)
-                                ? `${item.marketPriceCondition} 參考`
-                                : item.marketPriceCondition)
-                            : null,
+                          priceConditionLabel(item),
                         ].filter(Boolean).join(' · ')}
                       </p>
                     )}
