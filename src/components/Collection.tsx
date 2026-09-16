@@ -4,7 +4,8 @@ import { useCollection } from '../lib/useCollection';
 import { CollectionItem, CollectionItemType, CollectionCondition, CardEdition } from '../types';
 import { boxSnkrdunkId } from '../data/ptcg-boxes';
 import { COLLECTION_OWNERS, PRIMARY_OWNER, ownerOf } from '../data/collectionOwners';
-import { cn, relativeTime } from '../lib/utils';
+import { cn, relativeTime, formatMonthLabel } from '../lib/utils';
+import { itemDay, matchesDateFilter, monthCounts, type DateFilter } from '../lib/collectionDate';
 // Value math lives in one tested module (src/lib/collectionValue.ts) so the home
 // summary, this page and the daily snapshot can never drift apart on what a card
 // is worth.
@@ -62,6 +63,7 @@ export function Collection() {
   const [fGraded, setFGraded] = useState<GradedFilter>('all');
   const [fCondition, setFCondition] = useState<'all' | CollectionCondition>('all');
   const [fPrice, setFPrice] = useState<'all' | 'has' | 'none'>('all');
+  const [fDate, setFDate] = useState<DateFilter>({ kind: 'all' });
   const [showAddForm, setShowAddForm] = useState(false);
   // Pending add that duplicates existing rows: the form as submitted, plus the
   // rows it could be merged into. Non-null = the 「已經有這個了」 prompt is open.
@@ -142,6 +144,8 @@ export function Collection() {
     return [...set];
   }, [items]);
 
+  const monthsPresent = useMemo(() => monthCounts(items.map(itemDay)), [items]);
+
   // Filter → sort pipeline. Filters stack (type, edition, rarity, graded,
   // condition, free-text query); sort value depends on sortKey, all normalised
   // to TWD so JPY/TWD cards compare fairly. Missing values sort to 0.
@@ -156,6 +160,7 @@ export function Collection() {
       if (fCondition !== 'all' && i.condition !== fCondition) return false;
       if (fPrice === 'has' && i.marketPrice == null) return false;
       if (fPrice === 'none' && i.marketPrice != null) return false;
+      if (!matchesDateFilter(itemDay(i), fDate)) return false;
       if (q) {
         const hay = `${i.name} ${i.setName} ${i.cardNumber ?? ''}`.toLowerCase();
         if (!hay.includes(q)) return false;
@@ -182,10 +187,10 @@ export function Collection() {
 
     rows.sort((a, b) => sortDir === 'asc' ? cmp(a, b) : -cmp(a, b));
     return rows;
-  }, [items, filterType, fEdition, fRarity, fGraded, fCondition, fPrice, query, sortKey, sortDir, fxRate]);
+  }, [items, filterType, fEdition, fRarity, fGraded, fCondition, fPrice, fDate, query, sortKey, sortDir, fxRate]);
 
   const filtersActive = filterType !== 'all' || fEdition !== 'all' || fRarity !== 'all'
-    || fGraded !== 'all' || fCondition !== 'all' || fPrice !== 'all' || query.trim() !== '';
+    || fGraded !== 'all' || fCondition !== 'all' || fPrice !== 'all' || fDate.kind !== 'all' || query.trim() !== '';
 
   // Aggregates are computed in TWD (per-item, honouring each value's currency)
   // so JPY and TWD cards can be summed together.
@@ -805,6 +810,47 @@ export function Collection() {
               <option value="has">已有市場價</option>
               <option value="none">尚無市場價</option>
             </select>
+
+            {/* 入手日期: a month that has cards, or a custom day range */}
+            <select
+              value={fDate.kind === 'month' ? fDate.month : fDate.kind}
+              onChange={e => {
+                const v = e.target.value;
+                if (v === 'all') setFDate({ kind: 'all' });
+                else if (v === 'range') setFDate({ kind: 'range', from: '', to: '' });
+                else setFDate({ kind: 'month', month: v });
+              }}
+              className="px-2.5 py-1.5 rounded-lg bg-surface border border-white/10 font-bold text-slate-200 focus:outline-none focus:border-poke-accent"
+              title="入手日期"
+            >
+              <option value="all">全部日期</option>
+              <option value="range">自訂日期區間…</option>
+              {monthsPresent.map(({ month, count }) => (
+                <option key={month} value={month}>{formatMonthLabel(month)}（{count}）</option>
+              ))}
+            </select>
+
+            {fDate.kind === 'range' && (
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="date"
+                  value={fDate.from}
+                  max={fDate.to || undefined}
+                  onChange={e => setFDate({ ...fDate, from: e.target.value })}
+                  className="px-2 py-1 rounded-lg bg-surface border border-white/10 font-bold text-slate-200 focus:outline-none focus:border-poke-accent [color-scheme:dark]"
+                  aria-label="起始日期"
+                />
+                <span className="text-slate-500">–</span>
+                <input
+                  type="date"
+                  value={fDate.to}
+                  min={fDate.from || undefined}
+                  onChange={e => setFDate({ ...fDate, to: e.target.value })}
+                  className="px-2 py-1 rounded-lg bg-surface border border-white/10 font-bold text-slate-200 focus:outline-none focus:border-poke-accent [color-scheme:dark]"
+                  aria-label="結束日期"
+                />
+              </div>
+            )}
 
             <span className="ml-auto text-slate-400 font-bold">{filtered.length} 筆</span>
           </div>
