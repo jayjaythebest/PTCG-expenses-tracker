@@ -5,6 +5,7 @@ import { PlusCircle, Loader2, Camera, X, Minus, Plus, ChevronDown, Sparkles, Wal
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { PTCG_PRODUCTS, PtcgProduct } from '../data/ptcg-products';
+import { SPECIAL_PRODUCTS } from '../data/ptcg-special-products';
 import { detectPtcgSeries } from '../lib/gemini';
 
 export function ExpenseForm() {
@@ -27,16 +28,25 @@ export function ExpenseForm() {
   const [image, setImage] = useState<{ file: File; preview: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const filteredProducts = PTCG_PRODUCTS.filter(p =>
-    titleQuery === '' ||
-    p.name.includes(titleQuery) ||
-    p.code.toLowerCase().includes(titleQuery.toLowerCase()) ||
-    p.series.includes(titleQuery)
+  // Special products first so a new release's sealed items sit at the top.
+  const pickerOptions: PickerOption[] = [
+    ...SPECIAL_PRODUCTS.map((p, i) => ({
+      key: `special-${i}`, group: p.group, code: p.setCode, ja: p.nameJa, zh: p.nameZh,
+    })),
+    ...PTCG_PRODUCTS.map(p => ({
+      key: `${p.code}-${p.name}`, group: p.series, code: p.code, ja: p.name, zh: p.nameZh,
+    })),
+  ];
+
+  const q = titleQuery.toLowerCase();
+  const filteredProducts = pickerOptions.filter(o =>
+    q === '' ||
+    [o.ja, o.zh, o.code, o.group].some(v => v?.toLowerCase().includes(q))
   );
 
-  const grouped = filteredProducts.reduce<Record<string, PtcgProduct[]>>((acc, p) => {
-    if (!acc[p.series]) acc[p.series] = [];
-    acc[p.series].push(p);
+  const grouped = filteredProducts.reduce<Record<string, PickerOption[]>>((acc, o) => {
+    if (!acc[o.group]) acc[o.group] = [];
+    acc[o.group].push(o);
     return acc;
   }, {});
 
@@ -49,10 +59,10 @@ export function ExpenseForm() {
     return acc;
   }, {});
 
-  const selectProduct = (p: PtcgProduct) => {
-    setTitle(p.name);
-    setTitleQuery(p.name);
-    setSeriesTag(p.code);
+  const selectProduct = (name: string, code: string) => {
+    setTitle(name);
+    setTitleQuery(name);
+    setSeriesTag(code);
     setShowPicker(false);
   };
 
@@ -175,17 +185,41 @@ export function ExpenseForm() {
                       <div className="px-3 py-1.5 text-[10px] font-black text-slate-400 uppercase tracking-wider bg-surface-hi sticky top-0">
                         {series}
                       </div>
-                      {products.map(p => (
-                        <button
-                          key={`${p.code}-${p.name}`}
-                          type="button"
-                          onPointerDown={e => e.preventDefault()}
-                          onClick={() => selectProduct(p)}
-                          className="w-full text-left px-3 py-2.5 hover:bg-white/5 flex items-center justify-between gap-2 border-b border-white/5 last:border-0"
+                      {products.map(o => (
+                        <div
+                          key={o.key}
+                          className="px-3 py-2 flex items-center justify-between gap-2 border-b border-white/5 last:border-0"
                         >
-                          <span className="font-bold text-sm text-slate-100">{p.name}</span>
-                          <span className="text-[10px] text-slate-400 flex-shrink-0 font-mono">{p.code}</span>
-                        </button>
+                          <div className="min-w-0">
+                            <div className="font-bold text-sm text-slate-100 truncate">{o.zh || o.ja}</div>
+                            {o.zh && o.ja && o.zh !== o.ja && (
+                              <div className="text-xs text-slate-400 truncate">{o.ja}</div>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            <span className="text-[10px] text-slate-500 font-mono mr-1">{o.code.toUpperCase()}</span>
+                            {o.ja && (
+                              <button
+                                type="button"
+                                onPointerDown={e => e.preventDefault()}
+                                onClick={() => selectProduct(o.ja!, o.code)}
+                                className="px-2 py-1 rounded-md text-xs font-bold border border-white/10 text-slate-300 hover:border-poke-accent hover:text-poke-accent"
+                              >
+                                日版
+                              </button>
+                            )}
+                            {o.zh && (
+                              <button
+                                type="button"
+                                onPointerDown={e => e.preventDefault()}
+                                onClick={() => selectProduct(o.zh!, o.code)}
+                                className="px-2 py-1 rounded-md text-xs font-bold border border-white/10 text-slate-300 hover:border-poke-accent hover:text-poke-accent"
+                              >
+                                繁中
+                              </button>
+                            )}
+                          </div>
+                        </div>
                       ))}
                     </div>
                   ))}
@@ -404,7 +438,7 @@ export function ExpenseForm() {
                     {Object.entries(codeGroups).map(([series, products]) => (
                       <optgroup key={series} label={series}>
                         {products.map(p => (
-                          <option key={p.code} value={p.code}>{p.code} {p.name}</option>
+                          <option key={p.code} value={p.code}>{p.code} {p.nameZh ? `${p.nameZh}／${p.name}` : p.name}</option>
                         ))}
                       </optgroup>
                     ))}
@@ -501,4 +535,12 @@ export function ExpenseForm() {
       </form>
     </div>
   );
+}
+
+interface PickerOption {
+  key: string;
+  group: string;
+  code: string;
+  ja?: string;
+  zh?: string;
 }

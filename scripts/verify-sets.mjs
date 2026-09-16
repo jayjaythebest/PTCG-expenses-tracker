@@ -40,14 +40,23 @@ const JA_NAME_OVERRIDES = {
 // TCGdex carries no zh-tw record for the whole MEGA series, nor for SV11B/W,
 // even though all of them have shipped in Traditional Chinese. kapaipai lists
 // every one of them.
+// kapaipai's packName is its own shorthand, not always the official title.
+// Like JA_NAME_OVERRIDES, each entry restates what kapaipai reports so the check
+// goes stale loudly. Safe for pricing because resolvePackId() tries the code
+// before the name.
+const ZH_NAME_OVERRIDES = {
+  // Official TW title is 擴充包「30th CELEBRATION」 (asia.pokemon-card.com/tw).
+  M6A: { kapaipaiSays: '30th擴充包', weSay: '30th CELEBRATION' },
+};
+
 const ZH_VIA_KAPAIPAI = new Set([
-  'M1L', 'M1S', 'M2', 'M2A', 'M3', 'M4', 'M5', 'M6',
+  'M1L', 'M1S', 'M2', 'M2A', 'M3', 'M4', 'M5', 'M6', 'M6A',
   'SV11B', 'SV11W',
 ]);
 
-// TCGdex also lags actual RELEASES, not just translations: M6 is on sale, Huca
-// prices it and kapaipai lists 116 of its cards, yet /v2/ja/sets/M6 is still a
-// 404. Codes listed here have their Japanese name verified against Huca instead
+// TCGdex also lags actual RELEASES, not just translations: M6 was on sale, Huca
+// priced it and kapaipai listed 116 of its cards, while /v2/ja/sets/M6 was still
+// a 404 (it has since been published). M6a 30th CELEBRATION is in the same spot. Codes listed here have their Japanese name verified against Huca instead
 // — whose card titles end in 拡張パック「<ja set name>」, and which is the source
 // api/_lib/pricing.ts actually asks for ja prices. So this checks the name
 // against the system that has to agree with it, rather than waiving the check.
@@ -55,7 +64,7 @@ const ZH_VIA_KAPAIPAI = new Set([
 // This is a TEMPORARY exemption by design: once TCGdex publishes the set the
 // loop below fails and tells us to drop the code from here, so the waiver can't
 // quietly become a permanent blind spot.
-const JA_VIA_HUCA = new Set(['M6']);
+const JA_VIA_HUCA = new Set(['M6A']);
 
 // Pull a set's Japanese name out of any one of its Huca card titles, e.g.
 // 「ヘラクロス C [M6 001/076](拡張パック「ストームエメラルダ」)」 -> ストームエメラルダ.
@@ -169,6 +178,16 @@ async function main() {
         } else {
           const kpName = kpById.get(id);
           if (!kpName) problems.push(`${code}: nameZh '${nameZh}' but kapaipai has no pack '${id}'`);
+          else if (ZH_NAME_OVERRIDES[id]) {
+            const o = ZH_NAME_OVERRIDES[id];
+            if (nameZh !== o.weSay) problems.push(`${code}: nameZh '${nameZh}' but the documented override says '${o.weSay}'`);
+            else if (kpName !== o.kapaipaiSays) {
+              problems.push(
+                `${code}: override assumes kapaipai reports '${o.kapaipaiSays}', but it now reports `
+                + `'${kpName}' — recheck and drop ZH_NAME_OVERRIDES.${id} if it matches`,
+              );
+            }
+          }
           else if (kpName !== nameZh) problems.push(`${code}: nameZh '${nameZh}' but kapaipai says '${kpName}'`);
           else if (twById.has(id)) {
             problems.push(`${code}: TCGdex now has a zh-tw record — drop it from ZH_VIA_KAPAIPAI`);

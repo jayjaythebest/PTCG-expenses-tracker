@@ -8,7 +8,7 @@ import { PTCG_PRODUCTS } from '../data/ptcg-products';
 import { generateWeeklySummary } from '../lib/gemini';
 
 const CODE_NAME_MAP: Record<string, string> = Object.fromEntries(
-  Array.from(new Map(PTCG_PRODUCTS.map(p => [p.code, p.name])).entries())
+  Array.from(new Map(PTCG_PRODUCTS.map(p => [p.code, p.nameZh ?? p.name])).entries())
 );
 
 type Period = 'month' | 'quarter' | 'year' | 'all';

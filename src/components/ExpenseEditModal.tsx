@@ -41,7 +41,7 @@ export function ExpenseEditModal({ expense, onClose }: Props) {
   );
   const codeGroups = uniqueCodeProducts.reduce<Record<string, { code: string; name: string }[]>>((acc, p) => {
     if (!acc[p.series]) acc[p.series] = [];
-    acc[p.series].push({ code: p.code, name: p.name });
+    acc[p.series].push({ code: p.code, name: p.nameZh ? `${p.nameZh}／${p.name}` : p.name });
     return acc;
   }, {});
 
