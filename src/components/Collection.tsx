@@ -341,6 +341,33 @@ export function Collection() {
     setRefreshDone(ok);
   };
 
+  // Price anything that has never been priced, as soon as the gallery loads.
+  // Otherwise a row whose first lookup had nothing to go on — a box added
+  // before its Snkrdunk id was mapped, a card saved under the wrong set and
+  // fixed later — sits blank until someone thinks to press 更新價格, or until
+  // the nightly cron. Only rows with no price AND no fetch timestamp: a failed
+  // lookup writes nothing, so the session set stops those retrying on every
+  // render.
+  const [autoPriced] = useState(() => new Set<string>());
+  useEffect(() => {
+    if (IS_DEMO || loading || refreshing) return;
+    const todo = allItems.filter(i =>
+      i.marketPrice == null && !i.marketPriceUpdatedAt && !autoPriced.has(i.id)
+      && (i.itemType === 'single' || boxIdOf(i) != null));
+    if (todo.length === 0) return;
+    todo.forEach(i => autoPriced.add(i.id));
+    (async () => {
+      for (const item of todo) {
+        try {
+          await repriceOne(item);
+        } catch (err) {
+          console.error('auto price failed for', item.name, err);
+        }
+      }
+    })();
+    // repriceOne/boxIdOf are recreated every render; the item list is the trigger.
+  }, [allItems, loading, refreshing]);
+
   // Resolve the live market price for a single card so a newly added row shows
   // its current value immediately (previously ONLY the "更新價格" button did
   // this, so freshly added cards had a blank estimate). Non-singles and lookup
