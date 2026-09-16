@@ -9,7 +9,7 @@ import { motion } from 'motion/react';
 import { CollectionItemType, CollectionCondition, CardEdition, GradingCompany } from '../../types';
 import { cn } from '../../lib/utils';
 import { recognizeCardFromPhoto } from '../../lib/gemini';
-import { lookupCard, lookupTwCard, lookupSetImage, lookupTwCardImage, lookupJpCardImage } from '../../lib/tcgdex';
+import { lookupCard, lookupTwCard, lookupSetImage, lookupBoxImage, lookupTwCardImage, lookupJpCardImage } from '../../lib/tcgdex';
 import { scanCardNumber } from '../../lib/cardNumber';
 import { X, Check, Camera, Loader2, Sparkles, ImagePlus, ImageOff, RefreshCw } from 'lucide-react';
 import {
@@ -62,10 +62,13 @@ function CollectionForm({
     setImgMsg(null);
     setFetchingImg(true);
     try {
-      const result = await lookupSetImage(code, editionToLang(edition));
+      // A box stores its own product photo (Japanese packaging for a ja box);
+      // anything else gets the set-level image.
+      const boxUrl = form.itemType === 'box' ? await lookupBoxImage(code, editionToLang(edition)) : null;
+      const result = boxUrl ? { imageUrl: boxUrl, kind: 'product' as const } : await lookupSetImage(code, editionToLang(edition));
       if (result) {
         setForm(f => ({ ...f, imageUrl: result.imageUrl }));
-        setImgMsg(result.kind === 'logo' ? '已帶入系列 logo' : '已帶入該系列代表卡圖');
+        setImgMsg(result.kind === 'logo' ? '已帶入系列 logo' : result.kind === 'product' ? '已帶入商品圖' : '已帶入該系列代表卡圖');
       } else {
         setImgMsg('查無此系列圖片，可手動貼上圖片網址');
       }

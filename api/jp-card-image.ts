@@ -18,6 +18,12 @@ import { fetchWithTimeout } from '../src/lib/fetchTimeout.js';
 // the image URL. The image files themselves hotlink freely from an <img> tag.
 //
 //   GET /api/jp-card-image?set=M5&number=117  → { imageUrl, source }
+//   GET /api/jp-card-image?apparel=806644      → { imageUrl, source }
+//
+// The `apparel` form returns a SNKRDUNK product's own photo by its id — used for
+// Japanese sealed boxes, whose ids are curated in src/data/ptcg-boxes.ts. The TW
+// site's pack art is the only other product photo we have, and it shows the
+// Traditional-Chinese packaging.
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36';
 const LIMITLESS_CDN = 'https://limitlesstcg.nyc3.cdn.digitaloceanspaces.com/tpc';
@@ -46,6 +52,20 @@ async function snkrdunkImage(set: string, num: number): Promise<string | null> {
   return null;
 }
 
+async function snkrdunkApparelImage(id: string): Promise<string | null> {
+  try {
+    const res = await fetchWithTimeout(`https://snkrdunk.com/v1/apparels/${id}`, {
+      headers: { 'User-Agent': UA, Accept: 'application/json' },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const url = data?.primaryMedia?.imageUrl;
+    return typeof url === 'string' && url ? url : null;
+  } catch {
+    return null;
+  }
+}
+
 async function limitlessImage(set: string, num: number): Promise<string | null> {
   // Spaces returns 200 when the object exists, 403 when it doesn't.
   const url = `${LIMITLESS_CDN}/${set}/${set}_${num}_R_JP.png`;
@@ -68,6 +88,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   // Resolved image URLs are stable enough — cache hard at the edge and browser.
   res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=604800');
+
+  const apparel = String(req.query.apparel ?? '').trim();
+  if (apparel) {
+    if (!/^\d{1,10}$/.test(apparel)) return res.status(400).json({ imageUrl: null, error: 'bad apparel id' });
+    const url = await snkrdunkApparelImage(apparel);
+    return res.status(200).json({ imageUrl: url, source: url ? 'snkrdunk' : null });
+  }
 
   if (!set || !Number.isFinite(num) || num <= 0) {
     return res.status(400).json({ imageUrl: null, error: 'missing set/number' });

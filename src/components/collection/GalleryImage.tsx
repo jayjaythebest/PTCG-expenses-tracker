@@ -5,7 +5,7 @@
 import { useState, useEffect } from 'react';
 import { CollectionItem } from '../../types';
 import { cn } from '../../lib/utils';
-import { lookupCard, lookupSetImage, lookupTwCardImage, lookupJpCardImage, resolveJaSetCode, jpCardImageUrl } from '../../lib/tcgdex';
+import { lookupCard, lookupSetImage, lookupBoxImage, lookupTwCardImage, lookupJpCardImage, resolveJaSetCode, jpCardImageUrl } from '../../lib/tcgdex';
 import { SET_CODE_BY_NAME, collectorNo, editionToLang, ItemTypeIcon } from './constants';
 
 // SNKRDUNK's background-removed scans are 1000x730 landscape canvases with the
@@ -16,6 +16,12 @@ import { SET_CODE_BY_NAME, collectorNo, editionToLang, ItemTypeIcon } from './co
 // its top and bottom by the same few percent as the other sources.
 const SNKRDUNK_BG_REMOVED = 'cdn.snkrdunk.com/upload_bg_removed/';
 const SNKRDUNK_CARD_ZOOM = 1.26;
+
+// Their sealed-box photos sit on the same padded canvases, letterboxed here, so
+// the box would fill barely half the tile. Measured box extents: on 1000x730
+// canvases ~520 wide (a tall high-class box ~350), on 1000x1000 ones ~700. The
+// zoom is picked from the loaded canvas shape so either lands near full width.
+const snkrdunkBoxZoom = (w: number, h: number): number => (w / h > 1.2 ? 1.75 : 1.3);
 
 // Hosts that only ever serve Japanese card art.
 const JA_ART_HOSTS = ['cdn.snkrdunk.com', 'limitlesstcg.nyc3.cdn.digitaloceanspaces.com', 'assets.tcgdex.net/ja/'];
@@ -29,6 +35,7 @@ export function GalleryImage({ item }: { item: CollectionItem }) {
   // letterboxed (object-contain) so their wide artwork isn't cropped.
   const [candidates, setCandidates] = useState<{ url: string; cover: boolean }[]>([]);
   const [idx, setIdx] = useState(0);
+  const [natural, setNatural] = useState<{ w: number; h: number } | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -83,9 +90,10 @@ export function GalleryImage({ item }: { item: CollectionItem }) {
         return out;
       }
 
-      // Boxes (incl. legacy 'pack'): prefer official set art, then stored logo —
-      // both letterboxed (box/logo art is wide and shouldn't be cropped).
-      if (sc) push((await lookupSetImage(sc, lang))?.imageUrl, false);
+      // Boxes (incl. legacy 'pack'): the box's own photo in its language when we
+      // have one, else official set art, then the stored image — all letterboxed
+      // (box/logo art is wide and shouldn't be cropped).
+      if (sc) push(await lookupBoxImage(sc, lang), false);
       push(storedUsable, false);
       return out;
     };
@@ -105,7 +113,11 @@ export function GalleryImage({ item }: { item: CollectionItem }) {
       </div>
     );
   }
-  const zoom = cand.cover && cand.url.includes(SNKRDUNK_BG_REMOVED);
+  const snkrdunk = cand.url.includes(SNKRDUNK_BG_REMOVED);
+  const zoom = !snkrdunk ? null
+    : cand.cover ? SNKRDUNK_CARD_ZOOM
+    : natural ? snkrdunkBoxZoom(natural.w, natural.h)
+    : null;
   return (
     <div className="w-full h-full overflow-hidden">
       <img
@@ -113,7 +125,8 @@ export function GalleryImage({ item }: { item: CollectionItem }) {
         alt={item.name}
         referrerPolicy="no-referrer"
         onError={() => setIdx(i => i + 1)}
-        style={zoom ? { transform: `scale(${SNKRDUNK_CARD_ZOOM})` } : undefined}
+        onLoad={e => setNatural({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
+        style={zoom ? { transform: `scale(${zoom})` } : undefined}
         className={cn(
           'w-full h-full',
           cand.cover ? 'object-cover' : 'object-contain p-2',

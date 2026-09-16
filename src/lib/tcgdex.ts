@@ -1,4 +1,5 @@
 import { PTCG_PRODUCTS } from '../data/ptcg-products';
+import { boxSnkrdunkId } from '../data/ptcg-boxes';
 import type { CardEdition } from '../types';
 import { apiFetch } from './apiFetch';
 // TCGdex / Bulbagarden are third-party hosts read while the gallery renders.
@@ -424,6 +425,29 @@ export async function lookupJpCardImage(setCode: string, cardNumber: number | st
   }
   jpCardImageCache.set(key, url);
   return url;
+}
+
+// Picture for a sealed box. A Japanese box with a curated SNKRDUNK id gets that
+// product's own photo — the Japanese packaging. Everything else falls back to
+// the set image below, whose first choice is the TW site's (Chinese) pack art.
+const boxImageCache = new Map<string, string | null>();
+export async function lookupBoxImage(setCode: string, language: ScanLanguage = 'ja'): Promise<string | null> {
+  const id = boxSnkrdunkId(setCode, language);
+  if (id != null) {
+    let url = boxImageCache.get(String(id));
+    if (url === undefined) {
+      try {
+        const res = await apiFetch(`/api/jp-card-image?apparel=${id}`);
+        const data = res.ok ? await res.json() : null;
+        url = typeof data?.imageUrl === 'string' && data.imageUrl ? data.imageUrl : null;
+      } catch {
+        url = null;
+      }
+      boxImageCache.set(String(id), url);
+    }
+    if (url) return url;
+  }
+  return (await lookupSetImage(setCode, language))?.imageUrl ?? null;
 }
 
 // Resolved images are cached per set code (case-insensitive) for the session so
