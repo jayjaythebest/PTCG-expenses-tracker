@@ -79,6 +79,7 @@ let jaSetNameToCodeCache: { at: number; map: Map<string, string[]> } | null = nu
 let kpPackListCache: { at: number; nameToId: Map<string, string>; idToId: Map<string, string> } | null = null;
 let tdZhSetsCache: { at: number; nameToId: Map<string, string> } | null = null;
 const kpPackDetailCache = new Map<string, { at: number; rows: KpCardRow[] }>();
+const kpSalePriceCache = new Map<string, { at: number; price: number | null }>();
 
 // Every source read in this module goes through here, so the timeout applies
 // to all of them: Huca, kapaipai, Snkrdunk and TCGdex are other people's
@@ -569,6 +570,78 @@ export function normNum(s: string): string {
   return digits ?? t.toUpperCase();
 }
 
+// Mean of the middle half: sort, drop the lowest and highest 25%, average the
+// rest. kapaipai's sale prices carry junk at both ends (1-dollar placeholders,
+// 9999999 "not really for sale" listings that still got marked sold), which a
+// plain mean can't survive. Under four values there's nothing to trim, so the
+// median stands in.
+export function trimmedMean(values: number[]): number | null {
+  const v = values.filter(n => Number.isFinite(n) && n > 0).sort((a, b) => a - b);
+  const n = v.length;
+  if (n === 0) return null;
+  if (n < 4) return Math.round(n % 2 ? v[(n - 1) / 2] : (v[n / 2 - 1] + v[n / 2]) / 2);
+  const cut = Math.floor(n / 4);
+  const mid = v.slice(cut, n - cut);
+  return Math.round(mid.reduce((s, x) => s + x, 0) / mid.length);
+}
+
+// One kapaipai listing, as /product/listProduct returns it (sold ones included).
+export interface KpListing {
+  productKey?: string;
+  packCardId?: string;
+  rare?: string;
+  price?: string | number;
+  condition?: string;   // 'perfect' | 'flawed' | 'other'
+  soldQuantity?: number;
+  sortTime?: string;    // last bump; the sale can only come after it
+}
+
+const KP_SALE_WINDOW_DAYS = 30;
+const KP_SALE_MIN_RECENT = 5;
+const KP_SALE_FALLBACK_COUNT = 10;
+
+// A card's market price from what it actually SOLD for, rather than kapaipai's
+// own averagePrice — which lags badly (M2a 240 read 4373 while its last ten
+// sales sat around 3200–3600). Only perfect-condition sales of this exact
+// printing count; the pack's sealed box and loose packs share packCardId 000P,
+// so `rare` has to match too. Uses the last 30 days when that holds enough
+// sales, else the ten most recent. Listings carry no sale timestamp —
+// updatedTime gets bulk-touched — so sortTime, the last bump, dates the sale.
+export function kpSalePrice(listings: KpListing[], row: KpCardRow, now = Date.now()): number | null {
+  const rares = row.rare ?? [];
+  const sold = listings
+    .filter(l =>
+      (l.soldQuantity ?? 0) > 0
+      && l.condition === 'perfect'
+      && (!l.productKey || l.productKey === row.cardGlobalKey)
+      && l.packCardId === row.packCardId
+      && (rares.length === 0 || rares.includes(l.rare ?? '')))
+    .map(l => ({ price: Number(l.price), at: Date.parse(l.sortTime ?? '') }))
+    .filter(x => Number.isFinite(x.price) && x.price > 0 && Number.isFinite(x.at))
+    .sort((a, b) => b.at - a.at);
+  const since = now - KP_SALE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+  const recent = sold.filter(x => x.at >= since);
+  const use = recent.length >= KP_SALE_MIN_RECENT ? recent : sold.slice(0, KP_SALE_FALLBACK_COUNT);
+  return trimmedMean(use.map(x => x.price));
+}
+
+async function getKpSalePrice(packId: string, row: KpCardRow): Promise<number | null> {
+  const key = `${row.cardGlobalKey}|${packId}|${row.packCardId}|${(row.rare ?? []).join(',')}`;
+  const hit = kpSalePriceCache.get(key);
+  if (hit && Date.now() - hit.at < TTL_MS) return hit.price;
+  const params = new URLSearchParams({
+    game: 'pkmtw', cardKey: row.cardGlobalKey, packId, packCardId: row.packCardId, pageSize: '-1', page: '1',
+  });
+  const json = await fetchJson<{ data?: { products?: KpListing[] } }>(`${KP_API}/product/listProduct?${params}`);
+  // A failed fetch isn't cached, so the next refresh retries it.
+  if (!json?.data) return null;
+  const price = kpSalePrice(json.data.products ?? [], row);
+  kpSalePriceCache.set(key, { at: Date.now(), price });
+  return price;
+}
+
+// kapaipai's precomputed figures — the fallback when a card has no sales to
+// average (brand-new printings, very thin cards).
 function pickKpPrice(row: KpCardRow): number | null {
   if (Number.isFinite(row.averagePrice) && (row.averagePrice as number) > 0) {
     return Math.round(row.averagePrice as number);
@@ -732,7 +805,7 @@ async function findKapaipaiByName(num: string, name: string): Promise<PriceResul
           r => normNum(rowLocalNumber(r, packId)) === target && nameKey(r.cardName) === wantKey,
         );
         if (!hit) return null;
-        const price = pickKpPrice(hit);
+        const price = (await getKpSalePrice(packId, hit)) ?? pickKpPrice(hit);
         return price != null ? kpResult(packId, rowLocalNumber(hit, packId), price) : null;
       }),
     );
@@ -748,7 +821,10 @@ async function lookupKapaipai(setCode: string, setName: string, num: string, nam
   if (packId) {
     const rows = await getKpPackDetail(packId);
     const picked = pickKpRowForNumber(rows, packId, normNum(num), name);
-    if (picked) return kpResult(packId, picked.localNumber, picked.price);
+    if (picked) {
+      const price = (await getKpSalePrice(packId, picked.row)) ?? picked.price;
+      return kpResult(packId, picked.localNumber, price);
+    }
   }
   // 2) Fallback: the set didn't resolve, the number wasn't in that pack, or the
   //    card is filed under a different packId (secret rares). Search by name.

@@ -12,7 +12,10 @@ import {
   hucaTitleCardName,
   hucaTitleMatchesName,
   parseHucaTitle,
+  trimmedMean,
+  kpSalePrice,
   type KpCardRow,
+  type KpListing,
 } from './pricing';
 
 describe('extractNumber', () => {
@@ -288,5 +291,59 @@ describe('pickKpRowForNumber', () => {
   it('returns null when the only match has no usable price', () => {
     const rows = [row({ averagePrice: 0, lowestPrice: 0 })];
     expect(pickKpRowForNumber(rows, 'M2a', normNum('223'), '超級噴火龍Xex')).toBeNull();
+  });
+});
+
+describe('trimmedMean', () => {
+  it('drops the bottom and top quarter before averaging', () => {
+    // 8 values: cut 2 each side -> mean of 3000, 3100, 3200, 3300
+    expect(trimmedMean([1, 50, 3000, 3100, 3200, 3300, 9999, 9999999])).toBe(3150);
+  });
+  it('uses the median when there are too few values to trim', () => {
+    expect(trimmedMean([1, 3000, 9999999])).toBe(3000);
+    expect(trimmedMean([2000, 3000])).toBe(2500);
+  });
+  it('ignores zero, negative and non-numeric values', () => {
+    expect(trimmedMean([0, -5, NaN, 700])).toBe(700);
+    expect(trimmedMean([])).toBeNull();
+  });
+});
+
+describe('kpSalePrice', () => {
+  const now = Date.parse('2026-09-17T00:00:00+08:00');
+  const daysAgo = (d: number) => new Date(now - d * 86400000).toISOString();
+  const row: KpCardRow = {
+    packId: 'M2a', packCardId: '240', cardGlobalKey: '超級耿鬼ex-350-影藏-空無強風', cardName: '超級耿鬼ex', rare: ['SAR'],
+  };
+  const sale = (price: number, ago: number, over: Partial<KpListing> = {}): KpListing => ({
+    productKey: row.cardGlobalKey, packCardId: '240', rare: 'SAR', price: String(price),
+    condition: 'perfect', soldQuantity: 1, sortTime: daysAgo(ago), ...over,
+  });
+
+  it('averages the middle half of the last 30 days of sales', () => {
+    const listings = [1, 3200, 3300, 3400, 3500, 3600, 3700, 12440].map((p, i) => sale(p, i + 1));
+    // 8 sales, drop 2 each side -> 3300, 3400, 3500, 3600
+    expect(kpSalePrice(listings, row, now)).toBe(3450);
+  });
+
+  it('ignores unsold, flawed, other-printing and other-variant listings', () => {
+    const listings = [
+      sale(3000, 1), sale(3000, 2), sale(3000, 3), sale(3000, 4), sale(3000, 5),
+      sale(99, 1, { soldQuantity: 0 }),
+      sale(99, 1, { condition: 'flawed' }),
+      sale(99, 1, { packCardId: '241' }),
+      sale(99, 1, { rare: 'SR' }),
+      sale(99, 1, { productKey: 'another-card' }),
+    ];
+    expect(kpSalePrice(listings, row, now)).toBe(3000);
+  });
+
+  it('falls back to the ten most recent sales when the window is thin', () => {
+    const old = Array.from({ length: 12 }, (_, i) => sale(i < 10 ? 4000 : 1000, 40 + i));
+    expect(kpSalePrice([sale(4000, 2), ...old], row, now)).toBe(4000);
+  });
+
+  it('returns null when nothing has sold', () => {
+    expect(kpSalePrice([sale(3000, 1, { soldQuantity: 0 })], row, now)).toBeNull();
   });
 });
