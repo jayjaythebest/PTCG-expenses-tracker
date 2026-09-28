@@ -1,7 +1,10 @@
+import { useState } from 'react';
 import { motion } from 'motion/react';
-import { X, Pencil, Trash2, TrendingUp, TrendingDown, Loader2, RefreshCw } from 'lucide-react';
+import { X, Pencil, Trash2, TrendingUp, TrendingDown, Loader2, RefreshCw, CalendarPlus, ChevronDown } from 'lucide-react';
 import { CollectionItem } from '../../types';
 import { cn, relativeTime } from '../../lib/utils';
+import type { AcquisitionLog as Log } from '../../lib/acquisitions';
+import { AcquisitionLog } from './AcquisitionLog';
 import {
   CONDITION_LABELS, EDITION_LABELS, GRADING_LABELS, setLabel, priceConditionLabel, ItemTypeBadge,
 } from './constants';
@@ -35,6 +38,8 @@ export function CardDetailModal({
   pricing,
   priceMsg,
   readOnly = false,
+  log,
+  onDeleteEntry,
 }: {
   item: CollectionItem;
   estTwd: number | null;
@@ -51,7 +56,13 @@ export function CardDetailModal({
   // it either writes, or spends the scraping quota through an endpoint that
   // answers 401 without a session.
   readOnly?: boolean;
+  // 入手紀錄 for this card. Absent = don't offer the section at all.
+  log?: Log;
+  onDeleteEntry?: (entryId: string, quantity: number) => void;
 }) {
+  // Collapsed by default: most cards arrived once, and the sheet is already
+  // taller than a phone screen before this is added to it.
+  const [showLog, setShowLog] = useState(false);
   const graded = item.isGraded
     ? `${item.gradingCompany ? GRADING_LABELS[item.gradingCompany] : '鑑定'}${item.grade ? ` ${item.grade}` : ''}`
     : null;
@@ -157,6 +168,31 @@ export function CardDetailModal({
             />
             <DetailRow label="備註" value={item.notes} />
           </div>
+
+          {/* 入手紀錄. 入手日 above says when the card first arrived; this says
+              when each batch did, which is the only place a ×4 built from two
+              separate purchases is legible. */}
+          {log && !readOnly && (
+            <div className="rounded-xl bg-white/5 border border-white/10 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setShowLog(v => !v)}
+                aria-expanded={showLog}
+                className="w-full flex items-center justify-between gap-2 px-4 py-3 hover:bg-white/5 transition-colors"
+              >
+                <span className="inline-flex items-center gap-1.5 text-[12px] font-black text-slate-200">
+                  <CalendarPlus className="w-4 h-4 text-poke-accent" /> 入手紀錄
+                  <span className="text-[11px] font-bold text-slate-500">{log.rows.length} 次</span>
+                </span>
+                <ChevronDown className={cn('w-4 h-4 text-slate-400 transition-transform', showLog && 'rotate-180')} />
+              </button>
+              {showLog && (
+                <div className="px-4 pb-4">
+                  <AcquisitionLog item={item} log={log} onDeleteEntry={onDeleteEntry} />
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Actions. Sticky: artwork + details is taller than the sheet on a

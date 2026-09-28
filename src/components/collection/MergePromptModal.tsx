@@ -72,9 +72,12 @@ export function MergePromptModal({
             ))}
           </div>
           {/* Merging only moves the quantity — say so, because the date and the
-              price of the row being merged into are the ones that survive. */}
+              price of the row being merged into are the ones that survive. The
+              date typed on this add isn't lost though: it becomes a line in the
+              card's 入手紀錄, which is the whole reason merging is safe here. */}
           <p className="text-[11px] text-slate-500 leading-relaxed">
             合併只會增加數量，保留現有那筆的入手日期與估價；這次填的其他欄位不會寫入。
+            這次的入手日期和數量會單獨記進「入手紀錄」，點卡片上的數量就看得到。
           </p>
           <div className="flex gap-2 pt-1">
             <button

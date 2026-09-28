@@ -20,6 +20,10 @@ export const ITEM_TYPE_LABELS: Record<CollectionItemType, string> = {
 export const displayType = (t: CollectionItemType | string): CollectionItemType =>
   t === 'single' ? 'single' : 'box';
 
+// The counting word for one copy — 「2 盒」 reads right where 「2 單卡」 does not.
+export const unitLabel = (t: CollectionItemType | string): string =>
+  displayType(t) === 'single' ? '張' : '盒';
+
 export const CONDITION_LABELS: Record<CollectionCondition, string> = {
   mint: 'Mint',
   nm: 'NM',

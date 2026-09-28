@@ -174,3 +174,54 @@ create index if not exists collection_price_history_date_idx
 alter table public.collection_price_history enable row level security;
 
 -- Policies live in auth_lockdown.sql — run that file after this one.
+
+-- ============================================================
+-- 入手紀錄 — one row per arrival.
+--
+-- collection_items.quantity says a shelf holds four boxes; it cannot say that
+-- two came in August and two in September. Adding a product the collection
+-- already holds merges into the existing row (see src/lib/mergeCandidates.ts),
+-- and before this table that merge threw the second purchase's date away: the
+-- quantity went 2 -> 4 and the row kept its original acquired_date.
+--
+-- The item's `quantity` stays the source of truth for every value calculation;
+-- this is the history beside it. The client reconciles the two out loud rather
+-- than silently (see logDrift in src/lib/acquisitions.ts), because `quantity`
+-- remains editable on its own.
+--
+-- Rows are cascade-deleted with the item, matching collection_price_history:
+-- a purged card takes its history with it. A SOFT-deleted card keeps both.
+-- Safe to run repeatedly.
+-- ============================================================
+create table if not exists public.collection_acquisitions (
+  id            uuid        primary key default gen_random_uuid(),
+  item_id       uuid        not null references public.collection_items(id) on delete cascade,
+  acquired_date date        not null,
+  quantity      integer     not null default 1 check (quantity > 0),
+  created_at    timestamptz not null default now()
+);
+
+-- Every read is "this card's arrivals, newest first".
+create index if not exists collection_acquisitions_item_idx
+  on public.collection_acquisitions (item_id, acquired_date desc);
+
+alter table public.collection_acquisitions enable row level security;
+
+-- Policies live in auth_lockdown.sql — run that file after this one.
+-- The demo build does NOT read this table: purchase dates are personal history
+-- and public.collection_public is the only anon-readable object by design.
+
+-- ------------------------------------------------------------
+-- Backfill: every card that predates this table describes exactly one arrival
+-- (its acquired_date, or the day the row was inserted). Materialise it, so the
+-- ledger starts from the card's real history instead of from the next purchase.
+--
+-- Guarded by `not exists`, so re-running never doubles a card's history. Runs
+-- for soft-deleted cards too: restoring one should restore its history with it.
+-- ------------------------------------------------------------
+insert into public.collection_acquisitions (item_id, acquired_date, quantity)
+select i.id, coalesce(i.acquired_date, i.created_at::date), greatest(i.quantity, 1)
+  from public.collection_items i
+ where not exists (
+   select 1 from public.collection_acquisitions a where a.item_id = i.id
+ );

@@ -142,7 +142,8 @@ export function DuplicateMergeModal({
               baseline and the price of the row that stays. */}
           <p className="text-[11px] text-slate-500 leading-relaxed">
             合併後保留最早入手的那筆，數量相加，估價按數量加權平均，市價取各筆之中最新抓到的
-            （手動填的優先）。其餘會移到「已刪除」，隨時可以還原。
+            （手動填的優先）。各筆的入手日期會併成一份「入手紀錄」，不會消失。
+            其餘會移到「已刪除」，隨時可以還原。
           </p>
         </div>
 

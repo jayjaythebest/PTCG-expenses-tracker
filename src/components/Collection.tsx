@@ -12,6 +12,8 @@ import { itemDay, matchesDateFilter, monthCounts, type DateFilter } from '../lib
 import { toTwd, estValue } from '../lib/collectionValue';
 import { fetchCardPrice, fetchFxJpyToTwd, type CardPrice } from '../lib/pricing';
 import { findMergeCandidates, findDuplicateGroups, planMerge } from '../lib/mergeCandidates';
+import { useAcquisitions } from '../lib/useAcquisitions';
+import { logFor, planFold } from '../lib/acquisitions';
 import { ConfirmDialog } from './ConfirmDialog';
 import { IS_DEMO } from '../lib/demo';
 // The gallery used to be one 2.5k-line file. Everything imported below is a pure
@@ -20,7 +22,7 @@ import { IS_DEMO } from '../lib/demo';
 // What stays here is the container — state, filtering, the grid, the actions.
 import {
   ITEM_TYPE_LABELS, CONDITION_LABELS, RARITY_OPTIONS, EDITION_LABELS, GRADING_LABELS,
-  displayType, SET_CODE_BY_NAME, priceConditionLabel, ItemTypeBadge,
+  displayType, SET_CODE_BY_NAME, priceConditionLabel, ItemTypeBadge, unitLabel,
 } from './collection/constants';
 import { EMPTY_FORM, todayISO, manualPriceFields, formToItem, itemToForm, formQuantity, type FormState } from './collection/formState';
 import { GalleryImage } from './collection/GalleryImage';
@@ -28,7 +30,8 @@ import { CollectionModal } from './collection/CollectionForm';
 import { MergePromptModal } from './collection/MergePromptModal';
 import { DuplicateMergeModal } from './collection/DuplicateMergeModal';
 import { CardDetailModal } from './collection/CardDetailModal';
-import { Plus, Trash2, Pencil, TrendingUp, TrendingDown, RefreshCw, Search, ArrowUp, ArrowDown, RotateCcw, ChevronDown, Layers } from 'lucide-react';
+import { AcquisitionLogModal } from './collection/AcquisitionLog';
+import { Plus, Trash2, Pencil, TrendingUp, TrendingDown, RefreshCw, Search, ArrowUp, ArrowDown, RotateCcw, ChevronDown, Layers, CalendarPlus } from 'lucide-react';
 
 type FilterType = 'all' | CollectionItemType;
 type SortKey = 'value' | 'pnl' | 'name' | 'date';
@@ -49,6 +52,13 @@ const SORT_KEYS = (Object.keys(SORT_LABELS) as SortKey[])
 
 export function Collection() {
   const { items: allItems, deletedItems: allDeletedItems, loading, addItem, updateItem, deleteItem, restoreItem, purgeItem } = useCollection();
+  // 入手紀錄: one row per arrival, so a repeat purchase folded into an existing
+  // card still says which day those copies turned up. Absent (migration not run,
+  // or the demo build) the gallery falls back to the item-derived log.
+  const {
+    byItem: acquisitions, addEntry: addAcquisition, addEntries: addAcquisitions,
+    updateEntry: updateAcquisition, deleteEntry: deleteAcquisition, moveEntries: moveAcquisitions,
+  } = useAcquisitions();
   // Whose collection is on screen. The account is shared, so this is a view
   // filter and nothing more — it decides which cards are listed, which total is
   // shown, and which tab a newly added card is filed under.
@@ -73,6 +83,8 @@ export function Collection() {
   const [showDupMerge, setShowDupMerge] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
+  // The card whose 入手紀錄 sheet is open, opened from the quantity badge on a tile.
+  const [logId, setLogId] = useState<string | null>(null);
   // Per-card price refresh, driven from the detail modal.
   const [pricingId, setPricingId] = useState<string | null>(null);
   const [priceMsg, setPriceMsg] = useState<{ ok: boolean; text: string } | null>(null);
@@ -113,6 +125,7 @@ export function Collection() {
   // Looked up from `items` (not held as a snapshot) so the modal re-renders with
   // the new price the moment a per-card refresh writes one.
   const detailItem = detailId ? (items.find(i => i.id === detailId) ?? null) : null;
+  const logItem = logId ? (items.find(i => i.id === logId) ?? null) : null;
 
   // Per-item value change (損益) in TWD: live market price vs. the user's
   // recorded estimate (現估價) — only defined when we have BOTH, otherwise null
@@ -408,6 +421,19 @@ export function Collection() {
     return item;
   };
 
+  // Append one arrival to a card's 入手紀錄. Best-effort on purpose: the ledger
+  // is a record kept BESIDE the quantity, never the thing the quantity is
+  // derived from, so a failed write here must not cost the user the card they
+  // just added or the merge they just confirmed. It says so and moves on.
+  const logArrival = async (itemId: string, date: string, quantity: number) => {
+    try {
+      await addAcquisition(itemId, { date, quantity });
+    } catch (err) {
+      console.error('入手紀錄寫入失敗', err);
+      setActionMsg('數量已更新，但入手紀錄沒有寫入');
+    }
+  };
+
   // The actual insert. Split out from handleAdd so the "已經有這個了" prompt can
   // run first and still reach it when the user chooses to keep the rows separate.
   const insertItem = async (f: FormState) => {
@@ -424,7 +450,11 @@ export function Collection() {
         : await withMarketPrice(base);
       // File it under the tab the user is looking at — that tab is the only
       // place they'll go looking for it afterwards.
-      await addItem({ ...toAdd, owner });
+      const id = await addItem({ ...toAdd, owner });
+      // First arrival. Recorded now so that a later repeat purchase merged into
+      // this row has something to sit next to, instead of the ledger starting
+      // halfway through the card's life.
+      await logArrival(id, toAdd.acquiredDate ?? todayISO(), toAdd.quantity);
       setMergeAsk(null);
       setShowAddForm(false);
     } catch (err) {
@@ -448,12 +478,24 @@ export function Collection() {
     await insertItem(f);
   };
 
-  // Fold the new copies into an existing row. Quantity only: the row keeps its
-  // own acquired date, estimate and market price, which is what the prompt says.
+  // Fold the new copies into an existing row. The row's own fields are left
+  // alone — its acquired date, estimate and market price all survive, which is
+  // what the prompt says. What the merge no longer throws away is WHEN this
+  // batch arrived: that becomes a line in the card's 入手紀錄, so ×2 + ×2 reads
+  // as two purchases on two days rather than an unexplained ×4.
   const handleMergeInto = async (target: CollectionItem, f: FormState) => {
     setSubmitting(true);
     try {
-      await updateItem(target.id, { quantity: target.quantity + formQuantity(f) });
+      const added = formQuantity(f);
+      await updateItem(target.id, { quantity: target.quantity + added });
+      // The row the copies were merged into may predate the ledger; without its
+      // own first arrival the panel would show only the new batch and imply the
+      // earlier copies came from nowhere.
+      const existing = logFor(target, acquisitions[target.id]);
+      if (existing.legacy && existing.rows[0].date) {
+        await logArrival(target.id, existing.rows[0].date, target.quantity);
+      }
+      await logArrival(target.id, f.acquiredDate || todayISO(), added);
       setMergeAsk(null);
       setShowAddForm(false);
     } catch (err) {
@@ -483,6 +525,17 @@ export function Collection() {
           ...(plan.currentValue != null ? { currentValue: plan.currentValue } : {}),
           ...plan.price,
         });
+        // The keeper now holds every copy in the group, so it must hold every
+        // arrival too — including the implied one from rows that never had a
+        // ledger of their own.
+        try {
+          const fold = planFold(g, plan.keep.id, acquisitions);
+          await moveAcquisitions(fold.move, plan.keep.id);
+          await addAcquisitions(plan.keep.id, fold.create);
+        } catch (err) {
+          console.error('入手紀錄合併失敗', err);
+          setActionMsg('數量已合併，但入手紀錄沒有併過去');
+        }
         for (const d of plan.drop) await deleteItem(d.id);
       }
       // A row the user had open may have just been merged away.
@@ -515,6 +568,22 @@ export function Collection() {
               marketPriceSource: undefined, marketPriceUpdatedAt: undefined, marketPriceCondition: undefined };
       }
       await updateItem(id, updates);
+      // A card whose whole history is one arrival should follow an edit to its
+      // 數量 or 入手日期 — otherwise the panel contradicts the tile the moment
+      // either is corrected. With two or more arrivals there is no way to know
+      // which one the edit meant, so they stay put and the drift is shown.
+      const log = prev && logFor(prev, acquisitions[id]);
+      if (log && !log.legacy && log.rows.length === 1) {
+        const only = log.rows[0];
+        const date = updates.acquiredDate ?? only.date;
+        if (date !== only.date || updates.quantity !== only.quantity) {
+          try {
+            await updateAcquisition(only.id, { date, quantity: updates.quantity });
+          } catch (err) {
+            console.error('入手紀錄同步失敗', err);
+          }
+        }
+      }
       setEditingId(null);
     } catch (err) {
       console.error(err);
@@ -539,6 +608,32 @@ export function Collection() {
       } catch (err) {
         console.error(err);
         setActionMsg('刪除失敗，請稍後再試');
+      }
+    },
+  });
+
+  // Removing one arrival takes its copies off the row with it — a ledger line
+  // and the quantity it contributed are the same fact recorded twice, so
+  // deleting one without the other is how the two drift apart. The last
+  // remaining arrival can't be deleted (the panel hides the button); that case
+  // is 刪除卡片.
+  const askDeleteEntry = (item: CollectionItem, entryId: string, quantity: number) => setConfirmAsk({
+    title: '刪除這筆入手紀錄？',
+    message: (
+      <>
+        「{item.name}」會少掉這次入手的 {quantity} {unitLabel(item.itemType)}，
+        數量從 ×{item.quantity} 變成 ×{Math.max(1, item.quantity - quantity)}。
+      </>
+    ),
+    confirmLabel: '刪除紀錄',
+    destructive: true,
+    run: async () => {
+      try {
+        await deleteAcquisition(entryId);
+        await updateItem(item.id, { quantity: Math.max(1, item.quantity - quantity) });
+      } catch (err) {
+        console.error(err);
+        setActionMsg('刪除入手紀錄失敗，請稍後再試');
       }
     },
   });
@@ -981,6 +1076,9 @@ export function Collection() {
             const diff = pnl?.diff ?? null;
             const diffPct = pnl?.pct ?? null;
             const acquired = item.acquiredDate || null;
+            // The arrivals behind this tile's quantity. Falls back to the one
+            // the item itself implies when nothing is recorded yet.
+            const log = logFor(item, acquisitions[item.id]);
             return (
               <motion.div
                 key={item.id}
@@ -1015,11 +1113,29 @@ export function Collection() {
                     )}
                   </div>
 
-                  {/* Quantity */}
-                  {item.quantity > 1 && (
-                    <span className="pointer-events-none absolute bottom-1.5 left-1.5 z-[2] text-[10px] font-black text-white bg-slate-800/70 px-1.5 py-0.5 rounded-full">
-                      ×{item.quantity}
-                    </span>
+                  {/* Quantity. Once there is history worth opening it doubles as
+                      the way in to 入手紀錄 — the badge can say ×4 but not that
+                      two of those arrived in August and two in September. */}
+                  {(item.quantity > 1 || log.rows.length > 1) && (
+                    IS_DEMO ? (
+                      <span className="pointer-events-none absolute bottom-1.5 left-1.5 z-[2] text-[10px] font-black text-white bg-slate-800/70 px-1.5 py-0.5 rounded-full">
+                        ×{item.quantity}
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setLogId(item.id)}
+                        title="入手紀錄"
+                        aria-label={`${item.name} 的入手紀錄`}
+                        className="absolute bottom-1.5 left-1.5 z-[2] inline-flex items-center gap-1 text-[10px] font-black text-white bg-slate-800/80 hover:bg-slate-700 px-1.5 py-0.5 rounded-full shadow-sm transition-colors"
+                      >
+                        <CalendarPlus className="w-3 h-3 text-poke-accent" />
+                        ×{item.quantity}
+                        {log.rows.length > 1 && (
+                          <span className="text-slate-400 font-bold">· {log.rows.length} 次</span>
+                        )}
+                      </button>
+                    )
                   )}
 
                   {/* Actions (always visible so they work on touch/mobile too) */}
@@ -1234,6 +1350,21 @@ export function Collection() {
             onEdit={() => { setEditingId(detailItem.id); setShowAddForm(false); }}
             onDelete={() => askDelete(detailItem)}
             onClose={() => { setDetailId(null); setPriceMsg(null); }}
+            log={logFor(detailItem, acquisitions[detailItem.id])}
+            onDeleteEntry={(entryId, quantity) => askDeleteEntry(detailItem, entryId, quantity)}
+          />
+        )}
+        {/* 入手紀錄 on its own, opened from a tile's quantity badge. Hidden
+            behind the detail sheet when both would be open, so the two never
+            stack. */}
+        {logItem && !detailItem && !editingItem && (
+          <AcquisitionLogModal
+            key={logItem.id}
+            item={logItem}
+            log={logFor(logItem, acquisitions[logItem.id])}
+            onDeleteEntry={IS_DEMO ? undefined : (entryId, quantity) => askDeleteEntry(logItem, entryId, quantity)}
+            busy={confirmBusy}
+            onClose={() => setLogId(null)}
           />
         )}
         {confirmAsk && (
