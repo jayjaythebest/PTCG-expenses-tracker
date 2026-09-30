@@ -95,18 +95,38 @@ async function findImageIdByNumber(set: string, target: number): Promise<number 
   return null;
 }
 
+// Locale / section markers that pad a product filename around the expansion
+// code. Everything else in the name is the code or a shape word after it.
+const FILENAME_MARKERS = new Set(['twhk', 'tw', 'hk', 'news']);
+
+// Expansion code printed in a product image's filename. Two naming shapes are
+// live on the landing page at once:
+//   M5_pillow_img_TWHK.png, MBD_PKG_img.png  → M5, MBD   (code first)
+//   twhk_mf_pkg.png, twhk_news_SVQP_pkg.png  → MF, SVQP  (2026 naming)
+// Reading segment 0 blindly filed every twhk_* product under "TWHK", so the
+// codes in that second shape had no pack photo at all — which is how the 30th
+// CELEBRATION 頂級牌組組合 (twhk_mf_pkg.png) fell through to the representative
+// fallback below and showed MF's first card, a 熱帶龍 common, as the deck set.
+export function productCodeFromFile(file: string): string | null {
+  const code = file
+    .replace(/\.png$/i, '')
+    .split('_')
+    .find(seg => seg && !FILENAME_MARKERS.has(seg.toLowerCase()));
+  return code ? code.toUpperCase() : null;
+}
+
 // Map of expansion code → product/pack image URL, scraped once from the
-// card-search landing page (filenames start with the code, e.g. M5_pillow_...).
+// card-search landing page.
 async function getProductMap(): Promise<Map<string, string>> {
   if (productMap) return productMap;
   const map = new Map<string, string>();
   const html = await fetchText(`${BASE}/tw/card-search/`);
   if (html) {
-    const re = /card-img\/products\/([A-Za-z0-9]+)_[^"'\s]*\.png/gi;
+    const re = /card-img\/products\/([A-Za-z0-9_-]+\.png)/gi;
     let m: RegExpExecArray | null;
     while ((m = re.exec(html))) {
-      const code = m[1].toUpperCase();
-      if (!map.has(code)) map.set(code, `${BASE}/tw/card-img/products/${m[0].split('/').pop()}`);
+      const code = productCodeFromFile(m[1]);
+      if (code && !map.has(code)) map.set(code, `${BASE}/tw/card-img/products/${m[1]}`);
     }
   }
   productMap = map;
