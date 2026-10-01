@@ -1,4 +1,5 @@
-// Snkrdunk product ids for sealed JAPANESE booster boxes, keyed by the PTCG set
+// Snkrdunk product ids for the sealed JAPANESE products a row logs as a box
+// (booster boxes, and a deck set that is a whole set of its own), keyed by the PTCG set
 // code (see PTCG_PRODUCTS.code). Snkrdunk exposes a public JSON API
 // (`/v1/apparels/{id}`) whose `usedMinPrice` / `minPrice` give a real sealed-box
 // price that updates daily — the same feed Huca's box pages (huca.tw/?mode=box,
@@ -9,9 +10,13 @@
 // keep the user's manual estimate. zh-tw / en boxes are not auto-priced yet (no
 // free source), so they always fall back to the manual estimate.
 //
-// IDs below are the STANDARD booster box (拡張パック「…」ボックス) — deliberately
-// NOT single packs (パック), starter/commemorative decks, attaché-case sets, or
-// Pokémon-Center special boxes, which price very differently.
+// The id must be the one sealed product its SET CODE names, because the lookup
+// has nothing finer than the code to go on. For a booster set that means the
+// STANDARD box (拡張パック「…」ボックス) and deliberately NOT the single pack
+// (パック), the attaché-case set, or a special box — M6a alone ships a Box
+// (881421), a Pack (881422) and the FUTURISTIC BOX (881424) at ¥25,400 / ¥1,000
+// / ¥63,800, and all three would answer to `m6a`. A code that names exactly one
+// product, like the MF deck set, has no such ambiguity and maps to that product.
 //
 // To add a box: open its Huca box page (huca.tw/?mode=box), grab the Snkrdunk
 // product id it links to, and map it from the set code below.
@@ -26,6 +31,10 @@ const SNKRDUNK_BOX_ID_JA: Record<string, number> = {
   m5: 806644, // アビスアイ
   m6: 846048, // ストームエメラルダ
   m6a: 881421, // 30th CELEBRATION
+  // Not a booster box: MF is the 構築デッキ「30th CELEBRATION プレミアムデッキセット
+  // エーフィ・ブラッキー」, Snkrdunk's `pkmn-tcg-MF-PD`. It is the only sealed
+  // product filed under MF, so the code resolves it unambiguously.
+  MF: 881423,
   // ── スカーレット＆バイオレット ──
   sv2a: 118914, // ポケモンカード151
   sv6: 224649, // ナイトワンダラー
