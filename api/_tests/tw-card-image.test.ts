@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { productCodeFromFile } from './tw-card-image';
+import { productCodeFromFile } from '../tw-card-image';
 
 describe('productCodeFromFile', () => {
   it('reads the code-first filenames', () => {

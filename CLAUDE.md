@@ -112,6 +112,7 @@ npm run dev     # vite on :3000, host 0.0.0.0
 - `GEMINI_API_KEY` is read at build time by Vite (`define`). Changing the key requires a **redeploy**, not just a config update.
 - `NOTIFY_EMAIL_TO` (optional) is where the cron emails go — the weekly summary and the new-set alert both read it via `notifyEmailTo()` in `api/_lib/env.ts`. Unset, it falls back to the address that used to be hardcoded, so leaving it out changes nothing.
 - Image upload limit is **5 MB** (raised from earlier default). If changing, update both the client-side validation and the Supabase Storage policy.
+- Vercel's Hobby plan allows **12 serverless functions per deployment**, and it counts every `.ts` under `api/` — a test file included. There are 11 endpoints, so there is exactly one slot free. Tests for `api/` modules therefore live in `api/_tests/`: a `_` prefix is the one thing that stops Vercel treating a path as a function (it is also why `api/_lib/` works). A test dropped next to the endpoint it covers fails the build with `No more than 12 Serverless Functions…`, which reads like a quota problem and isn't — `api/tw-card.test.ts` had silently taken the last slot, so the next one added broke two deploys in a row (2026-09-30).
 
 ## Do NOT
 - Do **not** reintroduce Firebase. The project was migrated off Firebase → Supabase and the last Firebase config files have been deleted.

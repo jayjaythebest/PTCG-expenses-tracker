@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { nameMatches } from './tw-card';
+import { nameMatches } from '../tw-card';
 
 describe('nameMatches', () => {
   it('rejects a same-number-different-card collision', () => {
