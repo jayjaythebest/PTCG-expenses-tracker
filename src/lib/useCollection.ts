@@ -83,9 +83,11 @@ export function useCollection() {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  const addItem = async (item: CollectionInput) => {
+  // Returns the new row's id so the caller can hang related rows off it —
+  // the 入手紀錄 entry for this first arrival (see useAcquisitions).
+  const addItem = async (item: CollectionInput): Promise<string> => {
     if (IS_DEMO) readOnly();
-    const { error } = await supabase.from('collection_items').insert({
+    const { data, error } = await supabase.from('collection_items').insert({
       name:           item.name,
       set_name:       item.setName,
       series:         item.series,
@@ -113,8 +115,9 @@ export function useCollection() {
       // than being forced here, so a caller that doesn't know about owners
       // still files cards under the account holder.
       ...(item.owner ? { owner: item.owner } : {}),
-    });
+    }).select('id').single();
     if (error) throw error;
+    return data.id as string;
   };
 
   const updateItem = async (id: string, updates: Partial<CollectionInput>) => {

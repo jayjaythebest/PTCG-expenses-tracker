@@ -63,6 +63,7 @@ alter table public.expenses                   enable row level security;
 alter table public.collection_items           enable row level security;
 alter table public.collection_value_snapshots enable row level security;
 alter table public.collection_price_history   enable row level security;
+alter table public.collection_acquisitions    enable row level security;
 
 drop policy if exists "Allow all operations"                            on public.expenses;
 drop policy if exists "Allow all operations on collection_items"        on public.collection_items;
@@ -89,6 +90,12 @@ create policy "Allowed users manage collection_value_snapshots"
 drop policy if exists "Allowed users manage collection_price_history" on public.collection_price_history;
 create policy "Allowed users manage collection_price_history"
   on public.collection_price_history for all to authenticated
+  using (public.is_allowed_user())
+  with check (public.is_allowed_user());
+
+drop policy if exists "Allowed users manage collection_acquisitions" on public.collection_acquisitions;
+create policy "Allowed users manage collection_acquisitions"
+  on public.collection_acquisitions for all to authenticated
   using (public.is_allowed_user())
   with check (public.is_allowed_user());
 

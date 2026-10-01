@@ -30,6 +30,7 @@ src/
       CardDetailModal.tsx #   tap-a-card detail sheet
       GalleryImage.tsx    #   tile artwork with its fallback chain
       MergePromptModal.tsx#   "already in the collection — merge?" prompt
+      AcquisitionLog.tsx  #   入手紀錄 — the arrivals behind one row's quantity
   lib/
     supabase.ts           # Supabase client (current source of truth)
     useExpenses.ts        # Data hook
@@ -37,6 +38,8 @@ src/
     apiFetch.ts           # fetch wrapper that attaches the session JWT to /api calls
     fetchTimeout.ts       # fetchWithTimeout — every external request must use it
     collectionValue.ts    # toTwd / estValue / P&L — the one place value math lives
+    acquisitions.ts       # 入手紀錄 — the per-arrival ledger beside quantity
+    useAcquisitions.ts    # its data hook (degrades to a derived log if unmigrated)
     demo.ts               # IS_DEMO / COLLECTION_SOURCE — the public read-only build
     utils.ts              # clsx/tw-merge helpers, relativeTime
   types.ts
@@ -47,6 +50,15 @@ supabase/
 DEMO.md                   # how the public read-only demo is built + deployed
 .github/workflows/ci.yml  # lint + test + build on every push / PR
 ```
+
+Buying more of something the collection already holds merges into the existing
+row rather than adding a second one, so `collection_items.quantity` alone can't
+say that two boxes came in August and two in September. `collection_acquisitions`
+records one row per arrival; `quantity` stays the source of truth for all value
+math and the two are reconciled out loud (`logDrift`), never silently. A card
+with no entries — anything predating the table — falls back to the single
+arrival its `acquired_date` implies, so the feature degrades instead of breaking
+when the migration hasn't been run. The demo build does not read this table.
 
 Receipts are stored in Supabase Storage; rows in the expenses table reference the storage path. The "add photo later" flow means an expense row can exist without a photo and be patched afterward — never assume the photo field is present.
 
