@@ -20,7 +20,8 @@ import { IS_DEMO } from '../lib/demo';
 // What stays here is the container — state, filtering, the grid, the actions.
 import {
   ITEM_TYPE_LABELS, CONDITION_LABELS, RARITY_OPTIONS, EDITION_LABELS, GRADING_LABELS,
-  displayType, SET_CODE_BY_NAME, priceConditionLabel, ItemTypeBadge,
+  displayType, SET_CODE_BY_NAME, SERIES_OPTIONS, SERIES_BY_SET_NAME, seriesLabel, priceConditionLabel,
+  ItemTypeBadge,
 } from './collection/constants';
 import { EMPTY_FORM, todayISO, manualPriceFields, formToItem, itemToForm, formQuantity, type FormState } from './collection/formState';
 import { GalleryImage } from './collection/GalleryImage';
@@ -34,6 +35,12 @@ type FilterType = 'all' | CollectionItemType;
 type SortKey = 'value' | 'pnl' | 'name' | 'date';
 type SortDir = 'desc' | 'asc';
 type GradedFilter = 'all' | 'graded' | 'raw';
+
+// The 產品世代 a row belongs to. Rows whose set isn't in the catalog (hand-typed
+// names, sets not added yet) all group under one bucket rather than vanishing
+// from the filter.
+const OTHER_SERIES = '其他';
+const seriesOf = (i: { setName: string }): string => SERIES_BY_SET_NAME[i.setName] ?? OTHER_SERIES;
 
 const SORT_LABELS: Record<SortKey, string> = {
   value: '現估市值',
@@ -59,6 +66,7 @@ export function Collection() {
   const [sortKey, setSortKey] = useState<SortKey>('value');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [fEdition, setFEdition] = useState<'all' | CardEdition>('all');
+  const [fSeries, setFSeries] = useState<'all' | string>('all');
   const [fRarity, setFRarity] = useState<'all' | string>('all');
   const [fGraded, setFGraded] = useState<GradedFilter>('all');
   const [fCondition, setFCondition] = useState<'all' | CollectionCondition>('all');
@@ -146,6 +154,15 @@ export function Collection() {
 
   const monthsPresent = useMemo(() => monthCounts(items.map(itemDay)), [items]);
 
+  // 產品世代 options, built from what's actually in the collection (in catalog
+  // order, newest series first) so the dropdown never offers an empty filter.
+  const seriesPresent = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const i of items) counts.set(seriesOf(i), (counts.get(seriesOf(i)) ?? 0) + 1);
+    const ordered = [...SERIES_OPTIONS, OTHER_SERIES].filter(s => counts.has(s));
+    return ordered.map(s => ({ series: s, count: counts.get(s) as number }));
+  }, [items]);
+
   // Filter → sort pipeline. Filters stack (type, edition, rarity, graded,
   // condition, free-text query); sort value depends on sortKey, all normalised
   // to TWD so JPY/TWD cards compare fairly. Missing values sort to 0.
@@ -154,6 +171,7 @@ export function Collection() {
     const rows = items.filter(i => {
       if (filterType !== 'all' && displayType(i.itemType) !== filterType) return false;
       if (fEdition !== 'all' && i.edition !== fEdition) return false;
+      if (fSeries !== 'all' && seriesOf(i) !== fSeries) return false;
       if (fRarity !== 'all' && i.rarity !== fRarity) return false;
       if (fGraded === 'graded' && !i.isGraded) return false;
       if (fGraded === 'raw' && i.isGraded) return false;
@@ -187,9 +205,9 @@ export function Collection() {
 
     rows.sort((a, b) => sortDir === 'asc' ? cmp(a, b) : -cmp(a, b));
     return rows;
-  }, [items, filterType, fEdition, fRarity, fGraded, fCondition, fPrice, fDate, query, sortKey, sortDir, fxRate]);
+  }, [items, filterType, fEdition, fSeries, fRarity, fGraded, fCondition, fPrice, fDate, query, sortKey, sortDir, fxRate]);
 
-  const filtersActive = filterType !== 'all' || fEdition !== 'all' || fRarity !== 'all'
+  const filtersActive = filterType !== 'all' || fEdition !== 'all' || fSeries !== 'all' || fRarity !== 'all'
     || fGraded !== 'all' || fCondition !== 'all' || fPrice !== 'all' || fDate.kind !== 'all' || query.trim() !== '';
 
   // Aggregates are computed in TWD (per-item, honouring each value's currency)
@@ -794,6 +812,18 @@ export function Collection() {
 
           {/* Row 3: secondary selects */}
           <div className="flex flex-wrap items-center gap-2 text-xs">
+            <select
+              value={fSeries}
+              onChange={e => setFSeries(e.target.value)}
+              className="px-2.5 py-1.5 rounded-lg bg-surface border border-white/10 font-bold text-slate-200 focus:outline-none focus:border-poke-accent"
+              title="產品世代"
+            >
+              <option value="all">全部世代</option>
+              {seriesPresent.map(({ series, count }) => (
+                <option key={series} value={series}>{seriesLabel(series)}（{count}）</option>
+              ))}
+            </select>
+
             <select
               value={fRarity}
               onChange={e => setFRarity(e.target.value)}
