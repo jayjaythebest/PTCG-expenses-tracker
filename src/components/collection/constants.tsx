@@ -72,14 +72,15 @@ export const setLabel = (name: string): string => SET_NAME_ZH[name] ?? name;
 export const SET_CODE_BY_NAME: Record<string, string> = Object.fromEntries(
   PTCG_PRODUCTS.map(p => [p.name, p.code]),
 );
-// Stored set name → the series it belongs to, i.e. the 產品世代 a card or box is
+// Stored set name → the catalog product, for grouping rows by the set they came
 // from. Keyed on BOTH names: ja rows store p.name, but a card added from a
 // Traditional-Chinese scan stores the zh-tw name, so keying on p.name alone
-// drops most of the collection into 其他. Rows whose set isn't in the catalog
-// (hand-typed names, 其他, sets not yet added) have no series and land there.
-export const SERIES_BY_SET_NAME: Record<string, string> = Object.fromEntries(
-  PTCG_PRODUCTS.flatMap(p => (p.nameZh ? [[p.name, p.series], [p.nameZh, p.series]] : [[p.name, p.series]])),
+// leaves most of the collection unresolved. Returns undefined for sets that
+// aren't in the catalog (hand-typed names, promos, sets not yet added).
+const PRODUCT_BY_SET_NAME: Record<string, PtcgProduct> = Object.fromEntries(
+  PTCG_PRODUCTS.flatMap(p => (p.nameZh ? [[p.name, p], [p.nameZh, p]] : [[p.name, p]])),
 );
+export const productForSetName = (name: string): PtcgProduct | undefined => PRODUCT_BY_SET_NAME[name];
 
 // Reverse of SET_CODE_BY_NAME: a scanned/printed set code → the catalog product,
 // so scan branches can persist a setName (the JP name existing rows store) even
