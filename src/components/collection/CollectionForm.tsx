@@ -9,13 +9,13 @@ import { motion } from 'motion/react';
 import { CollectionItemType, CollectionCondition, CardEdition, GradingCompany } from '../../types';
 import { cn } from '../../lib/utils';
 import { recognizeCardFromPhoto } from '../../lib/gemini';
-import { lookupCard, lookupTwCard, lookupSetImage, lookupBoxImage, lookupTwCardImage, lookupJpCardImage } from '../../lib/tcgdex';
-import { scanCardNumber } from '../../lib/cardNumber';
+import { lookupSetImage, lookupBoxImage } from '../../lib/tcgdex';
+import { resolveScan, scanErrorHint } from './resolveScan';
 import { X, Check, Camera, Loader2, Sparkles, ImagePlus, ImageOff, RefreshCw } from 'lucide-react';
 import {
   ITEM_TYPE_LABELS, CONDITION_LABELS, RARITY_OPTIONS, EDITION_LABELS, GRADING_LABELS,
-  GRADE_OPTIONS, normalizeGradingCompany, SERIES_OPTIONS, SET_OPTIONS, seriesLabel, setLabel,
-  SET_CODE_BY_NAME, productForScanCode, setOptionLabel, editionToLang, ItemTypeIcon, Thumb,
+  GRADE_OPTIONS, SERIES_OPTIONS, SET_OPTIONS, seriesLabel, setLabel,
+  SET_CODE_BY_NAME, setOptionLabel, editionToLang, ItemTypeIcon, Thumb,
 } from './constants';
 import { type FormState } from './formState';
 
@@ -122,212 +122,25 @@ function CollectionForm({
       // 1) The AI provider chain reads the reliable identifiers (language + set code + card number).
       const scan = await recognizeCardFromPhoto(file);
       setScanProvider(scan.provider ?? null);
-      // 2) Resolve authoritative data (name/rarity/series/official art) from TCGdex,
-      //    querying the endpoint that matches the detected language (falls back internally).
-      const card = scan.setCode && scan.localId
-        ? await lookupCard(scan.setCode, scan.localId, scan.language || 'ja', scan.name)
-        : null;
 
-      // Is this physically a Traditional-Chinese card? Trust the AI's language
-      // read; a trailing-"F" MEGA/超級進化 code (M5F, M2aF) is itself a strong
-      // zh-tw signal even if the AI misdetects the language. JP MEGA prints the
-      // same code WITHOUT the F (M5, M2a), so this won't misfire on Japanese cards.
-      const isZhTw = scan.language === 'zh-tw' || /^M\d+[A-Z]*F$/i.test(scan.setCode);
-
-      // 2b) TCGdex's zh-tw catalog is incomplete (e.g. brand-new sets, the whole
-      //     MEGA series). lookupCard cross-falls-back to the ja endpoint to find
-      //     ANY data, which would mislabel a Chinese card as Japanese with JP
-      //     name/art. When we have a confident zh-tw scan but no genuine zh-tw
-      //     TCGdex hit, resolve the authoritative Chinese record (name + collector
-      //     number + precise art) live from the official TW site via /api/tw-card
-      //     — the always-current complete Chinese card table.
-      const twCard = !scan.error && scan.setCode && scan.localId
-        && isZhTw && (!card || card.edition !== 'zh-tw')
-        ? await lookupTwCard(scan.setCode, scan.localId, scan.name)
-        : null;
-
-      // Map the scanned/printed set code back to a catalog product so we can
-      // persist a setName even when TCGdex has no record. Without a stored
-      // setName, price lookups can't resolve the pack and the row shows no price
-      // (this was the zh-tw "no price" bug — the twCard/fallback branches never
-      // set setName). Prefer the code the TW proxy resolved, else the AI's read.
-      const prod = productForScanCode(twCard?.setCode || scan.setCode);
-
-      if (twCard) {
-        // Authoritative zh-tw record from the official TW site: Chinese name +
-        // precise per-card art. The site carries no rarity letter, so keep the
-        // rarity the AI read off the card. Treat as a confident match.
-        setForm(f => {
-          const setName = prod?.name || f.setName;
-          return {
-            ...f,
-            name:       twCard.name    || scan.name || f.name,
-            setName,
-            series:     prod?.series   || f.series,
-            rarity:     scan.rarity    || f.rarity,
-            cardNumber: scanCardNumber(scan.localId, scan.setCode, setName) || twCard.localId || f.cardNumber,
-            imageUrl:   twCard.imageUrl || f.imageUrl,
-            edition:    'zh-tw',
-          };
-        });
-        setScanResult('matched');
-      } else if (card && !(isZhTw && card.edition !== 'zh-tw')) {
-        // Only trust the TCGdex catalog record when it's NOT a Japanese record
-        // standing in for a Chinese card. A zh-tw scan whose only TCGdex hit is
-        // the ja catalog (the TW proxy failed to resolve the misread set/number)
-        // must NOT adopt the Japanese name/set/art here — that produced the
-        // "繁體中文版 but shows オリジンパルキアVSTAR / VMAXクライマックス" bug on
-        // reflective graded slabs. Such cards fall through to the fallback branch
-        // below, which keeps the AI's own Chinese read + resolves zh-tw artwork.
-        const edition = (scan.language || card.edition) as CardEdition;
-        // Pick artwork in the card's OWN language. For zh-tw, the official TW
-        // proxy has precise per-card art (TCGdex often lacks zh-tw images). For
-        // ja we must NOT use the TW proxy (it would show the Chinese version) —
-        // use TCGdex's ja image, or the SNKRDUNK/Limitless proxy for brand-new
-        // sets TCGdex hasn't published art for yet.
-        let img = card.imageUrl;
-        if (edition === 'zh-tw') {
-          const tw = await lookupTwCardImage(scan.setCode, scan.localId);
-          if (tw) img = tw;
-        } else if (!img) {
-          const jp = await lookupJpCardImage(scan.setCode, scan.localId);
-          if (jp) img = jp;
-        }
-        setForm(f => {
-          const setName = card.setName || prod?.name || f.setName;
-          return {
-            ...f,
-            name:       card.name,
-            setName,
-            series:     card.series  || prod?.series || f.series,
-            // TCGdex answers '其他' for any rarity name it hasn't mapped yet
-            // (new MEGA marks such as MA arrive there late), so a read off the
-            // card itself beats it — it is the printing, not a guess.
-            rarity:     (card.rarity === '其他' ? scan.rarity : card.rarity) || scan.rarity || f.rarity,
-            cardNumber: scanCardNumber(scan.localId, scan.setCode, setName) || f.cardNumber,
-            imageUrl:   img || f.imageUrl,
-            edition,
-          };
-        });
-        setScanResult('matched');
-      } else if (!scan.error && !isZhTw && scan.verified) {
-        // A Japanese card the scan endpoint confirmed against Huca's live card
-        // table. TCGdex has no record — its catalog trails a release by weeks —
-        // but the set code, name and rarity are authoritative, so this is a
-        // match, not a "card not found". Artwork still comes from the ja proxy.
-        const img = (await lookupJpCardImage(scan.setCode, scan.localId)) || '';
-        setForm(f => {
-          // Prefer the catalog's set name (what verify:sets checks and what
-          // pricing resolves against); Huca's own label covers a set so new the
-          // catalog hasn't listed it either.
-          const setName = prod?.name || scan.setName || f.setName;
-          return {
-            ...f,
-            name:       scan.name || f.name,
-            setName,
-            series:     prod?.series || f.series,
-            rarity:     scan.rarity || f.rarity,
-            cardNumber: scanCardNumber(scan.localId, scan.setCode, setName) || f.cardNumber,
-            imageUrl:   img || f.imageUrl,
-            edition:    'ja',
-          };
-        });
-        setScanResult('matched');
-      } else if (scan.error) {
+      if (scan.error) {
         // The AI chain couldn't run (quota exhausted / providers down / photo
         // unreadable) — nothing was read. Tell the user it's a service issue,
         // not that the card is unknown, so they don't assume the card is invalid.
-        const provs = scan.providers ?? [];
-        if (scan.reason === 'unauthorized') {
-          // 401 from the JWT gate: the session token is missing/expired, so the
-          // fix is re-logging in — waiting and retrying will never help.
-          setScanHint('登入已過期，請重新登入後再掃描');
-        } else if (scan.reason === 'auth_unconfigured') {
-          // 503: the gate itself has no Supabase credentials on the server.
-          setScanHint('伺服器缺少 Supabase 設定（SUPABASE_URL / KEY），請在 Vercel 補上後重新部署');
-        } else if (scan.reason === 'endpoint_missing') {
-          // 404: the /api/scan-card function isn't deployed on this host.
-          setScanHint('找不到掃描服務（/api/scan-card 未部署）；請確認已部署最新版本到 Vercel');
-        } else if (scan.reason === 'endpoint_error' || scan.reason === 'network') {
-          // 5xx / crash / offline: the endpoint exists but couldn't respond.
-          setScanHint('掃描服務暫時無法回應；請稍後重試，或查看 Vercel Functions 記錄');
-        } else if (scan.reason === 'no_provider') {
-          // 200 + explicit no_provider: the server ran but has zero AI keys.
-          setScanHint('伺服器尚未設定任何 AI 金鑰，請在 Vercel 設定 GEMINI / GROQ / OPENROUTER_API_KEY');
-        } else if (scan.reason === 'quota' || provs.length === 1) {
-          setScanHint(`目前只有 ${provs.join('、') || 'gemini'} 可用，額度可能已用盡；建議在 Vercel 再補上 Groq / OpenRouter 免費金鑰`);
-        } else {
-          setScanHint('可換張更清晰、少反光的照片再試一次');
-        }
+        setScanHint(scanErrorHint(scan));
         // Per-provider failure lines (gemini:error… / groq:invalid / …) so we can
         // see the real cause behind an "unreadable" instead of guessing.
         setScanDebug(scan.debug && scan.debug.length ? scan.debug : null);
         setScanResult('error');
-      } else {
-        // Fallback: TCGdex has no catalog entry for this card yet (common for
-        // brand-new zh-tw sets — e.g. the MEGA/超級進化 "M#F" series isn't in
-        // TCGdex's Chinese DB). The AI still read name/rarity/number reliably, so
-        // keep those AND try to auto-fill the artwork so the row isn't blank.
-        let img = '';
-        if (scan.setCode && scan.localId) {
-          if (isZhTw) {
-            // Prefer genuine zh-tw art (official TW proxy).
-            img = (await lookupTwCardImage(scan.setCode, scan.localId)) || '';
-            // zh-tw MEGA sets print "M#F"; the JP equivalent is "M#" and shares
-            // the identical illustration (only the text language differs), so use
-            // it as a stand-in thumbnail when no TW art exists.
-            if (!img && /^M\d+[A-Z]*F$/i.test(scan.setCode)) {
-              const jpCode = scan.setCode.replace(/F$/i, '');
-              img = (await lookupJpCardImage(jpCode, scan.localId)) || '';
-            }
-          } else {
-            img = (await lookupJpCardImage(scan.setCode, scan.localId)) || '';
-          }
-        }
-        setForm(f => {
-          const setName = prod?.name || f.setName;
-          return {
-            ...f,
-            name:       scan.name    || f.name,
-            setName,
-            series:     prod?.series || f.series,
-            cardNumber: scanCardNumber(scan.localId, scan.setCode, setName) || f.cardNumber,
-            rarity:     scan.rarity  || f.rarity,
-            edition:    isZhTw ? 'zh-tw' : (scan.language || f.edition),
-            imageUrl:   img || f.imageUrl,
-          };
-        });
-        // Show WHAT was read, not just that the catalog missed. Secret rares are
-        // the usual cause (TCGdex's zh-tw data stops at the official set total,
-        // so a UR numbered past it can't match) — and without these identifiers
-        // on screen there's no way to tell that apart from a genuine misread.
-        setScanHint(
-          `辨識為 ${scan.setCode || '?'} #${scan.localId || '?'}（${isZhTw ? '繁中' : scan.language || 'ja'}）`
-          // A set the catalog knows means the code read fine and it's the card
-          // table that's behind (new sets take weeks to appear) — quite different
-          // from a code nothing recognises, which is usually a misread.
-          + (prod
-            ? '；卡片資料庫尚未收錄這個系列，已依卡面填入'
-            : '；卡片資料庫查無此編號，請確認系列與卡號')
-          + (img ? '' : '。找不到對應卡圖，請手動貼上圖片網址'),
-        );
-        setScanResult('fallback');
+        return;
       }
 
-      // Graded slab: the label carries the grading company + grade + cert. Apply
-      // them on top of whichever branch resolved the card (matched/card/fallback)
-      // so a scan of a PSA/BGS/… holder auto-fills the 鑑定 fields the user would
-      // otherwise type by hand. A raw card leaves gradingCompany empty → no-op.
-      const gc = normalizeGradingCompany(scan.gradingCompany);
-      if (!scan.error && gc) {
-        setForm(f => ({
-          ...f,
-          isGraded: true,
-          gradingCompany: gc,
-          grade: scan.grade || f.grade,
-          gradingCert: scan.gradingCert || f.gradingCert,
-        }));
-      }
+      // 2) Resolve the authoritative record + artwork (TCGdex / official TW site
+      //    / Huca). Shared with the batch scan — see ./resolveScan.
+      const resolved = await resolveScan(scan);
+      setForm(f => ({ ...f, ...resolved.patch }));
+      setScanHint(resolved.hint);
+      setScanResult(resolved.status);
     } catch (err) {
       console.error(err);
       setScanResult('error');

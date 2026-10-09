@@ -28,9 +28,10 @@ import { EMPTY_FORM, todayISO, manualPriceFields, formToItem, itemToForm, formQu
 import { GalleryImage } from './collection/GalleryImage';
 import { CollectionModal } from './collection/CollectionForm';
 import { MergePromptModal } from './collection/MergePromptModal';
+import { BatchScanModal, type BatchAddRow } from './collection/BatchScanModal';
 import { DuplicateMergeModal } from './collection/DuplicateMergeModal';
 import { CardDetailModal } from './collection/CardDetailModal';
-import { Plus, Trash2, Pencil, TrendingUp, TrendingDown, RefreshCw, Search, ArrowUp, ArrowDown, RotateCcw, ChevronDown, Layers } from 'lucide-react';
+import { Plus, Trash2, Pencil, TrendingUp, TrendingDown, RefreshCw, Search, ArrowUp, ArrowDown, RotateCcw, ChevronDown, Layers, ScanLine } from 'lucide-react';
 
 type FilterType = 'all' | CollectionItemType;
 type SortKey = 'value' | 'pnl' | 'name' | 'date';
@@ -82,6 +83,9 @@ export function Collection() {
   // The 「N 組重複」 picker. Open = the user is choosing which of the detected
   // duplicate groups to actually fold together.
   const [showDupMerge, setShowDupMerge] = useState(false);
+  // 批次掃描: one photo of several cards -> a review list -> many rows at once.
+  const [showBatch, setShowBatch] = useState(false);
+  const [batchProgress, setBatchProgress] = useState<{ done: number; total: number } | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   // Per-card price refresh, driven from the detail modal.
@@ -479,6 +483,53 @@ export function Collection() {
     await insertItem(f);
   };
 
+  // The batch-scan commit. Each reviewed row is either a new card (priced on the
+  // way in, exactly like a single add) or extra copies of a row already here.
+  // Sequential, like 更新價格: a dozen parallel price lookups against the same
+  // scraped source is how it starts answering 429.
+  const handleBatchAdd = async (rows: BatchAddRow[]) => {
+    if (rows.length === 0) return;
+    setSubmitting(true);
+    setBatchProgress({ done: 0, total: rows.length });
+    fetchFxJpyToTwd().then(setFxRate).catch(() => {});
+    let added = 0;
+    let merged = 0;
+    const failed: string[] = [];
+    // Two reviewed rows can point at the SAME existing card (two copies pulled,
+    // both matched to it). Each target's quantity has to accumulate across the
+    // run — reading it off the stale row twice would lose the first bump.
+    const bumped = new Map<string, number>();
+    for (const [i, row] of rows.entries()) {
+      try {
+        const target = row.mergeInto;
+        if (target) {
+          const extra = (bumped.get(target.id) ?? 0) + formQuantity(row.form);
+          await updateItem(target.id, { quantity: target.quantity + extra });
+          bumped.set(target.id, extra);
+          merged += 1;
+        } else {
+          const base = formToItem(row.form);
+          const toAdd = row.form.manualPrice !== ''
+            ? { ...base, ...manualPriceFields(row.form.manualPrice) }
+            : await withMarketPrice(base);
+          await addItem({ ...toAdd, owner });
+          added += 1;
+        }
+      } catch (err) {
+        console.error('batch add failed for', row.form.name, err);
+        failed.push(row.form.name || '未命名');
+      }
+      setBatchProgress({ done: i + 1, total: rows.length });
+    }
+    setSubmitting(false);
+    setBatchProgress(null);
+    setShowBatch(false);
+    // Only failures get a banner — the cards that worked are visible in the grid.
+    if (failed.length > 0) {
+      setActionMsg(`已新增 ${added} 張、合併 ${merged} 張；${failed.length} 張失敗（${failed.join('、')}），請手動補上`);
+    }
+  };
+
   // Fold the new copies into an existing row. Quantity only: the row keeps its
   // own acquired date, estimate and market price, which is what the prompt says.
   const handleMergeInto = async (target: CollectionItem, f: FormState) => {
@@ -760,6 +811,17 @@ export function Collection() {
                 {refreshing && priceProgress
                   ? `${priceProgress.done}/${priceProgress.total}`
                   : '更新價格'}
+              </button>
+            )}
+
+            {!IS_DEMO && (
+              <button
+                onClick={() => { setEditingId(null); setShowBatch(true); }}
+                title="一張照片一次加入多張卡"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold bg-white/5 border border-white/10 text-slate-400 hover:text-poke-accent hover:border-poke-accent transition-colors"
+              >
+                <ScanLine className="w-4 h-4" />
+                批次掃描
               </button>
             )}
 
@@ -1242,6 +1304,15 @@ export function Collection() {
             // Cancel returns to the add form, which is still open behind this.
             onClose={() => setMergeAsk(null)}
             submitting={submitting}
+          />
+        )}
+        {showBatch && (
+          <BatchScanModal
+            existing={items}
+            onConfirm={handleBatchAdd}
+            onClose={() => { if (!submitting) setShowBatch(false); }}
+            submitting={submitting}
+            progress={batchProgress}
           />
         )}
         {showDupMerge && dupGroups.length > 0 && (

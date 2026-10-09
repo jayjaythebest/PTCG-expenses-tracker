@@ -27,6 +27,8 @@ src/
       constants.tsx       #   labels, set-code maps, ItemTypeBadge / Thumb
       formState.ts        #   FormState + formToItem / itemToForm
       CollectionForm.tsx  #   add/edit form + its modal shell (photo scan lives here)
+      resolveScan.ts      #   AI read -> authoritative record + art (single AND batch)
+      BatchScanModal.tsx  #   批次掃描: one photo of many cards -> review list -> many rows
       CardDetailModal.tsx #   tap-a-card detail sheet
       GalleryImage.tsx    #   tile artwork with its fallback chain
       MergePromptModal.tsx#   "already in the collection — merge?" prompt
@@ -37,6 +39,8 @@ src/
     apiFetch.ts           # fetch wrapper that attaches the session JWT to /api calls
     fetchTimeout.ts       # fetchWithTimeout — every external request must use it
     collectionValue.ts    # toTwd / estValue / P&L — the one place value math lives
+    batchScan.ts          # batch-read clean-up: box IoU dedupe + reading order
+    imageCrop.ts          # box_2d -> the crop of one card out of a group photo
     demo.ts               # IS_DEMO / COLLECTION_SOURCE — the public read-only build
     utils.ts              # clsx/tw-merge helpers, relativeTime
   types.ts
@@ -127,6 +131,24 @@ npm run dev     # vite on :3000, host 0.0.0.0
 - Do **not** edit generated files in `dist/`.
 - Do **not** hand-edit `src/data/ptcg-products.ts` without running `npm run verify:sets`. A set's `code` must be the code printed on the card and `name` must match the TCGdex ja name *exactly*, because `api/_lib/pricing.ts` resolves the Huca set code by looking the stored set **name** up in TCGdex — a one-character difference doesn't error, it just makes those cards show no price. Set names/codes had silently rotted this way (`s12a` labelled VMAXクライマックス when S12a is VSTARユニバース).
 - Do **not** split the catalog into separate ja / zh-tw tables. A set's code is language-independent — all 61 codes shared between the two TCGdex catalogs have identical card counts, i.e. the same set. Only the *name* differs, which is what `nameZh` is for. zh-tw does add ~37 deck/gift-box-only codes and prints a trailing `F` on MEGA sets (`M5F` vs `M5`); those are extra rows and a normalisation rule, not a reason to fork the table (which would double the surface for transcription drift and let the two disagree).
+
+### 批次掃描 (one photo, several cards)
+`/api/scan-card` serves **both** reads: the body's `multi: true` swaps the prompt
+for one that returns `{cards: [...]}`, with a `box` per card (Gemini `box_2d`,
+0–1000). It is one endpoint on purpose — the 12-function ceiling above leaves a
+single free slot, and a second endpoint would have to duplicate the per-card
+rules and the Huca confirmation, which is precisely the pair that must not drift.
+Per-card rules, the set-code canonicalisation and the Huca check are shared in
+`finalizeCard`; on the client everything after the read is shared too
+(`src/components/collection/resolveScan.ts`), so a card out of a photo of six
+resolves exactly like a card photographed alone. The prompt tells the model to
+judge each card's set code independently — a batch very often mixes sets (M1L and
+M1S in the same shot), and a code carried over from the previous card is a silent
+wrong set, wrong art and wrong price.
+
+Nothing is written until the user has reviewed the list: each row shows the crop
+of the card it came from beside the artwork that will be stored, and a card
+already in the collection offers to merge instead of opening a second row.
 
 ## Conventions
 - Components in `src/components/`, PascalCase filenames.

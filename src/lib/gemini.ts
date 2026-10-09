@@ -43,6 +43,23 @@ export interface CardScanResult {
   debug?: string[];
 }
 
+// One card out of a multi-card photo: the same read, plus where it sits in the
+// image ([ymin, xmin, ymax, xmax], 0–1000 of the height/width — Gemini's box_2d)
+// so the review list can show the actual card the row came from.
+export interface ScannedCard extends CardScanResult {
+  box?: number[];
+}
+
+export interface MultiScanResult {
+  cards: ScannedCard[];
+  provider?: string;
+  // Same failure fields as a single scan — the whole read either ran or didn't.
+  error?: string;
+  providers?: string[];
+  reason?: string;
+  debug?: string[];
+}
+
 const EMPTY_SCAN: CardScanResult = { setCode: '', localId: '', name: '', rarity: '', language: '' };
 
 // Downscale + re-encode the photo before upload: keeps the POST body small
@@ -112,29 +129,83 @@ export async function recognizeCardFromPhoto(file: File): Promise<CardScanResult
     if (!res.ok) {
       return { ...EMPTY_SCAN, error: 'ai_failed', reason: httpFailureReason(res.status) };
     }
-    const data = await res.json();
-    const lang = data.language === 'ja' || data.language === 'zh-tw' ? data.language : '';
-    return {
-      setCode: String(data.setCode ?? ''),
-      localId: String(data.localId ?? ''),
-      name: String(data.name ?? ''),
-      rarity: String(data.rarity ?? ''),
-      language: lang as ScanLanguage | '',
-      setName: typeof data.setName === 'string' ? data.setName : undefined,
-      verified: typeof data.verified === 'string' && data.verified ? data.verified : undefined,
-      gradingCompany: typeof data.gradingCompany === 'string' ? data.gradingCompany : undefined,
-      grade: typeof data.grade === 'string' ? data.grade : undefined,
-      gradingCert: typeof data.gradingCert === 'string' ? data.gradingCert : undefined,
-      provider: typeof data.provider === 'string' ? data.provider : undefined,
-      model: typeof data.model === 'string' ? data.model : undefined,
-      error: typeof data.error === 'string' ? data.error : undefined,
-      providers: Array.isArray(data.providers) ? data.providers.map(String) : undefined,
-      reason: typeof data.reason === 'string' ? data.reason : undefined,
-      debug: Array.isArray(data.debug) ? data.debug.map(String) : undefined,
-    };
+    return parseScanCard(await res.json());
   } catch {
     // fetch threw before we got a response (offline, DNS, CORS, aborted).
     return { ...EMPTY_SCAN, error: 'ai_failed', reason: 'network' };
+  }
+}
+
+// Endpoint JSON -> ScannedCard. Pure, and shared by the single and the batch
+// read so one card out of a photo of six is normalized exactly like a card
+// photographed on its own.
+export function parseScanCard(raw: unknown): ScannedCard {
+  const data = (raw ?? {}) as Record<string, unknown>;
+  const str = (k: string) => (typeof data[k] === 'string' ? (data[k] as string) : undefined);
+  const lang = data.language === 'ja' || data.language === 'zh-tw' ? data.language : '';
+  const box = Array.isArray(data.box) && data.box.length === 4 && data.box.every(n => typeof n === 'number' && Number.isFinite(n))
+    ? (data.box as number[])
+    : undefined;
+  return {
+    setCode: String(data.setCode ?? ''),
+    localId: String(data.localId ?? ''),
+    name: String(data.name ?? ''),
+    rarity: String(data.rarity ?? ''),
+    language: lang as ScanLanguage | '',
+    setName: str('setName'),
+    verified: str('verified') || undefined,
+    gradingCompany: str('gradingCompany'),
+    grade: str('grade'),
+    gradingCert: str('gradingCert'),
+    provider: str('provider'),
+    model: str('model'),
+    error: str('error'),
+    providers: Array.isArray(data.providers) ? data.providers.map(String) : undefined,
+    reason: str('reason'),
+    debug: Array.isArray(data.debug) ? data.debug.map(String) : undefined,
+    box,
+  };
+}
+
+// Endpoint JSON -> the batch result. Pure. Drops entries the read couldn't put
+// a name OR a set code + number on: a row with nothing identifiable on it is
+// something the user would only have to untick again.
+export function parseMultiScan(raw: unknown): MultiScanResult {
+  const data = (raw ?? {}) as Record<string, unknown>;
+  const str = (k: string) => (typeof data[k] === 'string' ? (data[k] as string) : undefined);
+  const cards = (Array.isArray(data.cards) ? data.cards : [])
+    .map(parseScanCard)
+    .filter(c => c.name.trim() || (c.setCode.trim() && c.localId.trim()));
+  return {
+    cards,
+    provider: str('provider'),
+    error: str('error'),
+    providers: Array.isArray(data.providers) ? data.providers.map(String) : undefined,
+    reason: str('reason'),
+    debug: Array.isArray(data.debug) ? data.debug.map(String) : undefined,
+  };
+}
+
+// Read EVERY card in one photo. Same endpoint and the same per-card rules as
+// recognizeCardFromPhoto (`multi: true` switches the prompt), so a batch read
+// is held to the same standard — including the Huca confirmation of a Japanese
+// set code. The photo goes up larger than a single-card shot: six cards on a
+// table means each one is a fraction of the frame, and the set code is 2mm of
+// low-contrast print in the corner of that fraction.
+export async function recognizeCardsFromPhoto(file: File): Promise<MultiScanResult> {
+  try {
+    const { base64, mimeType } = await fileToScaledBase64(file, 2400, 0.9);
+    const res = await apiFetch('/api/scan-card', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageBase64: base64, mimeType, multi: true }),
+    });
+    if (!res.ok) {
+      return { cards: [], error: 'ai_failed', reason: httpFailureReason(res.status) };
+    }
+    return parseMultiScan(await res.json());
+  } catch {
+    return { cards: [], error: 'ai_failed', reason: 'network' };
   }
 }
 
