@@ -148,7 +148,11 @@ wrong set, wrong art and wrong price.
 
 Nothing is written until the user has reviewed the list: each row shows the crop
 of the card it came from beside the artwork that will be stored, and a card
-already in the collection offers to merge instead of opening a second row.
+already in the collection offers to merge instead of opening a second row. Only
+ticked rows are written, and a row the card database could NOT confirm starts
+unticked — those are the reads that need a human look. 逐張放大比對 walks the
+cards one at a time with both images full width, because a 48×64 thumbnail
+can't settle whether the artwork is really that card.
 
 ## Conventions
 - Components in `src/components/`, PascalCase filenames.

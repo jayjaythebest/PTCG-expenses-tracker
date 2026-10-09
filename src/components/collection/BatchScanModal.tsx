@@ -17,7 +17,7 @@ import { recognizeCardsFromPhoto, type ScannedCard } from '../../lib/gemini';
 import { dedupeByBox, sortByPosition } from '../../lib/batchScan';
 import { cropToDataUrl, loadImage } from '../../lib/imageCrop';
 import { findMergeCandidates } from '../../lib/mergeCandidates';
-import { X, Camera, Loader2, Sparkles, Check, RefreshCw, AlertTriangle, ImageOff } from 'lucide-react';
+import { X, Camera, Loader2, Sparkles, Check, RefreshCw, AlertTriangle, ImageOff, Maximize2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { CONDITION_LABELS, EDITION_LABELS, setLabel } from './constants';
 import { EMPTY_FORM, todayISO, formToItem, type FormState } from './formState';
 import { resolveScan, scanErrorHint } from './resolveScan';
@@ -66,6 +66,11 @@ export function BatchScanModal({
   const [resolveProgress, setResolveProgress] = useState<{ done: number; total: number } | null>(null);
   const [acquiredDate, setAcquiredDate] = useState(todayISO());
   const [condition, setCondition] = useState<CollectionCondition | ''>('');
+  // Which row the 逐張比對 overlay is showing (index into `rows`), or null.
+  // 48×64 thumbnails are enough to spot a row out of six; they are not enough
+  // to judge whether the artwork is actually this card, which is the call the
+  // tick is making.
+  const [compareAt, setCompareAt] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const lastFileRef = useRef<File | null>(null);
 
@@ -93,6 +98,7 @@ export function BatchScanModal({
   const runBatch = async (file: File) => {
     setStage('scanning');
     setRows([]);
+    setCompareAt(null);
     setErrorHint(null);
     setErrorDebug(null);
     setResolveProgress(null);
@@ -159,7 +165,11 @@ export function BatchScanModal({
       status: resolved.status,
       hint: resolved.hint,
       thumb,
-      include: true,
+      // A row an authoritative record backs starts ticked; one the card
+      // database couldn't confirm does not. Those are exactly the reads that
+      // need a human look, and ticking one costs a tap — a wrong card written
+      // into the collection costs finding it again later.
+      include: resolved.status === 'matched',
       merge: !!candidate,
       candidate,
     };
@@ -183,6 +193,8 @@ export function BatchScanModal({
   };
 
   const chosen = rows.filter(r => r.include);
+  const setAllIncluded = (v: boolean) => setRows(rs => rs.map(r => ({ ...r, include: v })));
+  const compareRow = compareAt != null ? rows[compareAt] ?? null : null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
@@ -288,16 +300,37 @@ export function BatchScanModal({
               <div className="flex items-center justify-between gap-3">
                 <p className="text-xs text-slate-400">
                   辨識到 <span className="font-black text-slate-200">{rows.length}</span> 張
+                  ，已勾選 <span className="font-black text-slate-200">{chosen.length}</span> 張
                   {provider && <span className="ml-1 text-slate-500">· {provider}</span>}
                 </p>
-                <button
-                  type="button"
-                  onClick={pick}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-white/5 border border-white/10 text-slate-400 hover:text-poke-accent hover:border-poke-accent transition-colors"
-                >
-                  <Camera className="w-3 h-3" /> 換一張照片
-                </button>
+                <div className="flex gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setAllIncluded(chosen.length !== rows.length)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-white/5 border border-white/10 text-slate-400 hover:text-poke-accent hover:border-poke-accent transition-colors"
+                  >
+                    {chosen.length === rows.length ? '全不選' : '全選'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={pick}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-white/5 border border-white/10 text-slate-400 hover:text-poke-accent hover:border-poke-accent transition-colors"
+                  >
+                    <Camera className="w-3 h-3" /> 換一張照片
+                  </button>
+                </div>
               </div>
+
+              {/* Judging six reads off 48×64 thumbnails isn't judging. This opens
+                  the photo and the resolved artwork side by side, one card at a
+                  time, with the tick right there. */}
+              <button
+                type="button"
+                onClick={() => setCompareAt(0)}
+                className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-bold bg-white/5 border border-white/10 text-slate-300 hover:text-poke-accent hover:border-poke-accent transition-colors"
+              >
+                <Maximize2 className="w-3.5 h-3.5" /> 逐張放大比對（1 / {rows.length}）
+              </button>
 
               {/* The two fields a batch of pulls shares. Everything else is per card. */}
               <div className="grid grid-cols-2 gap-2">
@@ -348,14 +381,19 @@ export function BatchScanModal({
                     {/* Left: the card as photographed. Right: the artwork that
                         will be stored — side by side, they make a wrong read
                         obvious at a glance. */}
-                    <div className="flex gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setCompareAt(rows.findIndex(r => r.id === row.id))}
+                      title="放大比對"
+                      className="flex gap-1.5 shrink-0 rounded-md hover:opacity-80 transition-opacity"
+                    >
                       {row.thumb
                         ? <img src={row.thumb} alt="" className="w-12 h-16 object-cover rounded-md border border-white/10 bg-white/5" />
                         : <div className="w-12 h-16 rounded-md border border-white/10 bg-white/5 flex items-center justify-center"><ImageOff className="w-4 h-4 text-slate-600" /></div>}
                       {row.form.imageUrl
                         ? <img src={row.form.imageUrl} alt="" referrerPolicy="no-referrer" className="w-12 h-16 object-contain rounded-md border border-white/10 bg-white/5" />
                         : <div className="w-12 h-16 rounded-md border border-dashed border-white/10 bg-white/5 flex items-center justify-center text-[9px] text-slate-500 text-center leading-tight px-0.5">無卡圖</div>}
-                    </div>
+                    </button>
 
                     <div className="min-w-0 flex-1">
                       <input
@@ -411,12 +449,106 @@ export function BatchScanModal({
               </div>
 
               <p className="text-[11px] text-slate-500 leading-relaxed">
+                只有勾選的卡會寫入收藏。資料庫沒對上的（橘色）預設不勾，確認過再勾起來。
                 卡名可以直接改；系列、卡號等其他欄位加入後在卡片上「編輯」就能修。
-                完全讀錯的那張先取消勾選，再用「新增」單張補上即可。
               </p>
             </div>
           )}
         </div>
+
+        {/* 逐張比對: the photo and the artwork that would be stored, big enough
+            to actually tell them apart, with the tick and prev/next in reach —
+            the deciding step, not a preview. */}
+        {compareRow && (
+          <div className="absolute inset-0 z-20 flex flex-col bg-surface rounded-t-2xl sm:rounded-2xl">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-white/10">
+              <p className="text-sm font-black text-slate-100">
+                第 {(compareAt ?? 0) + 1} / {rows.length} 張
+                <span className={cn(
+                  'ml-2 px-1.5 py-0.5 rounded text-[10px] align-middle',
+                  compareRow.status === 'matched' ? 'bg-emerald-500/15 text-emerald-300' : 'bg-amber-500/15 text-amber-300',
+                )}>
+                  {compareRow.status === 'matched' ? '資料庫已對上' : '資料庫沒對上'}
+                </span>
+              </p>
+              <button onClick={() => setCompareAt(null)} className="p-1.5 rounded-lg hover:bg-white/10 transition-colors">
+                <X className="w-5 h-5 text-slate-400" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-5 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <p className="mb-1 text-[11px] font-bold text-slate-400">照片中的這張</p>
+                  {compareRow.thumb
+                    ? <img src={compareRow.thumb} alt="" className="w-full rounded-lg border border-white/10 bg-white/5" />
+                    : <div className="aspect-[3/4] rounded-lg border border-white/10 bg-white/5 flex items-center justify-center text-[11px] text-slate-500">無裁切圖</div>}
+                </div>
+                <div>
+                  <p className="mb-1 text-[11px] font-bold text-slate-400">將存入的卡圖</p>
+                  {compareRow.form.imageUrl
+                    ? <img src={compareRow.form.imageUrl} alt="" referrerPolicy="no-referrer" className="w-full rounded-lg border border-white/10 bg-white/5" />
+                    : <div className="aspect-[3/4] rounded-lg border border-dashed border-white/10 bg-white/5 flex items-center justify-center text-[11px] text-slate-500 text-center px-2">沒抓到卡圖<br />（可加入後補）</div>}
+                </div>
+              </div>
+
+              <div>
+                <p className="font-black text-base text-slate-100">{compareRow.form.name || '（無卡名）'}</p>
+                <p className="mt-0.5 text-xs text-slate-400">
+                  {compareRow.form.setName ? setLabel(compareRow.form.setName) : '未知系列'}
+                  {compareRow.form.cardNumber ? ` · ${compareRow.form.cardNumber}` : ''}
+                  {compareRow.form.rarity ? ` · ${compareRow.form.rarity}` : ''}
+                  {compareRow.form.edition ? ` · ${EDITION_LABELS[compareRow.form.edition]}` : ''}
+                </p>
+                {compareRow.hint && (
+                  <p className="mt-1 text-[11px] text-amber-300/80 leading-snug">{compareRow.hint}</p>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => patchRow(compareRow.id, { include: !compareRow.include })}
+                className={cn(
+                  'w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold border-2 transition-colors',
+                  compareRow.include
+                    ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
+                    : 'border-white/10 bg-white/5 text-slate-400 hover:border-poke-accent hover:text-poke-accent',
+                )}
+              >
+                <Check className="w-4 h-4" />
+                {compareRow.include ? '已勾選，會加入收藏' : '判定正確 — 勾選加入'}
+              </button>
+            </div>
+
+            <div className="border-t border-white/10 px-5 py-3 flex gap-2">
+              <button
+                type="button"
+                disabled={(compareAt ?? 0) === 0}
+                onClick={() => setCompareAt(i => Math.max(0, (i ?? 0) - 1))}
+                className="flex-1 inline-flex items-center justify-center gap-1 py-2 rounded-lg text-xs font-bold bg-white/5 border border-white/10 text-slate-300 hover:border-poke-accent hover:text-poke-accent transition-colors disabled:opacity-40"
+              >
+                <ChevronLeft className="w-4 h-4" /> 上一張
+              </button>
+              {(compareAt ?? 0) === rows.length - 1 ? (
+                <button
+                  type="button"
+                  onClick={() => setCompareAt(null)}
+                  className="flex-1 inline-flex items-center justify-center gap-1 py-2 rounded-lg text-xs font-bold bg-poke-blue text-white hover:bg-poke-dark-blue transition-colors"
+                >
+                  看完了，回清單
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setCompareAt(i => Math.min(rows.length - 1, (i ?? 0) + 1))}
+                  className="flex-1 inline-flex items-center justify-center gap-1 py-2 rounded-lg text-xs font-bold bg-white/5 border border-white/10 text-slate-300 hover:border-poke-accent hover:text-poke-accent transition-colors"
+                >
+                  下一張 <ChevronRight className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
 
         {stage === 'review' && (
           <div className="sticky bottom-0 bg-surface border-t border-white/10 px-5 py-3 flex gap-2">
