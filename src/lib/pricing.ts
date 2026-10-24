@@ -29,6 +29,9 @@ export async function fetchCardPrice(params: {
   // Snkrdunk (usedMinPrice/minPrice) instead of the single-card sources.
   itemType?: string;
   snkrdunkId?: number;
+  // zh-tw sealed box: its kapaipai 原盒 listing (see ZH_BOX_* in data/ptcg-boxes).
+  kpPackId?: string;
+  kpPackCardId?: string;
 }): Promise<CardPrice | null> {
   try {
     const res = await apiFetch('/api/card-price', {

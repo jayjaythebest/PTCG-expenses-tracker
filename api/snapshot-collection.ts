@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { resolveCardPrice, buildWantGrade } from './_lib/pricing.js';
 import { supabaseUrl, serviceRoleKey } from './_lib/env.js';
 import { PTCG_PRODUCTS } from '../src/data/ptcg-products.js';
-import { boxSnkrdunkId } from '../src/data/ptcg-boxes.js';
+import { boxSnkrdunkId, zhBoxOf } from '../src/data/ptcg-boxes.js';
 import { PRIMARY_OWNER, ownerOf } from '../src/data/collectionOwners.js';
 import { fetchWithTimeout } from '../src/lib/fetchTimeout.js';
 
@@ -55,6 +55,17 @@ const SET_CODE_BY_NAME: Record<string, string> = Object.fromEntries(
   PTCG_PRODUCTS.map(p => [p.name, p.code]),
 );
 
+// The curated sealed-product id a box prices off, or undefined when it has none.
+function boxRefOf(row: ItemRow): { snkrdunkId: number } | { kpPackId: string; kpPackCardId: string } | undefined {
+  const setName = row.set_name ?? '';
+  const code = SET_CODE_BY_NAME[setName] ?? '';
+  const edition = row.edition ?? 'ja';
+  const snkrdunkId = boxSnkrdunkId(code, edition, setName);
+  if (snkrdunkId != null) return { snkrdunkId };
+  const zh = zhBoxOf(code, edition, setName);
+  return zh ? { kpPackId: zh.kpPackId, kpPackCardId: zh.kpPackCardId } : undefined;
+}
+
 // JPY -> TWD rate (mirrors /api/fx). Falls back to a rough static rate.
 async function jpyToTwd(): Promise<number> {
   try {
@@ -103,10 +114,8 @@ async function refreshOne(supabase: any, row: ItemRow): Promise<boolean> {
   const setCode = edition === 'zh-tw' ? '' : (SET_CODE_BY_NAME[setName] ?? '');
   const wantGrade = buildWantGrade(row.is_graded, row.grading_company, row.grade);
   const itemType = row.item_type ?? 'single';
-  // Boxes are priced off a curated Snkrdunk id (JA only) when available.
-  const snkrdunkId = itemType === 'box'
-    ? boxSnkrdunkId(SET_CODE_BY_NAME[setName] ?? '', edition)
-    : undefined;
+  // Boxes are priced off a curated Snkrdunk id (ja) or kapaipai listing (zh-tw).
+  const box = itemType === 'box' ? boxRefOf(row) : undefined;
   try {
     const p = await resolveCardPrice({
       setCode,
@@ -116,7 +125,7 @@ async function refreshOne(supabase: any, row: ItemRow): Promise<boolean> {
       edition,
       wantGrade,
       itemType,
-      snkrdunkId,
+      ...box,
     });
     if (!p || p.price == null) return false;
     const currency = p.currency ?? (edition === 'zh-tw' ? 'TWD' : 'JPY');
@@ -159,14 +168,13 @@ async function refreshPrices(
   rows: ItemRow[],
   deadline: number,
 ): Promise<{ refreshed: number; skipped: number; timedOut: boolean }> {
-  // Singles always; boxes only when they map to a curated Snkrdunk id (JA).
-  // Manual overrides are skipped so the cron never clobbers a hand-set price.
+  // Singles always; boxes only when they map to a curated Snkrdunk id (ja) or
+  // kapaipai listing (zh-tw). Manual overrides are skipped so the cron never
+  // clobbers a hand-set price.
   const priceable = rows.filter(
     r =>
       r.market_price_source !== 'manual' &&
-      (r.item_type === 'single' ||
-        (r.item_type === 'box' &&
-          boxSnkrdunkId(SET_CODE_BY_NAME[r.set_name ?? ''] ?? '', r.edition ?? 'ja') != null)),
+      (r.item_type === 'single' || (r.item_type === 'box' && boxRefOf(r) != null)),
   );
   let refreshed = 0;
   let i = 0;

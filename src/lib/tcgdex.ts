@@ -1,5 +1,5 @@
 import { PTCG_PRODUCTS } from '../data/ptcg-products';
-import { boxSnkrdunkId } from '../data/ptcg-boxes';
+import { boxSnkrdunkId, zhBoxOf } from '../data/ptcg-boxes';
 import type { CardEdition } from '../types';
 import { apiFetch } from './apiFetch';
 // TCGdex / Bulbagarden are third-party hosts read while the gallery renders.
@@ -428,11 +428,14 @@ export async function lookupJpCardImage(setCode: string, cardNumber: number | st
 }
 
 // Picture for a sealed box. A Japanese box with a curated SNKRDUNK id gets that
-// product's own photo — the Japanese packaging. Everything else falls back to
-// the set image below, whose first choice is the TW site's (Chinese) pack art.
+// product's own photo — the Japanese packaging; a curated zh-tw product gets its
+// official TW product thumbnail. Everything else falls back to the set image
+// below, whose first choice is the TW site's (Chinese) pack art.
 const boxImageCache = new Map<string, string | null>();
-export async function lookupBoxImage(setCode: string, language: ScanLanguage = 'ja'): Promise<string | null> {
-  const id = boxSnkrdunkId(setCode, language);
+export async function lookupBoxImage(setCode: string, language: ScanLanguage = 'ja', setName?: string): Promise<string | null> {
+  const zh = zhBoxOf(setCode, language, setName);
+  if (zh) return zh.image;
+  const id = boxSnkrdunkId(setCode, language, setName);
   if (id != null) {
     let url = boxImageCache.get(String(id));
     if (url === undefined) {

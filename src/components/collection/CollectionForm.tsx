@@ -64,7 +64,7 @@ function CollectionForm({
     try {
       // A box stores its own product photo (Japanese packaging for a ja box);
       // anything else gets the set-level image.
-      const boxUrl = form.itemType === 'box' ? await lookupBoxImage(code, editionToLang(edition)) : null;
+      const boxUrl = form.itemType === 'box' ? await lookupBoxImage(code, editionToLang(edition), setName) : null;
       const result = boxUrl ? { imageUrl: boxUrl, kind: 'product' as const } : await lookupSetImage(code, editionToLang(edition));
       if (result) {
         setForm(f => ({ ...f, imageUrl: result.imageUrl }));

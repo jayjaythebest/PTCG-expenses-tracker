@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useCollection } from '../lib/useCollection';
 import { CollectionItem, CollectionItemType, CollectionCondition, CardEdition } from '../types';
-import { boxSnkrdunkId } from '../data/ptcg-boxes';
+import { boxSnkrdunkId, zhBoxOf } from '../data/ptcg-boxes';
 import { COLLECTION_OWNERS, PRIMARY_OWNER, ownerOf } from '../data/collectionOwners';
 import { cn, relativeTime, formatMonthLabel } from '../lib/utils';
 import { itemDay, matchesDateFilter, monthCounts, type DateFilter } from '../lib/collectionDate';
@@ -250,16 +250,23 @@ export function Collection() {
   const totalQuantity = items.reduce((s, i) => s + i.quantity, 0);
   const pricedCount = items.filter(i => i.marketPrice != null).length;
 
-  // The Snkrdunk box id for an item, or undefined when it can't be auto-priced.
-  // Only boxes that map to a curated JA Snkrdunk product id are priceable.
-  const boxIdOf = (i: { itemType: CollectionItemType | string; setName: string; edition?: CardEdition }): number | undefined =>
-    displayType(i.itemType) === 'box' ? boxSnkrdunkId(SET_CODE_BY_NAME[i.setName] ?? '', i.edition) : undefined;
+  // The curated sealed-product id a box prices off — a Snkrdunk id (ja) or a
+  // kapaipai listing (zh-tw) — or undefined when it can't be auto-priced.
+  const boxRefOf = (i: { itemType: CollectionItemType | string; setName: string; edition?: CardEdition }):
+    { snkrdunkId: number } | { kpPackId: string; kpPackCardId: string } | undefined => {
+    if (displayType(i.itemType) !== 'box') return undefined;
+    const code = SET_CODE_BY_NAME[i.setName] ?? '';
+    const snkrdunkId = boxSnkrdunkId(code, i.edition, i.setName);
+    if (snkrdunkId != null) return { snkrdunkId };
+    const zh = zhBoxOf(code, i.edition, i.setName);
+    return zh ? { kpPackId: zh.kpPackId, kpPackCardId: zh.kpPackCardId } : undefined;
+  };
 
   // Items we can auto-price: every single (ja -> Huca, zh-tw -> kapaipai) plus
-  // boxes that have a curated Snkrdunk id (ja -> Snkrdunk). Manual overrides are
+  // boxes that have a curated id (ja -> Snkrdunk, zh-tw -> kapaipai). Manual overrides are
   // excluded so "更新價格" never clobbers a price the user set by hand.
   const priceable = items.filter(
-    i => (i.itemType === 'single' || boxIdOf(i) != null) && i.marketPriceSource !== 'manual',
+    i => (i.itemType === 'single' || boxRefOf(i) != null) && i.marketPriceSource !== 'manual',
   );
 
   // Fetch and store the live price for ONE item. Shared by the bulk 「更新價格」
@@ -290,7 +297,7 @@ export function Collection() {
       gradingCompany: item.gradingCompany,
       grade: item.grade,
       itemType: displayType(item.itemType),
-      snkrdunkId: boxIdOf(item),
+      ...boxRefOf(item),
     };
     const key = JSON.stringify(params);
     let p: CardPrice | null;
@@ -388,7 +395,7 @@ export function Collection() {
     if (IS_DEMO || loading || refreshing) return;
     const todo = allItems.filter(i =>
       i.marketPrice == null && !i.marketPriceUpdatedAt && !autoPriced.has(i.id)
-      && (i.itemType === 'single' || boxIdOf(i) != null));
+      && (i.itemType === 'single' || boxRefOf(i) != null));
     if (todo.length === 0) return;
     todo.forEach(i => autoPriced.add(i.id));
     (async () => {
@@ -400,7 +407,7 @@ export function Collection() {
         }
       }
     })();
-    // repriceOne/boxIdOf are recreated every render; the item list is the trigger.
+    // repriceOne/boxRefOf are recreated every render; the item list is the trigger.
   }, [allItems, loading, refreshing]);
 
   // Resolve the live market price for a single card so a newly added row shows
@@ -410,8 +417,8 @@ export function Collection() {
   const withMarketPrice = async (
     item: Omit<CollectionItem, 'id' | 'createdAt'>,
   ): Promise<Omit<CollectionItem, 'id' | 'createdAt'>> => {
-    const snkrdunkId = boxIdOf(item);
-    if (item.itemType !== 'single' && snkrdunkId == null) return item;
+    const boxRef = boxRefOf(item);
+    if (item.itemType !== 'single' && boxRef == null) return item;
     const edition = item.edition ?? 'ja';
     const setCode = SET_CODE_BY_NAME[item.setName] ?? '';
     try {
@@ -425,7 +432,7 @@ export function Collection() {
         gradingCompany: item.gradingCompany,
         grade: item.grade,
         itemType: displayType(item.itemType),
-        snkrdunkId,
+        ...boxRef,
       });
       if (p && p.price != null) {
         return {

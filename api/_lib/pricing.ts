@@ -945,6 +945,18 @@ async function lookupKapaipai(setCode: string, setName: string, num: string, nam
   return findKapaipaiByName(num, name);
 }
 
+// A zh-tw sealed product: its `原盒` row, named by packId + packCardId (see
+// ZH_BOX_* in src/data/ptcg-boxes). The 原盒 and 散包 listings share one
+// packCardId, so the row is picked by rare as well — kpSalePrice then counts
+// only that rare's sales, i.e. whole sealed boxes and never loose packs.
+async function lookupKapaipaiBox(packId: string, packCardId: string): Promise<PriceResult | null> {
+  const rows = await getKpPackDetail(packId);
+  const row = rows.find(r => r.packCardId === packCardId && (r.rare ?? []).includes('原盒'));
+  if (!row) return null;
+  const price = (await getKpSalePrice(packId, row)) ?? pickKpPrice(row);
+  return price != null ? kpResult(packId, packCardId, price) : null;
+}
+
 export interface PriceQuery {
   setCode: string;
   setName: string;
@@ -954,17 +966,22 @@ export interface PriceQuery {
   wantGrade?: string | null; // e.g. 'PSA10' when the card is graded
   itemType?: string | null; // 'single' | 'box'
   snkrdunkId?: string | number | null; // sealed-box Snkrdunk product id
+  kpPackId?: string | null; // zh-tw sealed box: kapaipai packId + packCardId
+  kpPackCardId?: string | null;
 }
 
 // Resolve a market price from the right free source. Sealed boxes with a
-// curated Snkrdunk id price directly off Snkrdunk. For singles: zh-tw ->
-// kapaipai (TWD), everything else -> Huca (JPY). Graded cards pass a wantGrade
-// so Huca lookups match the right slab price.
+// curated id price directly off Snkrdunk (ja) or kapaipai (zh-tw). For singles:
+// zh-tw -> kapaipai (TWD), everything else -> Huca (JPY). Graded cards pass a
+// wantGrade so Huca lookups match the right slab price.
 export async function resolveCardPrice(q: PriceQuery): Promise<PriceResult | null> {
   const edition = (q.edition || 'ja').trim();
   if (q.itemType === 'box' && q.snkrdunkId) {
     const boxResult = await lookupSnkrdunkBox(q.snkrdunkId);
     if (boxResult) return boxResult;
+  }
+  if (q.itemType === 'box' && q.kpPackId && q.kpPackCardId) {
+    return lookupKapaipaiBox(q.kpPackId, q.kpPackCardId);
   }
   if (edition === 'zh-tw') {
     return lookupKapaipai(q.setCode, q.setName, q.number, q.name);

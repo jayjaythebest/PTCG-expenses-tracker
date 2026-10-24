@@ -40,13 +40,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const wantGrade = buildWantGrade(isGraded, gradingCompany, grade);
   const itemType = String(src.itemType ?? 'single').trim();
   const snkrdunkId = String(src.snkrdunkId ?? '').trim();
+  const kpPackId = String(src.kpPackId ?? '').trim();
+  const kpPackCardId = String(src.kpPackCardId ?? '').trim();
 
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'public, max-age=3600, s-maxage=43200');
 
   const now = () => new Date().toISOString();
 
-  const isBoxWithId = itemType === 'box' && !!snkrdunkId;
+  const isBoxWithId = itemType === 'box' && (!!snkrdunkId || (!!kpPackId && !!kpPackCardId));
   if (!isBoxWithId) {
     if (edition === 'zh-tw') {
       if (!setCode && !setName && !number) {
@@ -61,7 +63,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // now resolved by name across all packs (see findKapaipaiByName), so two
   // different cards sharing a number but no set would otherwise collide here.
   const namePart = name.replace(/\s+/g, '').toLowerCase();
-  const key = `${edition}:${itemType}:${(setName || setCode).toUpperCase()}:${number}:${namePart}:${snkrdunkId || (wantGrade ?? 'raw')}`;
+  const key = `${edition}:${itemType}:${(setName || setCode).toUpperCase()}:${number}:${namePart}:${snkrdunkId || kpPackCardId || (wantGrade ?? 'raw')}:${kpPackId}`;
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < TTL_MS) {
     return res.status(200).json(hit.result);
@@ -70,7 +72,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const emptySource = edition === 'zh-tw' ? 'kapaipai' : null;
 
   try {
-    const result = await resolveCardPrice({ setCode, setName, number, name, edition, wantGrade, itemType, snkrdunkId });
+    const result = await resolveCardPrice({ setCode, setName, number, name, edition, wantGrade, itemType, snkrdunkId, kpPackId, kpPackCardId });
     if (result) {
       cache.set(key, { at: Date.now(), result });
       return res.status(200).json(result);

@@ -92,8 +92,9 @@ export function GalleryImage({ item }: { item: CollectionItem }) {
 
       // Boxes (incl. legacy 'pack'): the box's own photo in its language when we
       // have one, else official set art, then the stored image — all letterboxed
-      // (box/logo art is wide and shouldn't be cropped).
-      if (sc) push(await lookupBoxImage(sc, lang), false);
+      // (box/logo art is wide and shouldn't be cropped). Special products have
+      // no set code; they are curated by set name, which lookupBoxImage checks.
+      push(await lookupBoxImage(sc ?? '', lang, item.setName), false);
       push(storedUsable, false);
       return out;
     };
