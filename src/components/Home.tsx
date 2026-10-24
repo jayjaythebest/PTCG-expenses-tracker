@@ -4,7 +4,7 @@ import { useCollection } from '../lib/useCollection';
 import { useValueSnapshots } from '../lib/useValueSnapshots';
 import { useFxRateWithMeta } from '../lib/useFxRate';
 import {
-  totalCurrentTwd, totalItemCount, totalPnlTwd,
+  totalCurrentTwd, totalItemCount, totalPnlTwd, valueChange,
   topMoversTwd, topMoversByHistory, type ValueMover,
 } from '../lib/collectionValue';
 import { usePriceHistory } from '../lib/usePriceHistory';
@@ -112,20 +112,10 @@ export function Home({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
   // Prefer a true 7-day baseline; when history is younger, fall back to the
   // oldest snapshot we have (labelled "近 N 日") so the hero isn't blank for a
   // week. Needs ≥2 snapshots to have any baseline to compare against.
-  const weekChange = useMemo(() => {
-    if (snapshots.length < 2) return null;
-    const asc = [...snapshots].sort((a, b) => a.date.localeCompare(b.date));
-    const cutoff = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    // Most recent snapshot on/before 7 days ago, else the oldest one we have.
-    const baseline = [...asc].reverse().find(s => s.date <= cutoff) ?? asc[0];
-    if (!baseline || baseline.totalTwd <= 0) return null;
-    const days = Math.max(
-      1,
-      Math.round((now.getTime() - new Date(baseline.date).getTime()) / (24 * 60 * 60 * 1000)),
-    );
-    const diff = liveTotalTwd - baseline.totalTwd;
-    return { diff, pct: (diff / baseline.totalTwd) * 100, days };
-  }, [snapshots, liveTotalTwd, now]);
+  const weekChange = useMemo(
+    () => valueChange(snapshots, items, liveTotalTwd, fxRate, now),
+    [snapshots, items, liveTotalTwd, fxRate, now],
+  );
 
   // Label for the change window: exactly 7 → "近 7 日變動", otherwise "近 N 日變動".
   const changeLabel = weekChange ? `近 ${weekChange.days} 日變動` : '近 7 日變動';
@@ -181,6 +171,11 @@ export function Home({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
                 （{weekChange.diff >= 0 ? '+' : '−'}{Math.abs(weekChange.pct).toFixed(1)}%）
               </span>
               <span className="text-xs font-bold text-white/60">{changeLabel}</span>
+              {weekChange.added > 0 && (
+                <span className="text-xs font-bold text-white/60">
+                  新增收藏 +{nt(weekChange.added)} · 市價 {weekChange.diff - weekChange.added >= 0 ? '+' : '−'}{nt(Math.abs(weekChange.diff - weekChange.added))}
+                </span>
+              )}
             </>
           ) : (
             <span className="text-xs font-bold text-white/60">持續記錄中，多記幾天即可比較變動</span>

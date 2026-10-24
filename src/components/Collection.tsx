@@ -9,7 +9,8 @@ import { itemDay, matchesDateFilter, monthCounts, type DateFilter } from '../lib
 // Value math lives in one tested module (src/lib/collectionValue.ts) so the home
 // summary, this page and the daily snapshot can never drift apart on what a card
 // is worth.
-import { toTwd, estValue } from '../lib/collectionValue';
+import { toTwd, estValue, valueChange } from '../lib/collectionValue';
+import { useValueSnapshots } from '../lib/useValueSnapshots';
 import { fetchCardPrice, fetchFxJpyToTwd, type CardPrice } from '../lib/pricing';
 import { findMergeCandidates, findDuplicateGroups, planMerge } from '../lib/mergeCandidates';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -60,6 +61,7 @@ const SORT_KEYS = (Object.keys(SORT_LABELS) as SortKey[])
 
 export function Collection() {
   const { items: allItems, deletedItems: allDeletedItems, loading, addItem, updateItem, deleteItem, restoreItem, purgeItem } = useCollection();
+  const { snapshots } = useValueSnapshots();
   // Whose collection is on screen. The account is shared, so this is a view
   // filter and nothing more — it decides which cards are listed, which total is
   // shown, and which tab a newly added card is filed under.
@@ -233,18 +235,14 @@ export function Collection() {
     const e = estValue(i);
     return s + (e ? toTwd(e.amount, e.currency, fxRate) : 0) * i.quantity;
   }, 0);
-  // Value change (損益) = live market price vs. recorded estimate, summed only
-  // over items that have both (so there's a baseline). totalBaseTwd is that
-  // baseline sum, used for the overall percentage.
-  let totalBaseTwd = 0;
-  let pnlTwd = 0;
-  for (const i of items) {
-    const p = pnlOf(i);
-    if (p && i.currentValue != null) {
-      totalBaseTwd += toTwd(i.currentValue, 'JPY', fxRate) * i.quantity;
-      pnlTwd += p.diff;
-    }
-  }
+  // Headline change: the last 7 days against the daily value snapshots, as on
+  // Home. It used to be 損益 vs. 現估價, summed over only the few cards with an
+  // estimate — a percentage of a small, arbitrary base, sitting beside a total
+  // it had nothing to do with. Snapshots record the account holder's cards
+  // alone (see useValueSnapshots), so other owners' tabs show no change.
+  const weekChange = owner === PRIMARY_OWNER
+    ? valueChange(snapshots, items, totalCurrentTwd, fxRate)
+    : null;
   const hasPrices = totalCurrentTwd > 0;
   // Headline figures for the public build, which shows neither total.
   const totalQuantity = items.reduce((s, i) => s + i.quantity, 0);
@@ -742,26 +740,36 @@ export function Collection() {
                   ? `${totalQuantity.toLocaleString()} 張`
                   : `NT$${Math.round(totalCurrentTwd).toLocaleString()}`}
               </span>
-              {/* No headline percentage in the demo either. 損益 is measured
-                  against 現估價, which only a handful of cards have recorded —
-                  a ratio over that baseline is a fine at-a-glance number for
-                  the owner, who knows which cards it covers, and a misleading
-                  headline for a stranger, who doesn't. */}
-              {!IS_DEMO && totalBaseTwd > 0 && (
+              {/* No change badge in the demo: it is a movement of the
+                  collection's absolute worth, which the demo doesn't publish. */}
+              {!IS_DEMO && weekChange && (
                 <span className={cn(
                   'inline-flex items-center gap-1 px-2 py-1 rounded-full text-sm font-black bg-white/15',
-                  pnlTwd >= 0 ? 'text-emerald-200' : 'text-red-200',
+                  weekChange.diff >= 0 ? 'text-emerald-200' : 'text-red-200',
                 )}>
-                  {pnlTwd >= 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
-                  {pnlTwd >= 0 ? '+' : ''}NT${Math.round(pnlTwd).toLocaleString()}
+                  {weekChange.diff >= 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+                  {weekChange.diff >= 0 ? '+' : '−'}NT${Math.round(Math.abs(weekChange.diff)).toLocaleString()}
                   <span className="opacity-80">
-                    ({pnlTwd >= 0 ? '+' : ''}{(pnlTwd / totalBaseTwd * 100).toFixed(1)}%)
+                    ({weekChange.diff >= 0 ? '+' : '−'}{Math.abs(weekChange.pct).toFixed(1)}%)
                   </span>
                 </span>
               )}
             </div>
 
             <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs font-bold text-white/70">
+              {!IS_DEMO && weekChange && (
+                <span>
+                  近 {weekChange.days} 日
+                  {weekChange.added > 0 && (
+                    <>
+                      {' '}· 新增收藏 <span className="text-white/90">+NT${Math.round(weekChange.added).toLocaleString()}</span>
+                      {' '}· 市價 <span className="text-white/90">
+                        {weekChange.diff - weekChange.added >= 0 ? '+' : '−'}NT${Math.round(Math.abs(weekChange.diff - weekChange.added)).toLocaleString()}
+                      </span>
+                    </>
+                  )}
+                </span>
+              )}
               <span>收藏件數 <span className="text-white/90">{totalQuantity}</span></span>
               {IS_DEMO && (
                 <span>已追蹤市價 <span className="text-white/90">{pricedCount}</span> 張 · 每日更新</span>

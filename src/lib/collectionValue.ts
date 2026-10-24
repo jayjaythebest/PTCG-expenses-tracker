@@ -4,7 +4,7 @@
 // A card's "current value" is the auto-fetched market price when we have one
 // (in its own currency), otherwise the user's manual estimate (JPY). Everything
 // is normalised to TWD for cross-currency totals using the JPY->TWD rate.
-import { CollectionItem, ItemPricePoint } from '../types';
+import { CollectionItem, CollectionValueSnapshot, ItemPricePoint } from '../types';
 
 // JPY -> TWD (rounded to whole TWD).
 export function twdOf(jpy: number, rate: number): number {
@@ -53,6 +53,45 @@ export function totalPnlTwd(items: CollectionItem[], rate: number): { diff: numb
     diff += (market - b) * i.quantity;
   }
   return { diff, base, pct: base > 0 ? (diff / base) * 100 : 0 };
+}
+
+// Local calendar day of a timestamp, the same shape snapshot dates are keyed by.
+function localDay(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// Change in the collection's value over the last `days` days, against the daily
+// snapshot series. The baseline is the latest snapshot on/before the cutoff, or
+// the oldest one while the series is younger than that (the caller labels it
+// "近 N 日"). `added` is the part of the change that is rows created after the
+// baseline day — new purchases, not market movement — so a day of logging new
+// boxes doesn't read as a price rally. A quantity bumped on an existing row has
+// no timestamp of its own, so it lands in the market part.
+export function valueChange(
+  snapshots: CollectionValueSnapshot[],
+  items: CollectionItem[],
+  liveTotalTwd: number,
+  rate: number,
+  now = new Date(),
+  days = 7,
+): { diff: number; pct: number; days: number; added: number } | null {
+  if (snapshots.length < 2) return null;
+  const asc = [...snapshots].sort((a, b) => a.date.localeCompare(b.date));
+  // Calendar days throughout, in local time like the snapshot keys. Mixing in
+  // UTC (toISOString, or parsing 'YYYY-MM-DD', which JS reads as UTC midnight)
+  // shifted the window by a day depending on the hour, so 7 days read as 8.
+  const DAY = 24 * 60 * 60 * 1000;
+  const cutoff = localDay(new Date(now.getTime() - days * DAY));
+  const baseline = [...asc].reverse().find(s => s.date <= cutoff) ?? asc[0];
+  if (!baseline || baseline.totalTwd <= 0) return null;
+  const [y, m, d] = baseline.date.split('-').map(Number);
+  const span = Math.max(
+    1,
+    Math.round((Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) - Date.UTC(y, m - 1, d)) / DAY),
+  );
+  const diff = liveTotalTwd - baseline.totalTwd;
+  const added = totalCurrentTwd(items.filter(i => localDay(new Date(i.createdAt)) > baseline.date), rate);
+  return { diff, pct: (diff / baseline.totalTwd) * 100, days: span, added };
 }
 
 // One card's contribution to the P&L above, kept alongside enough identity to

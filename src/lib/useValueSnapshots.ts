@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from './supabase';
+import { IS_DEMO } from './demo';
 import { CollectionValueSnapshot } from '../types';
 
 // Reads the daily collection-value snapshot series (stock-ticker style) and
@@ -51,6 +52,9 @@ export function useValueSnapshots() {
   }
 
   useEffect(() => {
+    // The demo build's anon key can't read this table (and shows no value
+    // change), so don't fire a request that can only fail.
+    if (IS_DEMO) return;
     fetchSnapshots();
   }, []);
 

@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   toTwd, estValue, totalCurrentTwd, totalPnlTwd,
-  topMoversTwd, topMoversByHistory, moverBaselineDate,
+  topMoversTwd, topMoversByHistory, moverBaselineDate, valueChange,
 } from './collectionValue';
-import { CollectionItem, ItemPricePoint } from '../types';
+import { CollectionItem, CollectionValueSnapshot, ItemPricePoint } from '../types';
 
 // Build a minimal CollectionItem for tests, overriding only what matters.
 function item(overrides: Partial<CollectionItem>): CollectionItem {
@@ -211,5 +211,39 @@ describe('topMoversByHistory', () => {
     const items = [item({ id: 'a', currentValue: 2000 })]; // 400 TWD now
     const w = topMoversByHistory(items, [point('a', 8, 200)], 0.2, { now: NOW })!;
     expect(w.movers[0].pct).toBeCloseTo(100);
+  });
+});
+
+describe('valueChange', () => {
+  const snaps: CollectionValueSnapshot[] = [
+    { date: '2026-10-10', totalTwd: 900, itemCount: 9 },
+    { date: '2026-10-17', totalTwd: 1000, itemCount: 10 },
+    { date: '2026-10-23', totalTwd: 1100, itemCount: 10 },
+  ];
+  const now = new Date('2026-10-24T12:00:00');
+
+  it('compares against the latest snapshot at least 7 days old', () => {
+    const r = valueChange(snaps, [], 1200, 0.2, now)!;
+    expect(r.diff).toBe(200);
+    expect(r.pct).toBeCloseTo(20);
+    expect(r.days).toBe(7);
+  });
+
+  it('splits out rows created after the baseline day as added', () => {
+    const items = [
+      item({ marketPrice: 300, marketPriceCurrency: 'TWD', quantity: 2, createdAt: '2026-10-24T10:00:00' }),
+      item({ marketPrice: 500, marketPriceCurrency: 'TWD', createdAt: '2026-10-01T10:00:00' }),
+    ];
+    expect(valueChange(snaps, items, 1700, 0.2, now)!.added).toBe(600);
+  });
+
+  it('falls back to the oldest snapshot while history is younger than the window', () => {
+    const r = valueChange(snaps.slice(1), [], 1200, 0.2, now)!;
+    expect(r.diff).toBe(200);
+    expect(r.days).toBe(7);
+  });
+
+  it('needs two snapshots to compare', () => {
+    expect(valueChange(snaps.slice(0, 1), [], 1200, 0.2, now)).toBeNull();
   });
 });
