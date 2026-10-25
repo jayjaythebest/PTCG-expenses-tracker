@@ -116,6 +116,7 @@ const ZH_BOX_BY_NAME: Record<string, ZhBox> = {
   '特別組合 超級噴火龍Y': zhBox('M3-PLUS', '000PD', '2025/12/twhk_product_thumbnail_M3P_PKG.png'),
   '忍者飛旋 加值組合': zhBox('M4-PLUS', '000PB-M4-PLUS', '2026/02/twhk_product_thumbnail_M4_40set_PKG.png'),
   '深淵之瞳 加值組合': zhBox('M5-PLUS', '000PB-M5-PLUS', '2026/05/twhk_product_thumbnail_m5_extra_value_set_pkg.png'),
+  '綠寶石風暴 超級進化夥伴組合': zhBox('M6', '000PB', '2026/06/twhk_product_thumbnail_m6_mega_pkg.png'),
 };
 
 export function zhBoxOf(setCode: string, edition?: string | null, setName?: string | null): ZhBox | undefined {
