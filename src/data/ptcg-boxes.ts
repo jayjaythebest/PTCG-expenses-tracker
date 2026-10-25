@@ -48,6 +48,8 @@ const SNKRDUNK_BOX_ID_JA: Record<string, number> = {
 const SNKRDUNK_BOX_ID_JA_BY_NAME: Record<string, number> = {
   'スペシャルBOX ポケモンセンタートウホク': 618442,
   'スペシャルBOX ポケモンセンターフクオカ': 618444,
+  // Shares the m6a code with the standard box (see the note above), hence by name.
+  '30th CELEBRATION FUTURISTIC BOX': 881424,
 };
 
 const findByCode = <T,>(map: Record<string, T>, setCode: string): T | undefined => {
