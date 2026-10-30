@@ -56,7 +56,7 @@ export function totalPnlTwd(items: CollectionItem[], rate: number): { diff: numb
 }
 
 // Local calendar day of a timestamp, the same shape snapshot dates are keyed by.
-function localDay(d: Date): string {
+export function localDay(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
@@ -74,7 +74,7 @@ export function valueChange(
   rate: number,
   now = new Date(),
   days = 7,
-): { diff: number; pct: number; days: number; added: number } | null {
+): { diff: number; pct: number; days: number; added: number; from: string } | null {
   if (snapshots.length < 2) return null;
   const asc = [...snapshots].sort((a, b) => a.date.localeCompare(b.date));
   // Calendar days throughout, in local time like the snapshot keys. Mixing in
@@ -91,7 +91,7 @@ export function valueChange(
   );
   const diff = liveTotalTwd - baseline.totalTwd;
   const added = totalCurrentTwd(items.filter(i => localDay(new Date(i.createdAt)) > baseline.date), rate);
-  return { diff, pct: (diff / baseline.totalTwd) * 100, days: span, added };
+  return { diff, pct: (diff / baseline.totalTwd) * 100, days: span, added, from: baseline.date };
 }
 
 // One card's contribution to the P&L above, kept alongside enough identity to

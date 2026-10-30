@@ -4,10 +4,11 @@ import { useCollection } from '../lib/useCollection';
 import { useValueSnapshots } from '../lib/useValueSnapshots';
 import { useFxRateWithMeta } from '../lib/useFxRate';
 import {
-  totalCurrentTwd, totalItemCount, totalPnlTwd, valueChange,
+  totalCurrentTwd, totalItemCount,
   topMoversTwd, topMoversByHistory, type ValueMover,
 } from '../lib/collectionValue';
 import { usePriceHistory } from '../lib/usePriceHistory';
+import { ValueChart } from './ValueChart';
 import { PRIMARY_OWNER, ownerOf } from '../data/collectionOwners';
 import { inMonth, relativeTime } from '../lib/utils';
 import { Expense } from '../types';
@@ -34,24 +35,6 @@ function nt(n: number): string {
 
 function yen(n: number): string {
   return `¥${Math.round(n).toLocaleString()}`;
-}
-
-// A minimal stock-ticker sparkline over the recent value snapshots.
-function Sparkline({ values, up }: { values: number[]; up: boolean }) {
-  if (values.length < 2) return null;
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = max - min || 1;
-  const pts = values
-    .map((v, i) => `${(i / (values.length - 1)) * 100},${100 - ((v - min) / range) * 100}`)
-    .join(' ');
-  const stroke = up ? '#34d399' : '#f87171'; // emerald-400 / red-400
-  return (
-    <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-12" aria-hidden>
-      <polyline points={pts} fill="none" stroke={stroke} strokeWidth={3}
-        vectorEffect="non-scaling-stroke" strokeLinejoin="round" strokeLinecap="round" />
-    </svg>
-  );
 }
 
 function isExpense(e: Expense): boolean {
@@ -83,7 +66,6 @@ export function Home({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
 
   const liveTotalTwd = useMemo(() => totalCurrentTwd(items, fxRate), [items, fxRate]);
   const itemCount = useMemo(() => totalItemCount(items), [items]);
-  const pnl = useMemo(() => totalPnlTwd(items, fxRate), [items, fxRate]);
   // Prefer real recorded history ("這張卡近 N 日漲跌"). Until the history table
   // has a day older than today to compare against, fall back to the static
   // 現估價 baseline so the card still says something useful — the subtitle makes
@@ -108,20 +90,6 @@ export function Home({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
     if (!colLoading && items.length > 0) recordPrices(items, fxRate);
   }, [colLoading, items, fxRate, recordPrices]);
 
-  // ---- Change vs. an earlier snapshot ----
-  // Prefer a true 7-day baseline; when history is younger, fall back to the
-  // oldest snapshot we have (labelled "近 N 日") so the hero isn't blank for a
-  // week. Needs ≥2 snapshots to have any baseline to compare against.
-  const weekChange = useMemo(
-    () => valueChange(snapshots, items, liveTotalTwd, fxRate, now),
-    [snapshots, items, liveTotalTwd, fxRate, now],
-  );
-
-  // Label for the change window: exactly 7 → "近 7 日變動", otherwise "近 N 日變動".
-  const changeLabel = weekChange ? `近 ${weekChange.days} 日變動` : '近 7 日變動';
-
-  const sparkVals = useMemo(() => snapshots.slice(-30).map(s => s.totalTwd), [snapshots]);
-
   // ---- This-month expenses (¥, matching the record/analysis pages) ----
   const monthExpenses = expenses.filter(e => inMonth(e.date, thisMonth));
   const monthExpenseTotal = monthExpenses
@@ -135,7 +103,6 @@ export function Home({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
     .reduce((s, e) => s + Number(e.amount) * (e.quantity ?? 1), 0);
   const monthCount = monthExpenses.length;
 
-  const valueUp = weekChange ? weekChange.diff >= 0 : pnl.diff >= 0;
 
   return (
     <div className="space-y-5 mb-8 max-w-lg mx-auto">
@@ -145,63 +112,30 @@ export function Home({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
         <p className="text-sm text-slate-400 mt-0.5">{dateLabel}</p>
       </div>
 
-      {/* Collection value hero — stock-ticker style */}
-      <button
-        onClick={() => onNavigate('collection')}
-        className="w-full text-left rounded-2xl p-5 bg-gradient-to-br from-poke-blue to-poke-dark-blue text-white shadow-lg shadow-poke-blue/20 active:scale-[0.99] transition-transform"
-      >
-        <div className="flex items-center justify-between">
+      {/* Collection value hero — stock-ticker style. A div, not a button: it
+          holds its own controls (the range toggle, the chart's readout). */}
+      <div className="rounded-2xl p-5 bg-gradient-to-br from-poke-blue to-poke-dark-blue text-white shadow-lg shadow-poke-blue/20">
+        <button
+          onClick={() => onNavigate('collection')}
+          className="w-full flex items-center justify-between text-left hover:opacity-90"
+        >
           <span className="text-xs font-black uppercase tracking-widest text-white/70 flex items-center gap-1.5">
             <Layers className="w-3.5 h-3.5" /> 收藏現估總值
           </span>
           <ChevronRight className="w-4 h-4 text-white/60" />
-        </div>
+        </button>
         <p className="text-4xl font-black mt-1 tracking-tight">{nt(liveTotalTwd)}</p>
 
-        {/* Value change vs. an earlier snapshot */}
-        <div className="mt-2 flex items-center gap-2 flex-wrap">
-          {weekChange ? (
-            <>
-              <span className={cn(
-                'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-black bg-white/15',
-                weekChange.diff >= 0 ? 'text-emerald-200' : 'text-red-200',
-              )}>
-                {weekChange.diff >= 0 ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
-                {weekChange.diff >= 0 ? '+' : '−'}{nt(Math.abs(weekChange.diff))}
-                （{weekChange.diff >= 0 ? '+' : '−'}{Math.abs(weekChange.pct).toFixed(1)}%）
-              </span>
-              <span className="text-xs font-bold text-white/60">{changeLabel}</span>
-              {weekChange.added > 0 && (
-                <span className="text-xs font-bold text-white/60">
-                  新增收藏 +{nt(weekChange.added)} · 市價 {weekChange.diff - weekChange.added >= 0 ? '+' : '−'}{nt(Math.abs(weekChange.diff - weekChange.added))}
-                </span>
-              )}
-            </>
-          ) : (
-            <span className="text-xs font-bold text-white/60">持續記錄中，多記幾天即可比較變動</span>
-          )}
-        </div>
+        <ValueChart
+          snapshots={snapshots}
+          items={items}
+          liveTotalTwd={liveTotalTwd}
+          itemCount={itemCount}
+          fxRate={fxRate}
+        />
 
-        {/* Sparkline */}
-        {sparkVals.length >= 2 && (
-          <div className="mt-3 -mx-1">
-            <Sparkline values={sparkVals} up={valueUp} />
-          </div>
-        )}
-
-        {/* Secondary stats */}
-        <div className="mt-3 pt-3 border-t border-white/15 flex items-center gap-4 text-xs">
-          <span className="text-white/70">
-            收藏 <b className="text-white font-black">{itemCount}</b> 張
-          </span>
-          {pnl.base > 0 && (
-            <span className="text-white/70">
-              帳面損益{' '}
-              <b className={cn('font-black', pnl.diff >= 0 ? 'text-emerald-200' : 'text-red-200')}>
-                {pnl.diff >= 0 ? '+' : '−'}{nt(Math.abs(pnl.diff))}（{pnl.diff >= 0 ? '+' : '−'}{Math.abs(pnl.pct).toFixed(1)}%）
-              </b>
-            </span>
-          )}
+        <div className="mt-3 pt-3 border-t border-white/15 text-xs text-white/70">
+          收藏 <b className="text-white font-black">{itemCount}</b> 張
         </div>
 
         {/* FX rate used for TWD conversion + when it was fetched */}
@@ -209,7 +143,7 @@ export function Home({ onNavigate }: { onNavigate: (tab: Tab) => void }) {
           JPY→TWD {fxRate.toFixed(4)}
           {fxUpdatedAt ? `（更新於 ${relativeTime(fxUpdatedAt)}）` : ''}
         </p>
-      </button>
+      </div>
 
       {/* Biggest value movers — only worth a card once something has actually moved */}
       {movers.length > 0 && (
